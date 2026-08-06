@@ -81,3 +81,20 @@ def build_file_list(season: str) -> tuple[list, list]:
     avversari = [f"{row['leg']}-{row['opponent']}" for _, row in season_matches.iterrows()]
 
     return FILES, avversari
+
+def build_base_path(season: str) -> Path:
+    """
+    Ritorna il path base per una stagione specifica.
+    Usato da tabellino.ipynb per costruire i path dei singoli file.
+    """
+    seasons = load_seasons()
+    season_row = seasons[seasons["season"] == season]
+    if season_row.empty:
+        raise ValueError(f"Stagione '{season}' non trovata in seasons.csv")
+
+    drive_path = season_row["base_path_drive"].iloc[0]
+
+    if is_colab():
+        return Path("/content/drive/MyDrive") / drive_path
+    else:
+        return get_base_path()
