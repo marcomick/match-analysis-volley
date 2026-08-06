@@ -223,3 +223,4 @@ data/*
 github.ssh
 github.ssh.pub
 !data/README.md
+.venv
