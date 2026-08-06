@@ -1,0 +1,7 @@
+pandas
+numpy
+matplotlib
+openpyxl
+xlsxwriter
+fpdf2
+python-dotenv
