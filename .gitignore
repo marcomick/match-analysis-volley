@@ -218,7 +218,7 @@ __marimo__/
 .streamlit/secrets.toml
 
 # Dati locali e variabili d'ambiente
-data/
+data/*
 .env
 github.ssh
 github.ssh.pub
