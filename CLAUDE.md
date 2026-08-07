@@ -28,6 +28,13 @@ Il progetto è stato migrato da Google Colab a una repo strutturata con supporto
 - `config/player_identities.csv` — terne (team, cognome, numero) associate a player_id
 - La cella di check terne in classifiche.ipynb usa input() interattivo — funziona sia in Colab che in Cursor (il prompt appare in cima alla finestra)
 - I giocatori saltati nel check terne vengono esclusi dalle classifiche tramite filtro su player_identities.csv
+- Terne da ignorare in modo permanente (es. giocatori occasionali non più di interesse) si marcano con `player_id = IGNORED` in `player_identities.csv`: il check terne le riconosce come già gestite (nessun nuovo prompt) e la cella FILTRO le esclude esplicitamente dalle classifiche
+- `save_identity`/`save_player` nel notebook usano `csv.writer(f, lineterminator='\n')` per evitare terminazioni di riga miste (`\r\n`) nei CSV — da mantenere in eventuali refactor
+
+## Stato attuale (aggiornato 2026-08-07)
+- Stagione 2025-2026 completa in `config/matches.csv`: 28 partite (andata + ritorno + playoff), tutte `active=1`
+- `config/players.csv` / `config/player_identities.csv` popolati con 11 giocatori Decimo + 4 terne marcate `IGNORED` (Martignoni, Amore, Ferrazzi, Principato)
+- `notebooks/classifiche.ipynb` verificato end-to-end senza errori (caricamento, check terne, filtro, classifiche, export PDF)
 
 ## Workflow settimanale (nuova partita)
 1. Aggiungi riga in `config/matches.csv`

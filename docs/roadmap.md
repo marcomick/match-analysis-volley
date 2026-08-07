@@ -12,13 +12,13 @@
 
 ### Priorità alta
 
-- [ ] config/[paths.py](http://paths.py) — rilevamento automatico ambiente e caricamento path
+- [x] config/[paths.py](http://paths.py) — rilevamento automatico ambiente e caricamento path
 
-- [ ] Cella di check terne nei notebook con input interattivo
+- [x] Cella di check terne nei notebook con input interattivo (con opzione di ignora permanente via `player_id = IGNORED`)
 
-- [ ] Popolamento players.csv e player_identities.csv dalla stagione 2025-2026
+- [x] Popolamento players.csv e player_identities.csv dalla stagione 2025-2026
 
-- [ ] Pulizia e migrazione notebook in notebooks/
+- [x] Pulizia e migrazione notebook in notebooks/ (classifiche.ipynb verificato end-to-end)
 
 ### Priorità media
 
