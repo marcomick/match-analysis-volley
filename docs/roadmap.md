@@ -24,7 +24,9 @@
 
 - [x] Estrazione classifiche in src/[rankings.py](http://rankings.py) (da classifiche.ipynb: calculate_player_scores_by_type + 6 builder di classifica)
 
-- [ ] Estrazione funzioni core da tabellino.ipynb in src/ ([efficiency.py](http://efficiency.py), [attacks.py](http://attacks.py) — notebook più corposo, richiede pulizia celle sperimentali prima dello split)
+- [x] Estrazione core tabulare da tabellino.ipynb in src/[efficiency.py](http://efficiency.py) (calcola_efficienza, find_errors, separate_attacks_counterattacks, separate_free_ball, calcola_efficienza_free_ball, compute_set_metrics, export_tabellino_to_xlsx, create_player_summary_df). Deduplicate due copie divergenti di find_errors (una non contava gli errori di muro) — ora unificata, entrambi i tabellini contano gli stessi errori. Rimossa dead code mai chiamata (_attack_tipo_value, create_player_summary_df_with_free_ball).
+
+- [ ] Estrazione grafici da tabellino.ipynb in src/[attacks.py](http://attacks.py) (compute_attack_eff_breakdown, plot_attack_eff_breakdown_bars, compute_points_table, plot_points_grouped, plot_set_radar, plot_set_efficiency_groups — lasciati nel notebook nel primo giro di estrazione)
 
 - [ ] Confronto KPI cross-stagione
 
