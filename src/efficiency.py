@@ -1,13 +1,16 @@
 # src/efficiency.py
 """
-Funzioni core per il calcolo dell'efficienza per fondamentale e la generazione
-del tabellino giocatori, estratte da notebooks/tabellino.ipynb.
+Funzioni core per il calcolo dell'efficienza per fondamentale, estratte dalle celle
+di setup di notebooks/tabellino.ipynb (fino alla sezione "altro" esclusa: il tabellino
+"standard" e le celle successive restano intenzionalmente nel notebook, non refactorate).
 
 Nota sulla dedup: il notebook definiva due volte (in celle diverse) calcola_efficienza,
-find_errors e separate_attacks_counterattacks, con find_errors divergente tra le due copie
-(una contava anche gli errori di muro, l'altra no) — la copia "senza muro" era quella
-effettivamente in uso per il tabellino standard, l'altra per l'export xlsx con Free Ball.
-Qui la logica è unificata in un'unica versione che include sempre gli errori di muro.
+find_errors e separate_attacks_counterattacks. find_errors era divergente tra le due copie
+(una contava anche gli errori di muro, l'altra no): qui è unificata includendo sempre il
+muro. Questa versione unificata è usata da export_tabellino_to_xlsx (export "[tabellino F]").
+Il tabellino "standard" (create_player_summary_df, sezione esclusa dal refactor) definisce
+ancora localmente nel notebook la propria find_errors "senza muro" — la divergenza tra i due
+export resta quindi presente, non essendo questa sezione in scope.
 """
 import pandas as pd
 
@@ -554,98 +557,3 @@ def export_tabellino_to_xlsx(
     wb.close()
     return filepath
 
-
-def create_player_summary_df(df):
-    """
-    Crea il tabellino giocatori (colonne MultiIndex per fondamentale):
-    Battuta, Ricezione, Attacco(rice tot), Att(R#+), Att(R!), Att(R-),
-    Contrattacco, Muro, Errori.
-    """
-    battuta_eff = calcola_efficienza(df, 'battuta', pos=['#', '+', '/', '!'], neg=['='])
-    attacco_eff = calcola_efficienza(df, 'attacco', pos=['#'], neg=['=', '/'])
-    muro_eff = calcola_efficienza(df, 'muro', pos=['#', '+'], neg=['=', '/'])
-    rice_eff = calcola_efficienza(df, 'ricezione', pos=['#', '+'], neg=['=', '/'])
-    errors = find_errors(df)
-
-    # Att(R#+): ricezione positiva
-    pos_rec_attacks, _ = separate_attacks_counterattacks(df, rec_vote=["#", "+"])
-    pos_rec_att_eff = calcola_efficienza(pos_rec_attacks, 'attacco', pos=['#'], neg=['=', '/'])
-
-    # Att(R-): ricezione negativa
-    neg_rec_attacks, _ = separate_attacks_counterattacks(df, rec_vote=["-"])
-    neg_rec_att_eff = calcola_efficienza(neg_rec_attacks, 'attacco', pos=['#'], neg=['=', '/'])
-
-    # Att(R!): ricezione esclamativa
-    escl_rec_attacks, _ = separate_attacks_counterattacks(df, rec_vote=["!"])
-    escl_rec_att_eff = calcola_efficienza(escl_rec_attacks, 'attacco', pos=['#'], neg=['=', '/'])
-
-    # Totale ricezione e contrattacchi
-    all_rec_attacks, counterattacks = separate_attacks_counterattacks(df)  # default ["#","+","!","-"]
-    all_rec_att_eff = calcola_efficienza(all_rec_attacks, 'attacco', pos=['#'], neg=['=', '/'])
-    counterattacks_eff = calcola_efficienza(counterattacks, 'attacco', pos=['#'], neg=['=', '/'])
-
-    # Unione elenco giocatori su tutte le tabelle disponibili
-    all_players = set(battuta_eff['Giocatore']).union(
-        rice_eff['Giocatore'],
-        all_rec_att_eff['Giocatore'],
-        pos_rec_att_eff['Giocatore'],
-        neg_rec_att_eff['Giocatore'],
-        escl_rec_att_eff['Giocatore'],
-        counterattacks_eff['Giocatore'],
-        muro_eff['Giocatore'],
-        errors['Giocatore']
-    )
-
-    # MultiIndex: con rinomina delle tre colonne richieste
-    sections = [
-        'Battuta', 'Ricezione', 'Attacco(rice tot)',
-        'Att(R#+)', 'Att(R!)', 'Att(R-)',
-        'Contrattacco', 'Muro', 'Errori'
-    ]
-    multiindex_cols = pd.MultiIndex.from_product([sections, []])
-
-    # DataFrame vuoto
-    player_summary_df = pd.DataFrame(index=sorted(list(all_players)), columns=multiindex_cols, dtype=object)
-
-    # Helper per popolare (aggiunge dinamicamente le sotto-colonne)
-    def populate_stats(df_source, col_level1, df_dest):
-        if df_source is not None and not df_source.empty:
-            for _, row in df_source.iterrows():
-                player = row['Giocatore']
-                existing_level2 = df_dest.columns.get_level_values(level=1)[
-                    df_dest.columns.get_level_values(level=0) == col_level1
-                ].tolist()
-                new_level2 = [col for col in row.drop('Giocatore').index.tolist() if col not in existing_level2]
-                if new_level2:
-                    new_cols = pd.MultiIndex.from_product([[col_level1], new_level2])
-                    df_dest = df_dest.reindex(columns=df_dest.columns.tolist() + new_cols.tolist())
-                for col in row.drop('Giocatore').index:
-                    df_dest.loc[player, (col_level1, col)] = row[col]
-        return df_dest
-
-    # Popola tutte le sezioni
-    player_summary_df = populate_stats(battuta_eff, 'Battuta', player_summary_df)
-    player_summary_df = populate_stats(rice_eff, 'Ricezione', player_summary_df)
-    player_summary_df = populate_stats(all_rec_att_eff, 'Attacco(rice tot)', player_summary_df)
-    player_summary_df = populate_stats(pos_rec_att_eff, 'Att(R#+)', player_summary_df)
-    player_summary_df = populate_stats(escl_rec_att_eff, 'Att(R!)', player_summary_df)
-    player_summary_df = populate_stats(neg_rec_att_eff, 'Att(R-)', player_summary_df)
-    player_summary_df = populate_stats(counterattacks_eff, 'Contrattacco', player_summary_df)
-    player_summary_df = populate_stats(muro_eff, 'Muro', player_summary_df)
-    player_summary_df = populate_stats(errors, 'Errori', player_summary_df)
-
-    # Formattazione: percentuali su 'Eff'/'Pos', conteggi come int, vuoti -> '-'
-    for col_level1 in sections:
-        if col_level1 in player_summary_df.columns.get_level_values(level=0):
-            for col_level2 in player_summary_df[col_level1].columns:
-                if col_level2 in ['Eff', 'Pos']:
-                    numeric_col = pd.to_numeric(player_summary_df[(col_level1, col_level2)], errors='coerce')
-                    player_summary_df[(col_level1, col_level2)] = numeric_col.apply(
-                        lambda x: '{:.0%}'.format(x) if pd.notna(x) else '-'
-                    )
-                else:
-                    player_summary_df[(col_level1, col_level2)] = (
-                        pd.to_numeric(player_summary_df[(col_level1, col_level2)], errors='coerce')
-                        .fillna(-1).astype(int).replace(-1, '-')
-                    )
-    return player_summary_df
