@@ -1,7 +1,15 @@
-pandas
-numpy
-matplotlib
-openpyxl
-xlsxwriter
-fpdf2
-python-dotenv
+# Dipendenze runtime per l'esecuzione locale dei notebook (classifiche.ipynb, tabellino.ipynb).
+# Versioni pinnate a quelle testate con Python 3.9 in .venv (2026-08-08).
+# Su Colab le versioni preinstallate vanno bene: pandas/numpy/matplotlib/openpyxl sono già
+# presenti; solo xlsxwriter, fpdf2 e python-dotenv vengono installati al volo se mancanti.
+pandas==2.3.3
+numpy==2.0.2
+matplotlib==3.9.4
+openpyxl==3.1.5
+xlsxwriter==3.2.9
+fpdf2==2.8.4
+python-dotenv==1.2.1
+
+# Necessario per eseguire i notebook come kernel Jupyter in Cursor/VS Code
+# (in precedenza installato manualmente, non dichiarato).
+ipykernel==6.31.0

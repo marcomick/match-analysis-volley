@@ -30,9 +30,9 @@
 
 - [ ] Eventuale estrazione della sezione "altro" in poi di tabellino.ipynb (create_player_summary_df, export licenziati/caranzetti, "SO per rotazioni") — volutamente esclusa dai due giri di refactoring precedenti
 
-- [ ] Confronto KPI cross-stagione
+- [x] requirements.txt completo e testato — versioni pinnate a quelle verificate funzionanti (Python 3.9), aggiunto ipykernel (mancava: necessario per eseguire i notebook in Cursor/VS Code, prima installato manualmente senza essere dichiarato). Testato installando in un venv pulito ed eseguendo end-to-end sia classifiche.ipynb che tabellino.ipynb (write_files=False): nessun errore.
 
-- [ ] requirements.txt completo e testato
+- [ ] Confronto KPI cross-stagione
 
 ### Priorità bassa / idee future
 
