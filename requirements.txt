@@ -13,3 +13,7 @@ python-dotenv==1.2.1
 # Necessario per eseguire i notebook come kernel Jupyter in Cursor/VS Code
 # (in precedenza installato manualmente, non dichiarato).
 ipykernel==6.31.0
+
+# Dashboard interattiva (dashboard/app.py): streamlit run dashboard/app.py
+streamlit==1.50.0
+plotly==6.9.0

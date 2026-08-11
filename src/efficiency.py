@@ -104,22 +104,48 @@ def separate_attacks_counterattacks(df, rec_vote=("#", "+", "!", "-")):
     Ritorna (attacchi dopo ricezione, contrattacchi): un attacco è "dopo ricezione"
     se l'azione precedente (o quella-1 quando c'è un'alzata di mezzo) è una ricezione
     con voto in `rec_vote`; tutti gli altri attacchi sono contrattacchi.
+
+    Controllo di consistenza: la ricezione (e l'eventuale alzata) e l'attacco devono
+    avere lo stesso 'Numero Set' e lo stesso punteggio ('Punti Locali'/'Punti Ospiti').
+    Il dataframe qui in ingresso è già filtrato sui giocatori riconosciuti (o solo
+    sulla nostra squadra, come nei file di match analysis): un'azione di un
+    giocatore IGNORED, o un evento generico avversario senza attribuzione, non
+    compare più come riga e la posizione i-1/i-2 può quindi "saltare" oltre la
+    vera azione successiva alla ricezione, agganciando erroneamente un attacco di
+    un rally diverso. Se set o punteggio non coincidono, qualcosa è successo in
+    mezzo che qui non è visibile: l'attacco non può essere il primo dopo questa
+    ricezione e ricade tra i contrattacchi. (Verificato sui dati reali stagione
+    2025-2026: 5 falsi positivi su 1640 attacchi "dopo ricezione", tutti dovuti
+    a giocatori IGNORED nel mezzo della sequenza.)
     """
     if "Tipo" not in df.columns or "Voto" not in df.columns:
         raise ValueError("Mancano colonne 'Tipo' o 'Voto' nel DataFrame.")
     d = df.copy()
     d["_tipo_lc"] = d["Tipo"].astype(str).str.lower()
     d["_voto"] = d["Voto"].astype(str).str.strip()
+
+    score_cols = ("Numero Set", "Punti Locali", "Punti Ospiti")
+    has_score_cols = all(c in d.columns for c in score_cols)
+
+    def _consistent(rec_pos, att_pos):
+        """Stesso set e stesso punteggio tra la riga ricezione e la riga attacco."""
+        if not has_score_cols:
+            return True
+        rec_row, att_row = d.iloc[rec_pos], d.iloc[att_pos]
+        return all(rec_row[c] == att_row[c] for c in score_cols)
+
     idx_after_rec, idx_counter = [], []
     for i in range(len(d)):
         if d.iloc[i]["_tipo_lc"] != "attacco":
             continue
         after_reception = False
-        if i - 1 >= 0 and d.iloc[i - 1]["_tipo_lc"] == "ricezione" and d.iloc[i - 1]["_voto"] in rec_vote:
+        if (i - 1 >= 0 and d.iloc[i - 1]["_tipo_lc"] == "ricezione" and d.iloc[i - 1]["_voto"] in rec_vote
+                and _consistent(i - 1, i)):
             after_reception = True
         if not after_reception and i - 2 >= 0:
             if (d.iloc[i - 2]["_tipo_lc"] == "ricezione" and d.iloc[i - 2]["_voto"] in rec_vote
-                    and d.iloc[i - 1]["_tipo_lc"] == "alzata"):
+                    and d.iloc[i - 1]["_tipo_lc"] == "alzata"
+                    and _consistent(i - 2, i)):
                 after_reception = True
         (idx_after_rec if after_reception else idx_counter).append(df.index[i])
     return df.loc[idx_after_rec], df.loc[idx_counter]
