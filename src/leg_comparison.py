@@ -1,6 +1,6 @@
 # src/leg_comparison.py
 """
-Confronto KPI andata vs ritorno (ed eventuale playoff) tra le partite della
+Confronto KPI andata vs ritorno (ed eventuale playout) tra le partite della
 stagione, sia a livello squadra che per giocatore.
 
 Riusa calcola_efficienza/find_errors già estratte in src/efficiency.py.
@@ -9,11 +9,11 @@ Non tocca notebooks/tabellino.ipynb né la sua sezione "altro" (fuori scope).
 Concetti chiave:
 - Ogni partita viene caricata singolarmente (non concatenata come in
   classifiche.ipynb), taggata con:
-  - `leg`: 'A' andata, 'R' ritorno, 'POA'/'POR' playoff (sempre e solo JVC);
+  - `leg`: 'A' andata, 'R' ritorno, 'POA'/'POR' playout (sempre e solo JVC);
   - `giornata`: posizione dell'avversario nell'ordine del girone di andata
     (0-based) — usata per allineare andata/ritorno dello stesso avversario;
   - `x_label`: etichetta per l'asse X del grafico "per avversario" (grafico 1):
-    il nome avversario per A/R, `PLAYOFF_LABEL` per POA/POR — il playoff ha
+    il nome avversario per A/R, `PLAYOUT_LABEL` per POA/POR — il playout ha
     una posizione propria in coda (dopo l'ultimo avversario del girone), non
     è più raggruppato con la partita di andata/ritorno contro JVC;
   - `match_seq`: indice cronologico assoluto 0..27 su tutta la stagione,
@@ -39,7 +39,7 @@ from config.paths import ROOT, build_base_path, load_matches
 from src.efficiency import (
     calcola_efficienza,
     find_errors,
-    separate_attacks_counterattacks,
+    separate_attack_types,
     eff_scalar,
     SRV_POS,
     SRV_NEG,
@@ -48,9 +48,9 @@ from src.efficiency import (
 TEAM = "Decimo"
 IDENTITIES_CSV = ROOT / "config" / "player_identities.csv"
 
-# Etichetta per la posizione "playoff" nel grafico per avversario (grafico 1):
+# Etichetta per la posizione "playout" nel grafico per avversario (grafico 1):
 # una 14ª posizione a sé stante, dopo l'ultimo avversario del girone di andata.
-PLAYOFF_LABEL = "JVC (PO)"
+PLAYOUT_LABEL = "JVC (PO)"
 
 # Per ciascun fondamentale, i voti positivi/negativi usati per il KPI di efficienza
 # percentuale (stile tabellino) — anche fonte dei conteggi voto grezzi riusati dai
@@ -84,20 +84,36 @@ ABS_KPI_DEFS = {
 ERRORI_KPI = "Errori"
 
 # KPI "Attacco SO" (side-out: attacco immediatamente successivo a una ricezione,
-# al più con un'alzata di mezzo) e "Contrattacco" (tutti gli altri attacchi) —
-# vedi separate_attacks_counterattacks. Il voto di ricezione che qualifica
-# l'attacco come "SO" è parametrico (`rec_vote`), non fisso: la dashboard lo
-# espone come filtro, quindi questi KPI non fanno parte di
-# ALL_KPIS/build_comparison_dataset (calcolati una volta per stagione), ma di
-# build_attacco_so_dataset (ricalcolato quando il filtro cambia). Contrattacco
-# non dipende da `rec_vote` di per sé, ma è il complementare di Attacco SO
-# rispetto allo stesso split, quindi cambia comunque insieme ad esso.
+# al più con un'alzata di mezzo), "Attacco FB" (free ball: attacco immediatamente
+# successivo a una difesa Voto '!', palla facile rimandata nel nostro campo — vedi
+# separate_free_ball) e "Contrattacco" (tutti gli altri attacchi) — vedi
+# separate_attack_types, che li produce come tre gruppi disgiunti ed esaustivi
+# (Attacco SO Tot + Attacco FB Tot + Contrattacco Tot == Attacco Tot, sempre).
+# Il voto di ricezione che qualifica l'attacco come "SO" è parametrico
+# (`rec_vote`), non fisso: la dashboard lo espone come filtro, quindi questi KPI
+# non fanno parte di ALL_KPIS/build_comparison_dataset (calcolati una volta per
+# stagione), ma di build_attacco_so_dataset (ricalcolato quando il filtro
+# cambia). Attacco FB e Contrattacco non dipendono da `rec_vote` di per sé, ma
+# sono complementari ad Attacco SO rispetto allo stesso split, quindi cambiano
+# comunque insieme ad esso (i confini SO/FB/Contrattacco si spostano insieme).
+#
+# Nota storica: prima del 2026-08-12 "Contrattacco" includeva anche gli attacchi
+# dopo free ball (separate_attacks_counterattacks, due vie). Corretto perché una
+# free ball è una situazione favorevole distinta da un vero contrattacco/rimessa
+# in gioco confusa — l'efficienza attesa è diversa, va tenuta separata.
 ATTACCO_SO_KPI_LABELS = {
     "eff": "Attacco SO%",
     "tot": "Attacco SO Tot",
     "punti": "Attacco SO # (punti)",
     "errori": "Attacco SO = (errori)",
     "murati": "Attacco SO / (murati)",
+}
+ATTACCO_FB_KPI_LABELS = {
+    "eff": "Attacco FB%",
+    "tot": "Attacco FB Tot",
+    "punti": "Attacco FB # (punti)",
+    "errori": "Attacco FB = (errori)",
+    "murati": "Attacco FB / (murati)",
 }
 CONTRATTACCO_KPI_LABELS = {
     "eff": "Contrattacco%",
@@ -116,11 +132,15 @@ for _kpi in ("Attacco%", "Attacco Tot", "Attacco # (punti)", "Attacco = (errori)
     ATTACK_FAMILY_TOT_KPI[_kpi] = "Attacco Tot"
 for _key, _label in ATTACCO_SO_KPI_LABELS.items():
     ATTACK_FAMILY_TOT_KPI[_label] = ATTACCO_SO_KPI_LABELS["tot"]
+for _key, _label in ATTACCO_FB_KPI_LABELS.items():
+    ATTACK_FAMILY_TOT_KPI[_label] = ATTACCO_FB_KPI_LABELS["tot"]
 for _key, _label in CONTRATTACCO_KPI_LABELS.items():
     ATTACK_FAMILY_TOT_KPI[_label] = CONTRATTACCO_KPI_LABELS["tot"]
 del _kpi, _key, _label
 
-PERCENT_KPIS = set(EFF_KPI_LABELS.values()) | {ATTACCO_SO_KPI_LABELS["eff"], CONTRATTACCO_KPI_LABELS["eff"]}
+PERCENT_KPIS = set(EFF_KPI_LABELS.values()) | {
+    ATTACCO_SO_KPI_LABELS["eff"], ATTACCO_FB_KPI_LABELS["eff"], CONTRATTACCO_KPI_LABELS["eff"],
+}
 ALL_KPIS = list(EFF_KPI_LABELS.values()) + list(TOT_KPI_LABELS.values()) + list(ABS_KPI_DEFS) + [ERRORI_KPI]
 ERROR_COLS = ["battuta", "attacco", "muro", "alzata"]
 
@@ -128,32 +148,60 @@ ERROR_COLS = ["battuta", "attacco", "muro", "alzata"]
 OFFICIAL_RESULTS_FILENAME = "risultati_decimo_{season}.txt"
 
 
+# Intestazioni di blocco per i 2 playout, oltre a "Giornata N" (regular season)
+# — mappate sulle stesse posizioni 27/28 usate da match_seq + 1 (POA -> giornata
+# 27, match_seq 26; POR -> giornata 28, match_seq 27).
+_PLAYOUT_BLOCK_GIORNATA = {"Playout Andata": 27, "Playout Ritorno": 28}
+
+
+def _parse_set_score(token):
+    """
+    'pa/pb' -> (pa, pb). Tollera prefissi non numerici sul token (es.
+    '#11/15', visto nel file risultati per il playout ritorno 2025-2026 —
+    probabile nota procedurale della federazione, non chiara nel significato
+    ma non altera il punteggio) estraendo solo le cifre, invece di fallire
+    silenziosamente o di lasciare un ValueError poco leggibile su int('#11').
+    """
+    nums = re.findall(r"\d+", token)
+    if len(nums) != 2:
+        raise ValueError(f"Punteggio set non riconosciuto: {token!r}")
+    return (int(nums[0]), int(nums[1]))
+
+
 def parse_official_results(file_path):
     """
-    Parsa il file testuale ufficiale dei risultati del campionato (a blocchi
-    "Giornata N", righe tab-separated N./Data/Località/Squadra A/Squadra B/
-    RIS/PARZIALI — esportato dal sito federale). Fonte autorevole per i
-    punteggi finali dei set: i dati Excel di match analysis non riportano mai
-    esplicitamente il punteggio finale di un set (vedi compute_set_outcomes).
+    Parsa il file testuale ufficiale dei risultati (a blocchi "Giornata N"
+    per il campionato regolare, "Playout Andata"/"Playout Ritorno" per i 2
+    playout — righe tab-separated N./Data/Località/Squadra A/Squadra B/
+    RIS/PARZIALI, esportato dal sito federale/aggiunto a mano per il playout).
+    Fonte autorevole per i punteggi finali dei set: i dati Excel di match
+    analysis non riportano mai esplicitamente il punteggio finale di un set
+    (vedi compute_set_outcomes).
 
     Ritorna un dict {giornata: {squadra_a, squadra_b, sets_a, sets_b, parziali}},
-    con `parziali` = lista di tuple (punti_a, punti_b) una per set.
+    con `parziali` = lista di tuple (punti_a, punti_b) una per set. `giornata`
+    per i playout è 27/28 (vedi _PLAYOUT_BLOCK_GIORNATA), corrispondente a
+    match_seq + 1 come per il campionato regolare.
     """
     results = {}
     giornata = None
     with open(file_path, encoding="utf-8") as f:
         for line in f:
             line = line.rstrip("\n")
-            m = re.match(r"Giornata\s+(\d+)", line.strip())
+            stripped = line.strip()
+            m = re.match(r"Giornata\s+(\d+)", stripped)
             if m:
                 giornata = int(m.group(1))
+                continue
+            if stripped in _PLAYOUT_BLOCK_GIORNATA:
+                giornata = _PLAYOUT_BLOCK_GIORNATA[stripped]
                 continue
             parts = line.split("\t")
             if len(parts) < 7 or parts[0].strip() in ("", "N."):
                 continue
             squadra_a, squadra_b, ris, parziali_str = parts[3], parts[4], parts[5], parts[6]
             sets_a, sets_b = (int(x) for x in ris.split("-"))
-            parziali = [tuple(int(x) for x in p.split("/")) for p in parziali_str.split()]
+            parziali = [_parse_set_score(p) for p in parziali_str.split()]
             results[giornata] = {
                 "squadra_a": squadra_a.strip(), "squadra_b": squadra_b.strip(),
                 "sets_a": sets_a, "sets_b": sets_b, "parziali": parziali,
@@ -164,10 +212,13 @@ def parse_official_results(file_path):
 def _load_official_results(season):
     """
     Carica i risultati ufficiali per la stagione, se il file esiste (vedi
-    OFFICIAL_RESULTS_FILENAME) — copre solo il campionato regolare (andata +
-    ritorno), non i playoff. Ritorna {} se il file non è presente: le partite
-    coperte usano i punteggi esatti, le altre (playoff, o stagioni senza questo
-    file) ricadono sulla ricostruzione approssimata da compute_set_outcomes.
+    OFFICIAL_RESULTS_FILENAME) — copre il campionato regolare (andata +
+    ritorno, blocchi "Giornata N") e, se presenti nel file, i 2 playout
+    (blocchi "Playout Andata"/"Playout Ritorno", aggiunti a mano dal sito
+    federale non avendo un export automatico dedicato). Ritorna {} se il
+    file non è presente: le partite coperte usano i punteggi esatti, le
+    altre (stagioni senza questo file, o senza i blocchi playout) ricadono
+    sulla ricostruzione approssimata da compute_set_outcomes.
     """
     path = build_base_path(season=season) / OFFICIAL_RESULTS_FILENAME.format(season=season)
     if not path.exists():
@@ -272,22 +323,22 @@ def get_opponent_order(season="2025-2026"):
 def get_x_axis_order(season="2025-2026"):
     """
     Le posizioni (in ordine) dell'asse X del grafico "per avversario" (grafico 1):
-    i 13 avversari del girone di andata, seguiti dalla posizione playoff a sé
-    stante (PLAYOFF_LABEL).
+    i 13 avversari del girone di andata, seguiti dalla posizione playout a sé
+    stante (PLAYOUT_LABEL).
     """
-    return get_opponent_order(season) + [PLAYOFF_LABEL]
+    return get_opponent_order(season) + [PLAYOUT_LABEL]
 
 
 def load_all_matches(season="2025-2026"):
     """
-    Carica tutte le partite attive della stagione (regular season + playoff),
+    Carica tutte le partite attive della stagione (regular season + playout),
     una per una, filtrate sui giocatori riconosciuti.
 
     Ritorna una lista di dict: {leg, opponent, giornata, x_label, match_seq,
     decimo_locali, official_result, df}. `official_result` è il risultato
     ufficiale (vedi parse_official_results) se disponibile per questa partita
     — copre le 26 di andata/ritorno se il file dei risultati esiste per la
-    stagione, None per i playoff (o se il file manca): in quel caso
+    stagione, None per i playout (o se il file manca): in quel caso
     compute_set_outcomes/compute_match_outcome ricostruiscono un'approssimazione
     dal file Excel di match analysis.
     """
@@ -326,17 +377,17 @@ def load_all_matches(season="2025-2026"):
             x_label = row["opponent"]
             match_seq = n_opponents + giornata
         elif leg == "POA":
-            x_label = PLAYOFF_LABEL
+            x_label = PLAYOUT_LABEL
             match_seq = 2 * n_opponents        # 27ª partita (0-based: n_opponents*2)
         elif leg == "POR":
-            x_label = PLAYOFF_LABEL
+            x_label = PLAYOUT_LABEL
             match_seq = 2 * n_opponents + 1    # 28ª partita
         else:
             x_label = row["opponent"]
             match_seq = None
 
         # giornata ufficiale = match_seq + 1 (match_seq è 0-based, 0..25 per andata+ritorno,
-        # 26/27 per i playoff — mai presenti nel file dei risultati ufficiali).
+        # 26/27 per i playout — mai presenti nel file dei risultati ufficiali).
         official_result = official_results.get(match_seq + 1) if match_seq is not None else None
 
         out.append({
@@ -545,19 +596,23 @@ def _attack_split_player_totals(sub_df):
 
 def compute_team_attacco_so_kpis(df_match, rec_vote=DEFAULT_REC_VOTE):
     """
-    KPI squadra "Attacco SO" e "Contrattacco" per una singola partita:
-    efficienza e conteggi assoluti (totale/punti/errori/murati) sui due
-    sottoinsiemi di attacchi determinati da separate_attacks_counterattacks
+    KPI squadra "Attacco SO", "Attacco FB" e "Contrattacco" per una singola
+    partita: efficienza e conteggi assoluti (totale/punti/errori/murati) sui
+    tre sottoinsiemi disgiunti di attacchi determinati da separate_attack_types
     (SO = dopo una ricezione con voto in `rec_vote`, al più con un'alzata di
-    mezzo; contrattacco = tutti gli altri). Ritorna {kpi_label: valore}.
+    mezzo; FB = dopo una free ball; contrattacco = tutti gli altri). Ritorna
+    {kpi_label: valore}.
     """
-    so_df, ctr_df = separate_attacks_counterattacks(df_match, rec_vote=rec_vote)
+    so_df, fb_df, ctr_df = separate_attack_types(df_match, rec_vote=rec_vote)
     so_stats = _attack_split_totals(so_df)
+    fb_stats = _attack_split_totals(fb_df)
     ctr_stats = _attack_split_totals(ctr_df)
 
     out = {}
     for key, label in ATTACCO_SO_KPI_LABELS.items():
         out[label] = so_stats[key]
+    for key, label in ATTACCO_FB_KPI_LABELS.items():
+        out[label] = fb_stats[key]
     for key, label in CONTRATTACCO_KPI_LABELS.items():
         out[label] = ctr_stats[key]
     return out
@@ -565,13 +620,15 @@ def compute_team_attacco_so_kpis(df_match, rec_vote=DEFAULT_REC_VOTE):
 
 def compute_player_attacco_so_kpis(df_match, rec_vote=DEFAULT_REC_VOTE):
     """
-    KPI per giocatore "Attacco SO" e "Contrattacco" per una singola partita
-    (vedi compute_team_attacco_so_kpis). Ritorna un DataFrame indicizzato per
-    'Giocatore'. Un giocatore assente da una delle due famiglie non ha fatto
-    nessun attacco di quel tipo in questa partita (buco, non uno zero esplicito).
+    KPI per giocatore "Attacco SO", "Attacco FB" e "Contrattacco" per una
+    singola partita (vedi compute_team_attacco_so_kpis). Ritorna un DataFrame
+    indicizzato per 'Giocatore'. Un giocatore assente da una delle tre
+    famiglie non ha fatto nessun attacco di quel tipo in questa partita
+    (buco, non uno zero esplicito).
     """
-    so_df, ctr_df = separate_attacks_counterattacks(df_match, rec_vote=rec_vote)
+    so_df, fb_df, ctr_df = separate_attack_types(df_match, rec_vote=rec_vote)
     so_player = _attack_split_player_totals(so_df)
+    fb_player = _attack_split_player_totals(fb_df)
     ctr_player = _attack_split_player_totals(ctr_df)
 
     per_player = {}
@@ -579,12 +636,20 @@ def compute_player_attacco_so_kpis(df_match, rec_vote=DEFAULT_REC_VOTE):
         entry = per_player.setdefault(player, {})
         for key, label in ATTACCO_SO_KPI_LABELS.items():
             entry[label] = stats[key]
+    for player, stats in fb_player.items():
+        entry = per_player.setdefault(player, {})
+        for key, label in ATTACCO_FB_KPI_LABELS.items():
+            entry[label] = stats[key]
     for player, stats in ctr_player.items():
         entry = per_player.setdefault(player, {})
         for key, label in CONTRATTACCO_KPI_LABELS.items():
             entry[label] = stats[key]
 
-    all_cols = list(ATTACCO_SO_KPI_LABELS.values()) + list(CONTRATTACCO_KPI_LABELS.values())
+    all_cols = (
+        list(ATTACCO_SO_KPI_LABELS.values())
+        + list(ATTACCO_FB_KPI_LABELS.values())
+        + list(CONTRATTACCO_KPI_LABELS.values())
+    )
     return pd.DataFrame.from_dict(per_player, orient="index").reindex(columns=all_cols)
 
 
@@ -621,7 +686,7 @@ def apply_min_attacks_threshold(player_df, threshold):
 
 def build_comparison_dataset(season="2025-2026", matches=None):
     """
-    Assembla le tabelle "tidy" per il confronto andata/ritorno/playoff (i KPI
+    Assembla le tabelle "tidy" per il confronto andata/ritorno/playout (i KPI
     "fissi" di ALL_KPIS — non i KPI "Attacco SO", parametrici: vedi
     build_attacco_so_dataset).
 
@@ -661,13 +726,20 @@ def build_comparison_dataset(season="2025-2026", matches=None):
 
 def build_attacco_so_dataset(season="2025-2026", rec_vote=DEFAULT_REC_VOTE, matches=None):
     """
-    Come build_comparison_dataset, ma per i KPI "Attacco SO" e "Contrattacco"
-    (vedi ATTACCO_SO_KPI_LABELS/CONTRATTACCO_KPI_LABELS), parametrizzati sul
-    voto di ricezione che qualifica l'attacco come "dopo ricezione".
+    Come build_comparison_dataset, ma per i KPI "Attacco SO", "Attacco FB" e
+    "Contrattacco" (vedi ATTACCO_SO_KPI_LABELS/ATTACCO_FB_KPI_LABELS/
+    CONTRATTACCO_KPI_LABELS), parametrizzati sul voto di ricezione che
+    qualifica l'attacco come "dopo ricezione" (Attacco FB e Contrattacco non
+    dipendono direttamente da `rec_vote`, ma i loro confini si spostano
+    insieme ad Attacco SO perché sono complementari sullo stesso split).
     """
     if matches is None:
         matches = load_all_matches(season)
-    kpi_cols = list(ATTACCO_SO_KPI_LABELS.values()) + list(CONTRATTACCO_KPI_LABELS.values())
+    kpi_cols = (
+        list(ATTACCO_SO_KPI_LABELS.values())
+        + list(ATTACCO_FB_KPI_LABELS.values())
+        + list(CONTRATTACCO_KPI_LABELS.values())
+    )
     team_rows = []
     player_rows = []
 

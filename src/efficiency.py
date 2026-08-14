@@ -154,21 +154,115 @@ def separate_attacks_counterattacks(df, rec_vote=("#", "+", "!", "-")):
 def separate_free_ball(df):
     """
     Ritorna gli attacchi che avvengono subito dopo una difesa con voto '!'
-    (o dopo un'alzata che segue una difesa '!').
+    (free ball: palla rimandata facile nel nostro campo — convenzione Tipo
+    'difesa'/Voto '!'), o dopo un'alzata che segue una difesa '!'.
+
+    Stesso controllo di consistenza di separate_attacks_counterattacks:
+    difesa (ed eventuale alzata) e attacco devono avere lo stesso
+    'Numero Set' e lo stesso punteggio ('Punti Locali'/'Punti Ospiti'),
+    altrimenti un'azione IGNORED nel mezzo della sequenza potrebbe agganciare
+    erroneamente un attacco di un rally diverso alla difesa (stesso bug già
+    corretto in separate_attacks_counterattacks — fix applicato qui per
+    parità, 2026-08-12).
     """
     if "Tipo" not in df.columns or "Voto" not in df.columns:
         raise ValueError("Mancano colonne 'Tipo' o 'Voto' nel DataFrame.")
     d = df.copy()
     d["_tipo_lc"] = d["Tipo"].astype(str).str.lower()
     d["_voto"] = d["Voto"].astype(str).str.strip()
+
+    score_cols = ("Numero Set", "Punti Locali", "Punti Ospiti")
+    has_score_cols = all(c in d.columns for c in score_cols)
+
+    def _consistent(def_pos, att_pos):
+        if not has_score_cols:
+            return True
+        def_row, att_row = d.iloc[def_pos], d.iloc[att_pos]
+        return all(def_row[c] == att_row[c] for c in score_cols)
+
     idx_free_ball = []
     for i in range(1, len(d)):
-        if (d.iloc[i - 1]["_tipo_lc"] == "difesa" and d.iloc[i - 1]["_voto"] == "!") or \
-           (i - 2 >= 0 and d.iloc[i - 2]["_tipo_lc"] == "difesa" and d.iloc[i - 2]["_voto"] == "!"
-                and d.iloc[i - 1]["_tipo_lc"] == "alzata"):
-            if d.iloc[i]["_tipo_lc"] == "attacco":
-                idx_free_ball.append(d.index[i])
+        if d.iloc[i]["_tipo_lc"] != "attacco":
+            continue
+        after_free_ball = False
+        if (d.iloc[i - 1]["_tipo_lc"] == "difesa" and d.iloc[i - 1]["_voto"] == "!"
+                and _consistent(i - 1, i)):
+            after_free_ball = True
+        elif (i - 2 >= 0 and d.iloc[i - 2]["_tipo_lc"] == "difesa" and d.iloc[i - 2]["_voto"] == "!"
+                and d.iloc[i - 1]["_tipo_lc"] == "alzata" and _consistent(i - 2, i)):
+            after_free_ball = True
+        if after_free_ball:
+            idx_free_ball.append(d.index[i])
     return df.loc[idx_free_ball]
+
+
+def separate_attack_types(df, rec_vote=("#", "+", "!", "-")):
+    """
+    Come separate_attacks_counterattacks, ma a tre vie: distingue anche gli
+    attacchi immediatamente successivi a una free ball (difesa Voto '!',
+    vedi separate_free_ball) dal contrattacco generico — sono situazioni
+    favorevoli (palla facile) concettualmente diverse da una vera azione di
+    rimessa in gioco confusa, e prima venivano contate insieme nel
+    contrattacco.
+
+    Stesso controllo di consistenza (Numero Set/punteggio) usato da
+    separate_attacks_counterattacks e separate_free_ball. Ritorna
+    (so_df, freeball_df, contrattacco_df): tre sottoinsiemi disgiunti ed
+    esaustivi di tutti gli attacchi del dataframe — per costruzione,
+    so_df + freeball_df + contrattacco_df ricopre esattamente tutti gli
+    attacchi (verificato: Attacco SO Tot + Attacco FB Tot + Contrattacco Tot
+    == Attacco Tot, sempre, stagione 2025-2026).
+
+    Nota: non sostituisce separate_attacks_counterattacks/separate_free_ball
+    (usate anche da export_tabellino_to_xlsx con la vecchia sovrapposizione
+    a due vie, lasciata invariata) — è una funzione aggiuntiva per i casi
+    (dashboard/pagella) che vogliono i tre gruppi non sovrapposti.
+    """
+    if "Tipo" not in df.columns or "Voto" not in df.columns:
+        raise ValueError("Mancano colonne 'Tipo' o 'Voto' nel DataFrame.")
+    d = df.copy()
+    d["_tipo_lc"] = d["Tipo"].astype(str).str.lower()
+    d["_voto"] = d["Voto"].astype(str).str.strip()
+
+    score_cols = ("Numero Set", "Punti Locali", "Punti Ospiti")
+    has_score_cols = all(c in d.columns for c in score_cols)
+
+    def _consistent(pos_a, pos_b):
+        if not has_score_cols:
+            return True
+        row_a, row_b = d.iloc[pos_a], d.iloc[pos_b]
+        return all(row_a[c] == row_b[c] for c in score_cols)
+
+    idx_so, idx_freeball, idx_contr = [], [], []
+    for i in range(len(d)):
+        if d.iloc[i]["_tipo_lc"] != "attacco":
+            continue
+
+        after_reception = False
+        if (i - 1 >= 0 and d.iloc[i - 1]["_tipo_lc"] == "ricezione" and d.iloc[i - 1]["_voto"] in rec_vote
+                and _consistent(i - 1, i)):
+            after_reception = True
+        elif (i - 2 >= 0 and d.iloc[i - 2]["_tipo_lc"] == "ricezione" and d.iloc[i - 2]["_voto"] in rec_vote
+                and d.iloc[i - 1]["_tipo_lc"] == "alzata" and _consistent(i - 2, i)):
+            after_reception = True
+
+        after_free_ball = False
+        if not after_reception:
+            if (i - 1 >= 0 and d.iloc[i - 1]["_tipo_lc"] == "difesa" and d.iloc[i - 1]["_voto"] == "!"
+                    and _consistent(i - 1, i)):
+                after_free_ball = True
+            elif (i - 2 >= 0 and d.iloc[i - 2]["_tipo_lc"] == "difesa" and d.iloc[i - 2]["_voto"] == "!"
+                    and d.iloc[i - 1]["_tipo_lc"] == "alzata" and _consistent(i - 2, i)):
+                after_free_ball = True
+
+        if after_reception:
+            idx_so.append(df.index[i])
+        elif after_free_ball:
+            idx_freeball.append(df.index[i])
+        else:
+            idx_contr.append(df.index[i])
+
+    return df.loc[idx_so], df.loc[idx_freeball], df.loc[idx_contr]
 
 
 def calcola_efficienza_free_ball(df):

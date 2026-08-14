@@ -1,6 +1,6 @@
 # dashboard/app.py
 """
-Dashboard interattiva: confronto KPI andata vs ritorno (con playoff per JVC)
+Dashboard interattiva: confronto KPI andata vs ritorno (con playout per JVC)
 tra le partite della stagione, sia a livello squadra che per giocatore, più un
 confronto multi-giocatore per singolo KPI lungo tutta la stagione.
 
@@ -8,8 +8,8 @@ Avvio: streamlit run dashboard/app.py
 
 Sezione 1 — "Confronto per KPI — Squadra / Giocatore":
 per ogni avversario (13, in ordine di giornata di andata) + una 14ª posizione
-per il playoff (solo JVC): barre raggruppate andata/ritorno/playoff-andata/
-playoff-ritorno, e due linee di trend sovrapposte (andata, ritorno) che
+per il playout (solo JVC): barre raggruppate andata/ritorno/playout-andata/
+playout-ritorno, e due linee di trend sovrapposte (andata, ritorno) che
 uniscono i valori delle 13 giornate di ciascun girone. Le linee sono lisciate
 con un kernel gaussiano e si interrompono dove mancano dati (giocatore non in
 campo); barre e/o trend sono attivabili/disattivabili.
@@ -17,7 +17,7 @@ campo); barre e/o trend sono attivabili/disattivabili.
 Sezione 2 — "Confronto tra giocatori":
 per un KPI scelto, una linea continua per ciascuna entità selezionata
 (Squadra e/o giocatori) lungo tutte le 28 partite della stagione (andata,
-ritorno, playoff andata = 27ª, playoff ritorno = 28ª), con tabella
+ritorno, playout andata = 27ª, playout ritorno = 28ª), con tabella
 riepilogativa min/mediana/max per entità.
 
 Sezione 3 — "Confronto KPI per una singola entità":
@@ -38,6 +38,18 @@ Soglia minima attacchi (sidebar): per i KPI della famiglia "attacco"
 raggiunge questo numero di attacchi della stessa famiglia, per quella
 partita/KPI risulta senza dati (vedi
 src.leg_comparison.apply_min_attacks_threshold) — non un valore a zero.
+
+Sezione 4 — "Pagella giocatore" (src.player_report, in corso — base dati,
+non ancora una vera pagella narrativa): una tab per giocatore Decimo
+riconosciuto, con presenze/assenze (src.attendance) e i finding di
+rendimento più notevoli (streak di partite consecutive sopra/sotto la
+mediana stagionale, o cambio di livello nel punto di rottura più marcato
+della stagione) su un sottoinsieme curato di KPI — ognuno con un grafico
+di evidenza (la serie grezza del KPI lungo la stagione, con la porzione
+del finding evidenziata in verde/rosso). Non applica la soglia minima
+attacchi della sidebar (i
+finding sono calcolati sulla serie completa, i grafici devono restare
+coerenti con quella stessa serie).
 """
 import os
 import sys
@@ -54,6 +66,7 @@ if REPO_ROOT not in sys.path:
 
 from src.leg_comparison import (
     ALL_KPIS,
+    ATTACCO_FB_KPI_LABELS,
     ATTACCO_SO_KPI_LABELS,
     CONTRATTACCO_KPI_LABELS,
     DEFAULT_REC_VOTE,
@@ -65,14 +78,24 @@ from src.leg_comparison import (
     get_x_axis_order,
     load_all_matches,
 )
+from src.player_report import build_player_report_base
+from src.player_season_report import build_player_season_report
 
 SEASON = "2025-2026"
-N_REGULAR_MATCHES = 28  # 13 andata + 13 ritorno + 2 playoff (POA, POR)
+N_REGULAR_MATCHES = 28  # 13 andata + 13 ritorno + 2 playout (POA, POR)
 REC_VOTE_OPTIONS = ["#", "+", "!", "-", "/", "="]
 
-# ALL_KPIS + i KPI "Attacco SO"/"Contrattacco" (parametrici sull'esito ricezione,
-# vedi sidebar) — lista mostrata in tutti i multiselect della dashboard.
-DISPLAY_KPIS = ALL_KPIS + list(ATTACCO_SO_KPI_LABELS.values()) + list(CONTRATTACCO_KPI_LABELS.values())
+# ALL_KPIS + i KPI "Attacco SO"/"Attacco FB"/"Contrattacco" (parametrici
+# sull'esito ricezione, vedi sidebar — Attacco FB e Contrattacco non
+# dipendono direttamente dal filtro ma si spostano insieme ad Attacco SO,
+# essendo complementari sullo stesso split) — lista mostrata in tutti i
+# multiselect della dashboard.
+DISPLAY_KPIS = (
+    ALL_KPIS
+    + list(ATTACCO_SO_KPI_LABELS.values())
+    + list(ATTACCO_FB_KPI_LABELS.values())
+    + list(CONTRATTACCO_KPI_LABELS.values())
+)
 
 # ---------------------------------------------------------------------------
 # Palette — hue categoriche validate CVD-safe (vedi skill dataviz / palette.md),
@@ -81,7 +104,7 @@ DISPLAY_KPIS = ALL_KPIS + list(ATTACCO_SO_KPI_LABELS.values()) + list(CONTRATTAC
 # theme=None a st.plotly_chart per avere pieno controllo, e ricalcoliamo i
 # colori ad ogni render in base a st.context.theme.type.
 # Sezione 1: andata/ritorno restano lo stesso colore sia in barra che in linea
-# di trend (il colore segue l'entità "girone"); i playoff usano la stessa hue
+# di trend (il colore segue l'entità "girone"); i playout usano la stessa hue
 # con opacità ridotta (encoding secondario) invece di nuovi colori.
 # Sezione 2/3: colore per entità/KPI assegnato in ordine fisso sulla lista
 # completa delle opzioni disponibili, non su quelle selezionate — così il
@@ -91,7 +114,7 @@ PALETTE_LIGHT = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300
 PALETTE_DARK = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#9085e9", "#e66767"]
 ENTITY_DASHES = ["solid", "dash", "dot", "dashdot"]
 
-LEG_LABELS = {"A": "Andata", "R": "Ritorno", "POA": "Playoff andata", "POR": "Playoff ritorno"}
+LEG_LABELS = {"A": "Andata", "R": "Ritorno", "POA": "Playout andata", "POR": "Playout ritorno"}
 LEG_ORDER = ["A", "R", "POA", "POR"]
 
 # Palette di stato (vinta/persa) — fissa, non dipende dal tema (come da dataviz
@@ -137,7 +160,7 @@ def match_seq_tick_labels(opponent_order):
     """
     Etichette asse X del grafico "Confronto tra giocatori": nome avversario
     (abbreviato se necessario), ripetuto per andata (0..12) e ritorno (13..25);
-    playoff (26, 27) con suffisso per distinguere andata/ritorno.
+    playout (26, 27) con suffisso per distinguere andata/ritorno.
     """
     labels = [abbr_opponent(o) for o in opponent_order]
     labels += [abbr_opponent(o) for o in opponent_order]
@@ -170,6 +193,18 @@ def load_attacco_so_data(season, rec_vote):
 def load_match_outcomes(season):
     matches = load_matches_cached(season)
     return build_match_outcomes_dataset(season, matches=matches)
+
+
+@st.cache_data(show_spinner="Calcolo pagella giocatore...")
+def load_player_report(season, rec_vote):
+    matches = load_matches_cached(season)
+    return build_player_report_base(season, rec_vote=rec_vote, matches=matches)
+
+
+@st.cache_data(show_spinner="Calcolo report di sintesi stagionale...")
+def load_player_season_report(season, rec_vote):
+    matches = load_matches_cached(season)
+    return build_player_season_report(season, rec_vote=rec_vote, matches=matches)
 
 
 def kernel_smooth(y, bandwidth):
@@ -234,23 +269,31 @@ def add_result_strip(fig, match_outcomes_df, x_positions, tick_labels, row=2, co
     """
     Aggiunge, alla riga subplot indicata, una striscia di marker quadrati:
     verde = partita vinta, rosso = persa, grigio = esito indeterminato (vedi
-    partita_vinta in compute_match_outcome — capita solo per i due playoff
-    quando manca il file dei risultati ufficiali) — alle stesse posizioni X
+    partita_vinta in compute_match_outcome — capita quando manca il file dei
+    risultati ufficiali per quella partita) — alle stesse posizioni X
     (match_seq) del grafico principale sopra, così il confronto è immediato.
     """
     lookup = match_outcomes_df.set_index("match_seq")["partita_vinta"]
     colors, texts = [], []
     for x in x_positions:
         esito = lookup.get(x)
-        if esito is True:
-            colors.append(WIN_COLOR)
-            texts.append("Vinta")
-        elif esito is False:
-            colors.append(LOSS_COLOR)
-            texts.append("Persa")
-        else:
+        # NON usare 'is True'/'is False': un valore booleano estratto da una
+        # colonna pandas è un numpy.bool_, non un bool nativo, e
+        # 'numpy.True_ is True' vale False in Python — con 'is' la striscia
+        # risultava sempre grigia, qualunque fosse il vero esito (bug
+        # riscontrato in verifica il 2026-08-12, mai notato prima perché la
+        # differenza visiva grigio/colorato passava inosservata a uno sguardo
+        # superficiale). 'esito is None' resta corretto per la chiave
+        # mancante: Series.get() ritorna None (non NaN) di default.
+        if esito is None:
             colors.append(UNKNOWN_COLOR)
             texts.append("Esito indeterminato")
+        elif esito:
+            colors.append(WIN_COLOR)
+            texts.append("Vinta")
+        else:
+            colors.append(LOSS_COLOR)
+            texts.append("Persa")
 
     fig.add_trace(
         go.Scatter(
@@ -367,10 +410,25 @@ def build_player_comparison_chart(
 
 
 def format_kpi_value(kpi, value):
-    """Formatta un valore per la tabella riepilogativa, in base al tipo di KPI (percentuale o conteggio)."""
+    """Formatta un valore GREZZO di singola partita (sempre un intero per i
+    conteggi), per tabelle/hover — vedi format_kpi_average per le medie."""
     if kpi in PERCENT_KPIS:
         return f"{value:.1f}%"
     return f"{value:.0f}"
+
+
+def format_kpi_average(kpi, value):
+    """
+    Formatta una MEDIA (mediana stagionale, media di uno streak, media
+    prima/seconda metà) — a differenza di format_kpi_value, i conteggi non
+    sono arrotondati a intero: una media come 0.15 conteggi/partita non va
+    confusa con "0" (bug riscontrato e corretto nella pagella giocatore:
+    "Ricezione = (ace subiti): da 0 a 0" con format_kpi_value su medie
+    frazionarie — la differenza reale (es. 0.15 vs 0.35) restava invisibile).
+    """
+    if kpi in PERCENT_KPIS:
+        return f"{value:.1f}%"
+    return f"{value:.2f}"
 
 
 def build_kpi_comparison_chart(
@@ -463,7 +521,7 @@ def render_kpi_section(team_df, player_df, x_axis_order, entity_options):
 
 def render_comparison_section(team_df, player_df, entity_options, opponent_order, match_outcomes_df):
     st.header("Confronto tra giocatori")
-    st.caption("Linea continua per entità lungo tutta la stagione (asse X: avversario, andata poi ritorno; in coda il playoff, sempre JVC) — striscia sotto: esito partita (verde=vinta, rosso=persa)")
+    st.caption("Linea continua per entità lungo tutta la stagione (asse X: avversario, andata poi ritorno; in coda il playout, sempre JVC) — striscia sotto: esito partita (verde=vinta, rosso=persa)")
 
     col_a, col_b = st.columns(2)
     with col_a:
@@ -531,9 +589,251 @@ def render_kpi_comparison_section(team_df, player_df, entity_options, opponent_o
         st.warning(f"Nessun dato per {compare_entity} sui KPI selezionati.")
 
 
+_LEG_WORD = {"A": "andata", "R": "ritorno", "POA": "playout andata", "POR": "playout ritorno"}
+
+
+def build_match_label_lookup(team_df):
+    """
+    match_seq -> 'Avversario (andata/ritorno/playout andata/playout ritorno)'
+    — per riferirsi ai finding della pagella per squadra e leg invece che per
+    numero di partita nudo (richiesto esplicitamente dall'utente il
+    2026-08-13; il numero resta disponibile tra parentesi in format_finding_text).
+    """
+    rows = team_df[["match_seq", "opponent", "leg"]].drop_duplicates("match_seq").set_index("match_seq")
+    return {
+        ms: f"{abbr_opponent(row['opponent'])} ({_LEG_WORD[row['leg']]})"
+        for ms, row in rows.iterrows()
+    }
+
+
+def _match_ref(ms, match_label_lookup):
+    """'partita N' come fallback se il match_seq non è nel lookup (non
+    dovrebbe succedere con dati validi, ma meglio un fallback esplicito che
+    un KeyError)."""
+    label = match_label_lookup.get(ms, f"partita {ms + 1}")
+    return f"{label} (partita {ms + 1})"
+
+
+def format_finding_text(finding, match_label_lookup):
+    """Frase discorsiva per un finding di src.player_report (streak o cambio
+    di livello) — vedi build_finding_chart per l'evidenza grafica."""
+    kpi = finding["kpi"]
+    direzione = finding["direzione"]
+    if finding["tipo_finding"] == "streak":
+        return (
+            f"**{kpi}** — periodo **{direzione}** da {_match_ref(finding['start_match_seq'], match_label_lookup)} "
+            f"a {_match_ref(finding['end_match_seq'], match_label_lookup)} ({finding['length']} partite di fila): "
+            f"media {format_kpi_average(kpi, finding['mean_value'])} contro una mediana stagionale di "
+            f"{format_kpi_average(kpi, finding['baseline'])}."
+        )
+    return (
+        f"**{kpi}** — cambio di livello **{direzione}** da {_match_ref(finding['split_match_seq'], match_label_lookup)} "
+        f"in poi: da {format_kpi_average(kpi, finding['prima_media'])} a "
+        f"{format_kpi_average(kpi, finding['dopo_media'])} "
+        f"(pendenza di regressione: {finding['slope']:+.3f} per partita)."
+    )
+
+
+def build_finding_chart(kpi, player_label, finding, player_df_all, opponent_order):
+    """
+    Grafico di evidenza per un singolo finding: la serie grezza del KPI lungo
+    tutta la stagione (28 partite), con la porzione che ha generato il
+    finding evidenziata — verde = favorevole, rosso = sfavorevole (stessa
+    convenzione status color di add_result_strip, qui applicata al
+    finding invece che all'esito partita).
+    """
+    match_seq_full = list(range(N_REGULAR_MATCHES))
+    sub = player_df_all[(player_df_all["player"] == player_label) & (player_df_all["kpi"] == kpi)]
+    sub = sub.set_index("match_seq").reindex(match_seq_full)
+    values = sub["value"].to_numpy()
+
+    colors = theme_colors()
+    highlight_color = WIN_COLOR if finding["direzione"] == "positivo" else LOSS_COLOR
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=match_seq_full, y=values, mode="lines+markers",
+        line=dict(color=colors["palette"][0], width=2), marker=dict(size=6),
+        connectgaps=False, showlegend=False,
+        customdata=[format_kpi_value(kpi, v) if not np.isnan(v) else "" for v in values],
+        hovertemplate="%{x}<br>%{customdata}<extra></extra>",
+    ))
+
+    if finding["tipo_finding"] == "streak":
+        fig.add_vrect(
+            x0=finding["start_match_seq"] - 0.5, x1=finding["end_match_seq"] + 0.5,
+            fillcolor=hex_to_rgba(highlight_color, 0.18), line_width=0,
+        )
+        fig.add_hline(
+            y=finding["baseline"], line_dash="dot", line_color=colors["grid"],
+            annotation_text="mediana stagionale", annotation_position="bottom right",
+        )
+    else:
+        # split_match_seq è la PRIMA partita del "dopo" — la linea di
+        # spartiacque va appena prima di quel punto.
+        split = finding["split_match_seq"] - 0.5
+        fig.add_vline(x=split, line_dash="dash", line_color=colors["grid"], annotation_text="cambio di livello")
+        fig.add_shape(
+            type="line", x0=0, x1=split,
+            y0=finding["prima_media"], y1=finding["prima_media"],
+            line=dict(color=colors["grid"], dash="dot", width=2),
+        )
+        fig.add_shape(
+            type="line", x0=split, x1=N_REGULAR_MATCHES - 1,
+            y0=finding["dopo_media"], y1=finding["dopo_media"],
+            line=dict(color=highlight_color, dash="dot", width=2),
+        )
+
+    tick_labels = match_seq_tick_labels(opponent_order)
+    fig.update_xaxes(tickmode="array", tickvals=match_seq_full, ticktext=tick_labels)
+    fig.update_layout(**base_layout(f"{kpi} — {player_label}", "Avversario", kpi))
+    fig.update_layout(height=320, margin=dict(t=60, b=40))
+    return fig
+
+
+EFFICIENCY_FAMILY_LABELS = {
+    "ricezione": "Ricezione%",
+    "attacco": "Attacco%",
+    "attacco_so": "Attacco SO%",
+    "attacco_fb": "Attacco FB%",
+    "contrattacco": "Contrattacco%",
+    "battuta": "Battuta%",
+}
+
+
+def render_season_summary(season_data, match_label_lookup):
+    """
+    Sintesi stagionale per un giocatore (src.player_season_report,
+    richiesta esplicitamente dall'utente il 2026-08-14): efficienze
+    aggregate e conteggi medi/partita curati per ruolo, punti di
+    forza/debolezza (soglie assolute + confronto con i compagni), obiettivi
+    per la prossima stagione (mediana di riferimento), partita migliore/
+    peggiore per punteggio composito e per singolo KPI notevole.
+    """
+    st.subheader("Sintesi stagionale")
+    st.caption(f"{season_data['n_partite_giocate']} partite giocate")
+
+    efficienze = {k: v for k, v in season_data["efficienze"].items() if v[0] is not None}
+    if efficienze:
+        st.markdown("**Efficienze aggregate di stagione**")
+        cols = st.columns(min(len(efficienze), 4))
+        for i, (key, (eff, tot)) in enumerate(efficienze.items()):
+            label = EFFICIENCY_FAMILY_LABELS.get(key, key)
+            cols[i % len(cols)].metric(label, f"{eff:.1f}%", help=f"{tot} tentativi in stagione")
+
+    conteggi = {k: v for k, v in season_data["conteggi_medi_partita"].items() if v[0] is not None}
+    if conteggi:
+        st.markdown("**Conteggi medi a partita**")
+        table = pd.DataFrame([
+            {"KPI": k, "Media/partita": round(media, 2), "Totale stagione": tot, "Partite con dati": n}
+            for k, (media, tot, n) in conteggi.items()
+        ])
+        st.dataframe(table, width="stretch", hide_index=True)
+
+    col_a, col_b = st.columns(2)
+    with col_a:
+        st.markdown("**Punti di forza**")
+        if season_data["punti_forza"]:
+            for f in season_data["punti_forza"]:
+                st.markdown(f"✅ **{f['area']}** — {f['motivo']}")
+        else:
+            st.caption("Nessuno di particolarmente notevole.")
+    with col_b:
+        st.markdown("**Punti deboli**")
+        if season_data["punti_deboli"]:
+            for f in season_data["punti_deboli"]:
+                st.markdown(f"⚠️ **{f['area']}** — {f['motivo']}")
+        else:
+            st.caption("Nessuno di particolarmente notevole.")
+
+    if season_data["obiettivi_prossima_stagione"]:
+        st.markdown("**Obiettivi per la prossima stagione** (portarsi dalla parte giusta della mediana di riferimento tra compagni)")
+        for t in season_data["obiettivi_prossima_stagione"]:
+            label = EFFICIENCY_FAMILY_LABELS.get(t["kpi"], t["kpi"]) if t["tipo"] == "eff" else t["kpi"]
+            unit = "%" if t["tipo"] == "eff" else ""
+            st.markdown(f"🎯 {label}: {t['valore']:.1f}{unit} (mediana di riferimento {t['mediana']:.1f}{unit})")
+
+    if season_data["composito_migliore"] or season_data["composito_peggiore"]:
+        st.markdown("**Partita migliore/peggiore** (punteggio composito: punti fatti − errori fatti)")
+        col_c, col_d = st.columns(2)
+        best, worst = season_data["composito_migliore"], season_data["composito_peggiore"]
+        if best:
+            ref = match_label_lookup.get(best["match_seq"], f"partita {best['match_seq'] + 1}")
+            col_c.metric("Migliore", f"+{best['netto']}", help=f"{ref} — {best['punti']} punti, {best['errori']} errori")
+        if worst:
+            ref = match_label_lookup.get(worst["match_seq"], f"partita {worst['match_seq'] + 1}")
+            col_d.metric("Peggiore", f"{worst['netto']:+d}", help=f"{ref} — {worst['punti']} punti, {worst['errori']} errori")
+
+    if season_data["partite_notevoli"]:
+        st.markdown("**Partite singole notevoli**")
+        for n in season_data["partite_notevoli"]:
+            ref = match_label_lookup.get(n["match_seq"], f"partita {n['match_seq'] + 1}")
+            simbolo = "📈" if n["tipo"] == "migliore" else "📉"
+            st.markdown(f"{simbolo} **{n['kpi']}** — {n['tipo']} a {ref}: {n['value']:.0f} (mediana stagionale {n['baseline']:.1f})")
+
+
+def render_player_report_section(report, not_in_registry, season_report, player_df_all, team_df, opponent_order):
+    st.header("Pagella giocatore")
+    st.caption(
+        "Presenze/assenze e finding di rendimento più notevoli per giocatore — streak (media mobile "
+        "di 3 partite giocate consecutive sopra/sotto la mediana stagionale, per intercettare anche "
+        "una crescita/calo momentaneo) o cambio di livello (il punto di rottura più marcato della "
+        "stagione, non necessariamente a metà), su un sottoinsieme curato di KPI (percentuali "
+        "principali + pochi conteggi mirati). Per i KPI percentuali, le partite con troppi pochi "
+        "tentativi (< 5 su circa 120 azioni totali a partita) sono escluse dal calcolo. Per i "
+        "palleggiatori la famiglia attacco è esclusa a priori (dati troppo scarsi per il ruolo)."
+    )
+    if not_in_registry:
+        st.caption(
+            "Nel foglio presenze ma non nel registro giocatori (non mostrati qui): "
+            + ", ".join(not_in_registry)
+        )
+
+    cognomi = sorted(report.keys())
+    if not cognomi:
+        st.info("Nessun giocatore trovato.")
+        return
+
+    match_label_lookup = build_match_label_lookup(team_df)
+    tabs = st.tabs(cognomi)
+    for tab, cognome in zip(tabs, cognomi):
+        with tab:
+            data = report[cognome]
+            pres = data["presenze"]
+
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Ruolo", data["ruolo"] or "n/d")
+            if pres:
+                col2.metric("Assenza", f"{pres['tasso_assenza'] * 100:.1f}%")
+                col3.metric("Presente / Convocato", f"{pres['n_presente']}/{pres['n_convocato']}")
+            else:
+                col2.metric("Assenza", "n/d")
+
+            season_data = season_report.get(cognome)
+            if season_data:
+                st.divider()
+                render_season_summary(season_data, match_label_lookup)
+
+            st.divider()
+            st.subheader("Andamento nel corso della stagione")
+            if not data["findings"]:
+                st.info("Nessun finding notevole per questo giocatore (dati insufficienti o troppo stabili).")
+                continue
+
+            player_label = data["player_label"]
+            if player_label is None:
+                st.warning("Nessuna serie KPI disponibile per questo giocatore.")
+                continue
+
+            for finding in data["findings"]:
+                st.markdown(format_finding_text(finding, match_label_lookup))
+                fig = build_finding_chart(finding["kpi"], player_label, finding, player_df_all, opponent_order)
+                st.plotly_chart(fig, theme=None)
+
+
 def main():
     st.title("Decimo Roma — Confronto Andata vs Ritorno")
-    st.caption(f"Stagione {SEASON} · playoff (solo JVC) mostrato come 14ª posizione / 27ª-28ª partita")
+    st.caption(f"Stagione {SEASON} · playout (solo JVC) mostrato come 14ª posizione / 27ª-28ª partita")
 
     with st.sidebar:
         st.header("Impostazioni generali")
@@ -568,21 +868,32 @@ def main():
     team_df_fixed, player_df_fixed = load_data(SEASON)
     team_df_so, player_df_so = load_attacco_so_data(SEASON, tuple(selected_rec_vote))
     team_df = pd.concat([team_df_fixed, team_df_so], ignore_index=True)
-    player_df = pd.concat([player_df_fixed, player_df_so], ignore_index=True)
-    player_df = apply_min_attacks_threshold(player_df, min_attacks)
+    # player_df_all: senza soglia minima attacchi — è la base su cui src.player_report
+    # ha calcolato i finding della pagella, i grafici di evidenza devono usare la
+    # stessa serie (altrimenti un finding potrebbe riferirsi a partite che nel
+    # grafico risultano "senza dati" per effetto della soglia della sidebar).
+    player_df_all = pd.concat([player_df_fixed, player_df_so], ignore_index=True)
+    player_df = apply_min_attacks_threshold(player_df_all, min_attacks)
 
     match_outcomes_df = load_match_outcomes(SEASON)
+    rec_vote_for_report = tuple(selected_rec_vote) if selected_rec_vote else DEFAULT_REC_VOTE
+    player_report, player_report_missing = load_player_report(SEASON, rec_vote_for_report)
+    season_report = load_player_season_report(SEASON, rec_vote_for_report)
 
     x_axis_order = get_x_axis_order(SEASON)
     players = sorted(player_df["player"].unique())
     entity_options = ["Squadra"] + players
-    opponent_order = x_axis_order[:-1]  # senza PLAYOFF_LABEL, per il grafico 2
+    opponent_order = x_axis_order[:-1]  # senza PLAYOUT_LABEL, per il grafico 2
 
     render_kpi_section(team_df, player_df, x_axis_order, entity_options)
     st.divider()
     render_comparison_section(team_df, player_df, entity_options, opponent_order, match_outcomes_df)
     st.divider()
     render_kpi_comparison_section(team_df, player_df, entity_options, opponent_order, match_outcomes_df)
+    st.divider()
+    render_player_report_section(
+        player_report, player_report_missing, season_report, player_df_all, team_df, opponent_order,
+    )
 
 
 if __name__ == "__main__":

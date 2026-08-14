@@ -98,3 +98,15 @@ def build_base_path(season: str) -> Path:
         return Path("/content/drive/MyDrive") / drive_path
     else:
         return get_base_path()
+
+
+def build_competition_root_path(season: str) -> Path:
+    """
+    Cartella della competizione per la stagione, un livello sopra
+    'Match analysis' (dove punta base_path_drive) — usata per file
+    team-wide non specifici di una singola partita, es. il foglio
+    presenze U19 (vedi src/attendance.py). Assume che base_path_drive
+    termini con 'Match analysis', convenzione attuale in seasons.csv;
+    se in futuro cambia, questa funzione va aggiornata di conseguenza.
+    """
+    return build_base_path(season).parent
