@@ -51,6 +51,7 @@ attacchi della sidebar (i
 finding sono calcolati sulla serie completa, i grafici devono restare
 coerenti con quella stessa serie).
 """
+import io
 import os
 import sys
 
@@ -58,6 +59,8 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from docx import Document
+from docx.shared import Inches, Pt
 from plotly.subplots import make_subplots
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -634,31 +637,16 @@ def format_finding_text(finding, match_label_lookup):
     )
 
 
-def build_finding_chart(kpi, player_label, finding, player_df_all, opponent_order):
+def _add_finding_annotation(fig, finding, colors):
     """
-    Grafico di evidenza per un singolo finding: la serie grezza del KPI lungo
-    tutta la stagione (28 partite), con la porzione che ha generato il
-    finding evidenziata — verde = favorevole, rosso = sfavorevole (stessa
-    convenzione status color di add_result_strip, qui applicata al
-    finding invece che all'esito partita).
+    Aggiunge a `fig` l'evidenza grafica di UN finding (rettangolo per uno
+    streak, linea di spartiacque + medie per un cambio di livello) — verde
+    se favorevole/rosso se sfavorevole (stessa convenzione status color di
+    add_result_strip). Fattorizzata da build_finding_chart per essere
+    riusata anche da build_unified_finding_chart (più finding sullo stesso
+    KPI in un unico grafico, per il report Word — vedi generate_player_report_docx).
     """
-    match_seq_full = list(range(N_REGULAR_MATCHES))
-    sub = player_df_all[(player_df_all["player"] == player_label) & (player_df_all["kpi"] == kpi)]
-    sub = sub.set_index("match_seq").reindex(match_seq_full)
-    values = sub["value"].to_numpy()
-
-    colors = theme_colors()
     highlight_color = WIN_COLOR if finding["direzione"] == "positivo" else LOSS_COLOR
-
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=match_seq_full, y=values, mode="lines+markers",
-        line=dict(color=colors["palette"][0], width=2), marker=dict(size=6),
-        connectgaps=False, showlegend=False,
-        customdata=[format_kpi_value(kpi, v) if not np.isnan(v) else "" for v in values],
-        hovertemplate="%{x}<br>%{customdata}<extra></extra>",
-    ))
-
     if finding["tipo_finding"] == "streak":
         fig.add_vrect(
             x0=finding["start_match_seq"] - 0.5, x1=finding["end_match_seq"] + 0.5,
@@ -683,6 +671,58 @@ def build_finding_chart(kpi, player_label, finding, player_df_all, opponent_orde
             y0=finding["dopo_media"], y1=finding["dopo_media"],
             line=dict(color=highlight_color, dash="dot", width=2),
         )
+
+
+def _build_base_kpi_figure(kpi, player_label, player_df_all):
+    """Traccia di base (serie grezza del KPI lungo le 28 partite) condivisa
+    da build_finding_chart e build_unified_finding_chart."""
+    match_seq_full = list(range(N_REGULAR_MATCHES))
+    sub = player_df_all[(player_df_all["player"] == player_label) & (player_df_all["kpi"] == kpi)]
+    sub = sub.set_index("match_seq").reindex(match_seq_full)
+    values = sub["value"].to_numpy()
+
+    colors = theme_colors()
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=match_seq_full, y=values, mode="lines+markers",
+        line=dict(color=colors["palette"][0], width=2), marker=dict(size=6),
+        connectgaps=False, showlegend=False,
+        customdata=[format_kpi_value(kpi, v) if not np.isnan(v) else "" for v in values],
+        hovertemplate="%{x}<br>%{customdata}<extra></extra>",
+    ))
+    return fig, colors, match_seq_full
+
+
+def build_finding_chart(kpi, player_label, finding, player_df_all, opponent_order):
+    """
+    Grafico di evidenza per un singolo finding: la serie grezza del KPI lungo
+    tutta la stagione (28 partite), con la porzione che ha generato il
+    finding evidenziata — verde = favorevole, rosso = sfavorevole (stessa
+    convenzione status color di add_result_strip, qui applicata al
+    finding invece che all'esito partita).
+    """
+    fig, colors, match_seq_full = _build_base_kpi_figure(kpi, player_label, player_df_all)
+    _add_finding_annotation(fig, finding, colors)
+
+    tick_labels = match_seq_tick_labels(opponent_order)
+    fig.update_xaxes(tickmode="array", tickvals=match_seq_full, ticktext=tick_labels)
+    fig.update_layout(**base_layout(f"{kpi} — {player_label}", "Avversario", kpi))
+    fig.update_layout(height=320, margin=dict(t=60, b=40))
+    return fig
+
+
+def build_unified_finding_chart(kpi, player_label, findings, player_df_all, opponent_order):
+    """
+    Come build_finding_chart, ma con PIÙ finding sullo stesso KPI evidenziati
+    su un unico grafico invece di uno per finding — usata dal report Word
+    (richiesto esplicitamente dall'utente il 2026-08-15: "unifica gli
+    eventi notevoli (streak o trend) in un unico grafico, se si riferiscono
+    allo stesso kpi"), non dalla tab dashboard (che resta con un grafico per
+    finding, già verificata).
+    """
+    fig, colors, match_seq_full = _build_base_kpi_figure(kpi, player_label, player_df_all)
+    for finding in findings:
+        _add_finding_annotation(fig, finding, colors)
 
     tick_labels = match_seq_tick_labels(opponent_order)
     fig.update_xaxes(tickmode="array", tickvals=match_seq_full, ticktext=tick_labels)
@@ -747,29 +787,250 @@ def render_season_summary(season_data, match_label_lookup):
             st.caption("Nessuno di particolarmente notevole.")
 
     if season_data["obiettivi_prossima_stagione"]:
-        st.markdown("**Obiettivi per la prossima stagione** (portarsi dalla parte giusta della mediana di riferimento tra compagni)")
+        st.markdown("**Obiettivi per la prossima stagione**")
         for t in season_data["obiettivi_prossima_stagione"]:
             label = EFFICIENCY_FAMILY_LABELS.get(t["kpi"], t["kpi"]) if t["tipo"] == "eff" else t["kpi"]
             unit = "%" if t["tipo"] == "eff" else ""
             st.markdown(f"🎯 {label}: {t['valore']:.1f}{unit} (mediana di riferimento {t['mediana']:.1f}{unit})")
 
-    if season_data["composito_migliore"] or season_data["composito_peggiore"]:
-        st.markdown("**Partita migliore/peggiore** (punteggio composito: punti fatti − errori fatti)")
+    best, worst = season_data["partita_migliore"], season_data["partita_peggiore"]
+    if best or worst:
+        st.markdown(f"**Partita migliore/peggiore** ({season_data['criterio_migliore_peggiore']})")
         col_c, col_d = st.columns(2)
-        best, worst = season_data["composito_migliore"], season_data["composito_peggiore"]
         if best:
             ref = match_label_lookup.get(best["match_seq"], f"partita {best['match_seq'] + 1}")
-            col_c.metric("Migliore", f"+{best['netto']}", help=f"{ref} — {best['punti']} punti, {best['errori']} errori")
+            if "netto" in best:
+                col_c.metric("Migliore", f"+{best['netto']}", help=f"{ref} — {best['punti']} punti, {best['errori']} errori")
+            else:
+                col_c.metric("Migliore", f"{best['value']:.1f}%", help=ref)
         if worst:
             ref = match_label_lookup.get(worst["match_seq"], f"partita {worst['match_seq'] + 1}")
-            col_d.metric("Peggiore", f"{worst['netto']:+d}", help=f"{ref} — {worst['punti']} punti, {worst['errori']} errori")
+            if "netto" in worst:
+                col_d.metric("Peggiore", f"{worst['netto']:+d}", help=f"{ref} — {worst['punti']} punti, {worst['errori']} errori")
+            else:
+                col_d.metric("Peggiore", f"{worst['value']:.1f}%", help=ref)
 
     if season_data["partite_notevoli"]:
-        st.markdown("**Partite singole notevoli**")
+        st.markdown("**Partite singole notevoli** (bilancio punti fatti − errori fatti, per fondamentale)")
         for n in season_data["partite_notevoli"]:
             ref = match_label_lookup.get(n["match_seq"], f"partita {n['match_seq'] + 1}")
             simbolo = "📈" if n["tipo"] == "migliore" else "📉"
-            st.markdown(f"{simbolo} **{n['kpi']}** — {n['tipo']} a {ref}: {n['value']:.0f} (mediana stagionale {n['baseline']:.1f})")
+            st.markdown(f"{simbolo} **Bilancio {n['kpi']}** — {n['tipo']} a {ref}: {n['value']:+.0f}")
+
+
+# ----------------------------------------------------------------------------
+# Report Word della pagella giocatore (pulsante "Genera report", richiesto
+# esplicitamente dall'utente il 2026-08-15) — vedi generate_player_report_docx.
+# ----------------------------------------------------------------------------
+
+ROLE_DISPLAY_NAMES = {"L": "libero", "M": "schiacciatore", "C": "centrale", "O": "opposto", "P": "palleggiatore"}
+
+
+def generate_narrative_summary(cognome, season_data, presenze):
+    """
+    Giudizio sintetico testuale in apertura del report Word — composto da
+    regole a partire dalle statistiche già calcolate (punti di forza/
+    debolezza, assenze, punteggio composito/ricezione, obiettivi), non un
+    testo libero: ogni frase è tracciabile a un numero specifico del report.
+    """
+    ruolo_nome = ROLE_DISPLAY_NAMES.get(season_data["ruolo_bucket"], "giocatore")
+    parti = [f"{cognome} ha giocato {season_data['n_partite_giocate']} partite nel ruolo di {ruolo_nome} nella stagione."]
+
+    if presenze:
+        tasso = presenze["tasso_assenza"] * 100
+        if tasso == 0:
+            parti.append("Presenza perfetta ad allenamenti e partite, senza assenze registrate.")
+        elif tasso < 10:
+            parti.append(f"Presenza regolare, con un tasso di assenza contenuto ({tasso:.1f}%).")
+        elif tasso < 20:
+            parti.append(f"Tasso di assenza nella norma ({tasso:.1f}%).")
+        else:
+            parti.append(f"Tasso di assenza elevato nel corso della stagione ({tasso:.1f}%), un aspetto da monitorare.")
+
+    punti_forza = season_data["punti_forza"]
+    punti_deboli = season_data["punti_deboli"]
+    if punti_forza and punti_deboli:
+        parti.append(
+            f"Sul piano del rendimento, i punti di forza principali sono {', '.join(f['area'] for f in punti_forza)}, "
+            f"mentre le aree su cui lavorare restano {', '.join(f['area'] for f in punti_deboli)}."
+        )
+    elif punti_forza:
+        parti.append(
+            f"Sul piano del rendimento emergono soprattutto i punti di forza in "
+            f"{', '.join(f['area'] for f in punti_forza)}, senza criticità particolarmente marcate rispetto ai compagni di ruolo."
+        )
+    elif punti_deboli:
+        parti.append(
+            f"Sul piano del rendimento le aree principali su cui lavorare sono "
+            f"{', '.join(f['area'] for f in punti_deboli)}, senza punti di forza particolarmente marcati rispetto ai compagni di ruolo."
+        )
+    else:
+        parti.append("Il rendimento stagionale resta nella norma, senza punti di forza o criticità particolarmente marcati rispetto ai compagni di ruolo.")
+
+    best, worst = season_data["partita_migliore"], season_data["partita_peggiore"]
+    if best and worst:
+        criterio = season_data["criterio_migliore_peggiore"]
+        if "netto" in best:
+            parti.append(
+                f"La partita migliore della stagione (per {criterio.lower()}) ha visto un bilancio di "
+                f"{best['netto']:+d}, contro il {worst['netto']:+d} della partita peggiore."
+            )
+        else:
+            parti.append(
+                f"La partita migliore della stagione (per {criterio.lower()}) ha toccato il {best['value']:.1f}%, "
+                f"contro il {worst['value']:.1f}% della partita peggiore."
+            )
+
+    n_obiettivi = len(season_data["obiettivi_prossima_stagione"])
+    if n_obiettivi:
+        parti.append(f"Per la prossima stagione emergono {n_obiettivi} obiettivi specifici di miglioramento, dettagliati più sotto.")
+
+    return " ".join(parti)
+
+
+def _docx_add_markdown_bold_paragraph(doc, text):
+    """
+    Aggiunge un paragrafo interpretando i marcatori '**bold**' in stile
+    Markdown (usati da format_finding_text, pensato per st.markdown) come
+    grassetto reale — altrimenti nel documento Word restano asterischi
+    letterali (bug riscontrato in verifica: "**Attacco SO%** — periodo...").
+    """
+    p = doc.add_paragraph()
+    parts = text.split("**")
+    for i, part in enumerate(parts):
+        run = p.add_run(part)
+        run.bold = bool(i % 2)
+    return p
+
+
+def _docx_add_table(doc, headers, rows):
+    table = doc.add_table(rows=1, cols=len(headers))
+    table.style = "Light Grid Accent 1"
+    for cell, header in zip(table.rows[0].cells, headers):
+        cell.text = str(header)
+    for row_values in rows:
+        cells = table.add_row().cells
+        for cell, value in zip(cells, row_values):
+            cell.text = str(value)
+    return table
+
+
+def generate_player_report_docx(cognome, data, season_data, player_df_all, team_df, opponent_order, match_label_lookup):
+    """
+    Assembla il report Word della pagella giocatore, sezione per sezione
+    (ordine richiesto esplicitamente dall'utente il 2026-08-15): giudizio
+    sintetico, ruolo/assenze, sintesi stagionale, conteggi medi a partita,
+    punti di forza/deboli (sempre presenti, anche vuoti), partita migliore/
+    peggiore e partite notevoli, grafici dell'andamento (un grafico per KPI,
+    non per finding — vedi build_unified_finding_chart), obiettivi per la
+    prossima stagione (senza la spiegazione della mediana, a differenza
+    della tab dashboard). Ritorna i byte del documento .docx.
+    """
+    doc = Document()
+    doc.add_heading(f"Pagella — {cognome}", level=0)
+
+    doc.add_heading("Giudizio sintetico", level=1)
+    doc.add_paragraph(generate_narrative_summary(cognome, season_data, data["presenze"]))
+
+    doc.add_heading("Ruolo e presenze", level=1)
+    pres = data["presenze"]
+    doc.add_paragraph(f"Ruolo: {data['ruolo'] or 'n/d'}")
+    if pres:
+        doc.add_paragraph(
+            f"Assenza: {pres['tasso_assenza'] * 100:.1f}% — presente/convocato: {pres['n_presente']}/{pres['n_convocato']}"
+        )
+    else:
+        doc.add_paragraph("Presenze: nessun dato")
+
+    doc.add_heading("Sintesi stagionale", level=1)
+    doc.add_paragraph(f"{season_data['n_partite_giocate']} partite giocate")
+    efficienze = {k: v for k, v in season_data["efficienze"].items() if v[0] is not None}
+    if efficienze:
+        _docx_add_table(
+            doc, ["KPI", "Efficienza", "Tentativi in stagione"],
+            [(EFFICIENCY_FAMILY_LABELS.get(k, k), f"{eff:.1f}%", tot) for k, (eff, tot) in efficienze.items()],
+        )
+
+    doc.add_heading("Conteggi medi a partita", level=1)
+    conteggi = {k: v for k, v in season_data["conteggi_medi_partita"].items() if v[0] is not None}
+    if conteggi:
+        _docx_add_table(
+            doc, ["KPI", "Media/partita", "Totale stagione", "Partite con dati"],
+            [(k, f"{media:.2f}", tot, n) for k, (media, tot, n) in conteggi.items()],
+        )
+    else:
+        doc.add_paragraph("Nessun conteggio disponibile per questo ruolo.")
+
+    doc.add_heading("Punti di forza", level=1)
+    if season_data["punti_forza"]:
+        for f in season_data["punti_forza"]:
+            doc.add_paragraph(f"{f['area']} — {f['motivo']}", style="List Bullet")
+    else:
+        doc.add_paragraph("Nessuno di particolarmente notevole.")
+
+    doc.add_heading("Punti deboli", level=1)
+    if season_data["punti_deboli"]:
+        for f in season_data["punti_deboli"]:
+            doc.add_paragraph(f"{f['area']} — {f['motivo']}", style="List Bullet")
+    else:
+        doc.add_paragraph("Nessuno di particolarmente notevole.")
+
+    doc.add_heading("Partita migliore e peggiore", level=1)
+    best, worst = season_data["partita_migliore"], season_data["partita_peggiore"]
+    if best or worst:
+        doc.add_paragraph(f"Criterio: {season_data['criterio_migliore_peggiore']}")
+        if best:
+            ref = match_label_lookup.get(best["match_seq"], f"partita {best['match_seq'] + 1}")
+            if "netto" in best:
+                doc.add_paragraph(f"Migliore: {ref} — {best['punti']} punti, {best['errori']} errori (netto {best['netto']:+d})", style="List Bullet")
+            else:
+                doc.add_paragraph(f"Migliore: {ref} — {best['value']:.1f}%", style="List Bullet")
+        if worst:
+            ref = match_label_lookup.get(worst["match_seq"], f"partita {worst['match_seq'] + 1}")
+            if "netto" in worst:
+                doc.add_paragraph(f"Peggiore: {ref} — {worst['punti']} punti, {worst['errori']} errori (netto {worst['netto']:+d})", style="List Bullet")
+            else:
+                doc.add_paragraph(f"Peggiore: {ref} — {worst['value']:.1f}%", style="List Bullet")
+    else:
+        doc.add_paragraph("Nessun dato sufficiente.")
+
+    doc.add_heading("Partite notevoli", level=1)
+    if season_data["partite_notevoli"]:
+        for n in season_data["partite_notevoli"]:
+            ref = match_label_lookup.get(n["match_seq"], f"partita {n['match_seq'] + 1}")
+            doc.add_paragraph(f"Bilancio {n['kpi']} — {n['tipo']} a {ref}: {n['value']:+.0f}", style="List Bullet")
+    else:
+        doc.add_paragraph("Nessuna di particolarmente notevole.")
+
+    doc.add_heading("Andamento nel corso della stagione", level=1)
+    player_label = data["player_label"]
+    findings = data["findings"]
+    if not findings or player_label is None:
+        doc.add_paragraph("Nessun finding notevole per questo giocatore.")
+    else:
+        findings_by_kpi = {}
+        for finding in findings:
+            findings_by_kpi.setdefault(finding["kpi"], []).append(finding)
+        for kpi, kpi_findings in findings_by_kpi.items():
+            doc.add_heading(kpi, level=2)
+            for finding in kpi_findings:
+                _docx_add_markdown_bold_paragraph(doc, format_finding_text(finding, match_label_lookup))
+            fig = build_unified_finding_chart(kpi, player_label, kpi_findings, player_df_all, opponent_order)
+            png_bytes = fig.to_image(format="png", width=900, height=320, scale=2)
+            doc.add_picture(io.BytesIO(png_bytes), width=Inches(6))
+
+    doc.add_heading("Obiettivi per la prossima stagione", level=1)
+    if season_data["obiettivi_prossima_stagione"]:
+        for t in season_data["obiettivi_prossima_stagione"]:
+            label = EFFICIENCY_FAMILY_LABELS.get(t["kpi"], t["kpi"]) if t["tipo"] == "eff" else t["kpi"]
+            unit = "%" if t["tipo"] == "eff" else ""
+            doc.add_paragraph(f"{label}: {t['valore']:.1f}{unit}", style="List Bullet")
+    else:
+        doc.add_paragraph("Nessun obiettivo specifico individuato.")
+
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    return buffer.getvalue()
 
 
 def render_player_report_section(report, not_in_registry, season_report, player_df_all, team_df, opponent_order):
@@ -816,19 +1077,33 @@ def render_player_report_section(report, not_in_registry, season_report, player_
 
             st.divider()
             st.subheader("Andamento nel corso della stagione")
+            player_label = data["player_label"]
             if not data["findings"]:
                 st.info("Nessun finding notevole per questo giocatore (dati insufficienti o troppo stabili).")
-                continue
-
-            player_label = data["player_label"]
-            if player_label is None:
+            elif player_label is None:
                 st.warning("Nessuna serie KPI disponibile per questo giocatore.")
-                continue
+            else:
+                for finding in data["findings"]:
+                    st.markdown(format_finding_text(finding, match_label_lookup))
+                    fig = build_finding_chart(finding["kpi"], player_label, finding, player_df_all, opponent_order)
+                    st.plotly_chart(fig, theme=None)
 
-            for finding in data["findings"]:
-                st.markdown(format_finding_text(finding, match_label_lookup))
-                fig = build_finding_chart(finding["kpi"], player_label, finding, player_df_all, opponent_order)
-                st.plotly_chart(fig, theme=None)
+            if season_data:
+                st.divider()
+                report_key = f"report_docx_{cognome}"
+                if st.button("📄 Genera report", key=f"genera_report_{cognome}"):
+                    with st.spinner("Generazione report Word..."):
+                        st.session_state[report_key] = generate_player_report_docx(
+                            cognome, data, season_data, player_df_all, team_df, opponent_order, match_label_lookup,
+                        )
+                if report_key in st.session_state:
+                    st.download_button(
+                        "⬇️ Scarica report",
+                        data=st.session_state[report_key],
+                        file_name=f"pagella_{cognome}.docx",
+                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        key=f"scarica_report_{cognome}",
+                    )
 
 
 def main():

@@ -91,6 +91,20 @@ ATTACCO_MINUS_KPI = "Attacco - (regalato)"
 BATTUTA_DIFFICOLTA_KPI = "Battuta +/!// (mette in difficoltà)"
 BATTUTA_CONSERVATIVA_KPI = "Battuta - (conservativa)"
 
+# Scomposizione completa dei voti di ricezione, richiesta esplicitamente
+# dall'utente il 2026-08-15 ("tutti gli indicatori riassuntivi dei segni
+# della ricezione") — "Ricezione = (ace subiti)" esiste già in ABS_KPI_DEFS
+# (leg_comparison.py), qui solo i 5 voti mancanti.
+RICEZIONE_PERFETTA_KPI = "Ricezione # (perfetta)"
+RICEZIONE_PRIMO_TEMPO_KPI = "Ricezione + (permette 1° tempo)"
+RICEZIONE_NO_PRIMO_TEMPO_KPI = "Ricezione ! (non permette 1° tempo)"
+RICEZIONE_ATTACCO_ALTO_KPI = "Ricezione - (permette solo attacco palla alta)"
+RICEZIONE_INVIATA_KPI = "Ricezione / (inviata nell'altro campo)"
+
+# Difesa: solo gli errori (voto '='), su indicazione esplicita dell'utente
+# il 2026-08-15 ("per quanto riguarda la difesa analizziamo solo le difese =").
+DIFESA_ERRORE_KPI = "Difesa = (errori)"
+
 # (tipo, [voti da sommare], etichetta) per _build_raw_voto_dataset.
 EXTRA_VOTO_SPECS = [
     ("muro", ["/"], MURO_ERRORE_KPI),
@@ -99,21 +113,26 @@ EXTRA_VOTO_SPECS = [
     ("attacco", ["-"], ATTACCO_MINUS_KPI),
     ("battuta", ["+", "!", "/"], BATTUTA_DIFFICOLTA_KPI),
     ("battuta", ["-"], BATTUTA_CONSERVATIVA_KPI),
+    ("ricezione", ["#"], RICEZIONE_PERFETTA_KPI),
+    ("ricezione", ["+"], RICEZIONE_PRIMO_TEMPO_KPI),
+    ("ricezione", ["!"], RICEZIONE_NO_PRIMO_TEMPO_KPI),
+    ("ricezione", ["-"], RICEZIONE_ATTACCO_ALTO_KPI),
+    ("ricezione", ["/"], RICEZIONE_INVIATA_KPI),
+    ("difesa", ["="], DIFESA_ERRORE_KPI),
 ]
 
 # Punteggio composito di partita — vedi docstring di modulo.
 COMPOSITE_POINT_KPIS = ["Battuta # (ace)", "Muro # (punti)", "Attacco # (punti)"]
 COMPOSITE_ERROR_KPIS = ["Attacco = (errori)", "Battuta = (errori)", MURO_ERRORE_KPI]
-NOTABLE_MATCH_KPIS = COMPOSITE_POINT_KPIS + COMPOSITE_ERROR_KPIS
 
 # KPI_DIRECTION di src.player_report non contiene i nuovi conteggi extra né
 # i conteggi assoluti generici di attacco (esclusi da PAGELLA_KPIS lì, ma
 # usati qui in ROLE_COUNT_KPIS) — completato qui. Serve a sapere se un
-# valore alto è un bene o un male (es. errori: alto = peggiore), usato sia
-# da find_notable_matches sia da _compute_median_targets (quest'ultimo:
-# bug corretto il 2026-08-14 — "sotto la mediana" veniva segnalato come
-# obiettivo anche per i KPI dove stare sotto è un bene, es. errori,
-# segnalando erroneamente un giocatore con MENO errori della mediana).
+# valore alto è un bene o un male (es. errori: alto = peggiore), usato da
+# _compute_median_targets (bug corretto il 2026-08-14 — "sotto la mediana"
+# veniva segnalato come obiettivo anche per i KPI dove stare sotto è un
+# bene, es. errori, segnalando erroneamente un giocatore con MENO errori
+# della mediana).
 EXTRA_KPI_DIRECTION = {
     MURO_ERRORE_KPI: -1,
     MURO_PIU_KPI: +1,
@@ -125,6 +144,12 @@ EXTRA_KPI_DIRECTION = {
     ATTACCO_MINUS_KPI: -1,
     BATTUTA_DIFFICOLTA_KPI: +1,
     BATTUTA_CONSERVATIVA_KPI: 0,  # né bene né male di per sé: informativo (stile di battuta), escluso dagli obiettivi
+    RICEZIONE_PERFETTA_KPI: +1,
+    RICEZIONE_PRIMO_TEMPO_KPI: +1,
+    RICEZIONE_NO_PRIMO_TEMPO_KPI: -1,
+    RICEZIONE_ATTACCO_ALTO_KPI: -1,
+    RICEZIONE_INVIATA_KPI: -1,
+    DIFESA_ERRORE_KPI: -1,
 }
 
 
@@ -221,45 +246,78 @@ def find_best_worst_composite_match(composite_df, player_label):
     return best, worst
 
 
-def find_notable_matches(kpi_df, player_label, kpis=None, min_points=DEFAULT_MIN_POINTS,
-                          tol_rel=DEFAULT_TOL_REL, tol_std=DEFAULT_TOL_STD):
+def find_best_worst_by_kpi(kpi_df, player_label, kpi, min_points=DEFAULT_MIN_POINTS):
     """
-    Per ciascun KPI in `kpis` (default NOTABLE_MATCH_KPIS, i 6 che generano
-    punti/errori nel punteggio composito), trova la singola partita col
-    valore più notevole in senso migliorativo e quella in senso peggiorativo
-    — riportate solo se lo scarto dalla mediana stagionale del giocatore per
-    quel KPI supera la tolleranza (altrimenti è solo il min/max di una serie
-    comunque piatta, non un vero notable). La direzione (alto=meglio o
-    basso=meglio) segue KPI_DIRECTION/EXTRA_KPI_DIRECTION.
+    Partita migliore/peggiore per un singolo KPI continuo (usata per i
+    liberi su Ricezione%, che non contribuiscono al punteggio composito
+    essendo per regolamento esclusi da attacco/muro/battuta — richiesto
+    esplicitamente dall'utente il 2026-08-15). Max/min della serie
+    stagionale; (None, None) se troppo pochi dati o se il KPI non varia mai
+    (stessa cautela di find_best_worst_composite_match).
     """
-    kpis = kpis if kpis is not None else NOTABLE_MATCH_KPIS
-    notable = []
-    for kpi in kpis:
-        direction = KPI_DIRECTION.get(kpi, EXTRA_KPI_DIRECTION.get(kpi))
-        if not direction:
-            continue
-        g = kpi_df[(kpi_df["player"] == player_label) & (kpi_df["kpi"] == kpi)].sort_values("match_seq")
-        values = g["value"].to_numpy(dtype=float)
-        match_seq = g["match_seq"].to_numpy()
-        if len(values) < min_points:
-            continue
+    g = kpi_df[(kpi_df["player"] == player_label) & (kpi_df["kpi"] == kpi)].sort_values("match_seq")
+    values = g["value"].to_numpy(dtype=float)
+    match_seq = g["match_seq"].to_numpy()
+    if len(values) < min_points or len(set(values)) <= 1:
+        return None, None
+    i_max, i_min = int(np.argmax(values)), int(np.argmin(values))
+    best = {"match_seq": int(match_seq[i_max]), "value": float(values[i_max])}
+    worst = {"match_seq": int(match_seq[i_min]), "value": float(values[i_min])}
+    return best, worst
 
-        baseline = float(np.median(values))
-        tol = _compute_tolerance(values, baseline, tol_rel, tol_std)
+
+# Bilanci per fondamentale (nome -> (kpi positivo, kpi negativo)) — richiesto
+# esplicitamente dall'utente il 2026-08-15 al posto del confronto per singolo
+# KPI assoluto ("fallo sul bilancio, più che sui singoli valori assoluti...
+# anziché darmi la migliore/peggiore partita per attacco #, dammi quella in
+# cui il bilancio attacco # - attacco = è andata meglio/peggio"). Il bilancio
+# muro usa Muro / (l'errore di muro, non Muro =) per coerenza col punteggio
+# composito.
+BILANCIO_SPECS = {
+    "Attacco": ("Attacco # (punti)", "Attacco = (errori)"),
+    "Battuta": ("Battuta # (ace)", "Battuta = (errori)"),
+    "Muro": ("Muro # (punti)", MURO_ERRORE_KPI),
+}
+
+
+def compute_bilancio_series(kpi_df, player_label, kpi_positivo, kpi_negativo):
+    """
+    Serie [match_seq -> valore] del bilancio (kpi_positivo - kpi_negativo)
+    per un giocatore, sulle partite in cui ha almeno una riga in uno dei
+    due KPI — 0 (non un buco) per il KPI mancante in una partita dove
+    l'altro è presente: ha comunque giocato quella partita, semplicemente
+    senza produrre quell'azione specifica.
+    """
+    pos = kpi_df[(kpi_df["player"] == player_label) & (kpi_df["kpi"] == kpi_positivo)].set_index("match_seq")["value"]
+    neg = kpi_df[(kpi_df["player"] == player_label) & (kpi_df["kpi"] == kpi_negativo)].set_index("match_seq")["value"]
+    all_matches = pos.index.union(neg.index)
+    if len(all_matches) == 0:
+        return None
+    return (pos.reindex(all_matches, fill_value=0) - neg.reindex(all_matches, fill_value=0)).sort_index()
+
+
+def find_notable_bilancio_matches(kpi_df, player_label, min_points=DEFAULT_MIN_POINTS):
+    """
+    Per ciascun bilancio in BILANCIO_SPECS, la partita migliore (bilancio
+    più alto della stagione) e quella peggiore (più basso) — non più il
+    singolo KPI assoluto (troppo rumoroso, sostituito il 2026-08-15 su
+    richiesta esplicita dell'utente). Il massimo/minimo di una serie è per
+    costruzione al di sopra/sotto dell'80°/20° percentile della
+    distribuzione del giocatore (il criterio di notabilità indicato
+    dall'utente) — non serve un test di soglia separato: se il bilancio non
+    varia mai (nunique<=1) semplicemente non c'è un vero migliore/peggiore.
+    """
+    notevoli = []
+    for nome, (kpi_pos, kpi_neg) in BILANCIO_SPECS.items():
+        bilancio = compute_bilancio_series(kpi_df, player_label, kpi_pos, kpi_neg)
+        if bilancio is None or len(bilancio) < min_points or bilancio.nunique() <= 1:
+            continue
+        values = bilancio.to_numpy(dtype=float)
+        match_seq = bilancio.index.to_numpy()
         i_max, i_min = int(np.argmax(values)), int(np.argmin(values))
-        i_good, i_bad = (i_max, i_min) if direction > 0 else (i_min, i_max)
-
-        if abs(values[i_good] - baseline) > tol:
-            notable.append({
-                "kpi": kpi, "tipo": "migliore", "match_seq": int(match_seq[i_good]),
-                "value": float(values[i_good]), "baseline": baseline,
-            })
-        if abs(values[i_bad] - baseline) > tol:
-            notable.append({
-                "kpi": kpi, "tipo": "peggiore", "match_seq": int(match_seq[i_bad]),
-                "value": float(values[i_bad]), "baseline": baseline,
-            })
-    return notable
+        notevoli.append({"kpi": nome, "tipo": "migliore", "match_seq": int(match_seq[i_max]), "value": float(values[i_max])})
+        notevoli.append({"kpi": nome, "tipo": "peggiore", "match_seq": int(match_seq[i_min]), "value": float(values[i_min])})
+    return notevoli
 
 
 # ----------------------------------------------------------------------------
@@ -294,18 +352,29 @@ ROLE_EFFICIENCY_FAMILIES = {
     ROLE_PALLEGGIATORE: [],
 }
 
+# Scomposizione completa dei voti di ricezione — richiesta esplicitamente
+# per tutti i ruoli che ricevono (Libero, Martello). "Ricezione = (ace
+# subiti)" da ABS_KPI_DEFS (leg_comparison.py), gli altri 5 da EXTRA_VOTO_SPECS.
+RICEZIONE_BREAKDOWN_KPIS = [
+    RICEZIONE_PERFETTA_KPI, RICEZIONE_PRIMO_TEMPO_KPI, RICEZIONE_NO_PRIMO_TEMPO_KPI,
+    RICEZIONE_ATTACCO_ALTO_KPI, RICEZIONE_INVIATA_KPI, "Ricezione = (ace subiti)",
+]
+
 ROLE_COUNT_KPIS = {
-    ROLE_LIBERO: [],
+    ROLE_LIBERO: [*RICEZIONE_BREAKDOWN_KPIS, DIFESA_ERRORE_KPI],
     ROLE_MARTELLO: [
+        *RICEZIONE_BREAKDOWN_KPIS, DIFESA_ERRORE_KPI,
         "Battuta # (ace)", "Battuta = (errori)", BATTUTA_DIFFICOLTA_KPI, BATTUTA_CONSERVATIVA_KPI,
         "Muro # (punti)", "Muro = (mani-fuori subite)",
         "Attacco # (punti)", "Attacco = (errori)", "Attacco / (murati)", ATTACCO_PLUS_KPI, ATTACCO_MINUS_KPI,
     ],
     ROLE_CENTRALE: [
+        DIFESA_ERRORE_KPI,
         "Muro # (punti)", MURO_PIU_KPI, "Muro = (mani-fuori subite)",
         "Attacco = (errori)", "Attacco / (murati)",
     ],
     ROLE_OPPOSTO: [
+        DIFESA_ERRORE_KPI,
         "Attacco # (punti)", "Attacco = (errori)", "Attacco / (murati)", ATTACCO_PLUS_KPI, ATTACCO_MINUS_KPI,
         "Muro # (punti)", MURO_PIU_KPI,
     ],
@@ -477,6 +546,10 @@ def _median_peer_buckets(kind, kpi_or_key, own_bucket):
         return (ROLE_CENTRALE,) if own_bucket == ROLE_CENTRALE else (ROLE_MARTELLO, ROLE_OPPOSTO)
     if kpi_or_key.startswith("Battuta"):
         return (ROLE_MARTELLO,)  # unico ruolo con la battuta tracciata, per ora
+    if kpi_or_key.startswith("Ricezione"):
+        return (ROLE_LIBERO, ROLE_MARTELLO)  # stesso pooling della ricezione% aggregata
+    if kpi_or_key.startswith("Difesa"):
+        return (ROLE_LIBERO, ROLE_MARTELLO, ROLE_CENTRALE, ROLE_OPPOSTO)  # universale, nessuna specificità di ruolo
     return (own_bucket,)
 
 
@@ -589,8 +662,18 @@ def build_player_season_report(season="2025-2026", rec_vote=DEFAULT_REC_VOTE, ma
         efficienze = efficienze_by_player[player_label]
         n_partite = int(kpi_df[kpi_df["player"] == player_label]["match_seq"].nunique())
 
-        best_composite, worst_composite = find_best_worst_composite_match(composite_df, player_label)
-        notevoli = find_notable_matches(kpi_df, player_label)
+        # I liberi non contribuiscono mai al punteggio composito (per
+        # regolamento non attaccano/servono/murano): partita migliore/
+        # peggiore basata sull'efficienza di ricezione della singola
+        # partita invece, richiesto esplicitamente dall'utente il 2026-08-15.
+        if bucket == ROLE_LIBERO:
+            best_match, worst_match = find_best_worst_by_kpi(kpi_df, player_label, EFF_KPI_LABELS["ricezione"])
+            criterio_migliore = "Efficienza ricezione"
+        else:
+            best_match, worst_match = find_best_worst_composite_match(composite_df, player_label)
+            criterio_migliore = "Punteggio composito (punti fatti − errori fatti)"
+
+        notevoli = find_notable_bilancio_matches(kpi_df, player_label)
 
         punti_forza = []
         punti_deboli = _absolute_threshold_flags(efficienze, conteggi)
@@ -604,8 +687,9 @@ def build_player_season_report(season="2025-2026", rec_vote=DEFAULT_REC_VOTE, ma
             "n_partite_giocate": n_partite,
             "efficienze": efficienze,
             "conteggi_medi_partita": conteggi,
-            "composito_migliore": best_composite,
-            "composito_peggiore": worst_composite,
+            "criterio_migliore_peggiore": criterio_migliore,
+            "partita_migliore": best_match,
+            "partita_peggiore": worst_match,
             "partite_notevoli": notevoli,
             "punti_forza": punti_forza,
             "punti_deboli": punti_deboli,
