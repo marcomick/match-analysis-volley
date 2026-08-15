@@ -51,6 +51,12 @@
   - [ ] Rendering finale della pagella (narrazione testuale, PDF, o pagina Streamlit dedicata) — formato non ancora deciso.
   - [ ] Report generale di singola partita (andamento partita + giocatori nel corso della partita, riusando i grafici già esistenti in `src/attacks.py`) — esplicitamente rimandato dall'utente ("per la prossima stagione"), non ancora iniziato.
 
+- [x] **Ricostruzione formazioni di partenza (P1..P6) senza referto**: `src/lineup.py` (`reconstruct_starting_lineup`/`reconstruct_match_lineups`) — dalla sola sequenza dei battitori Decimo nel log Excel, senza bisogno del referto federale (che resta comunque la fonte più attendibile per un confronto puntuale, quando disponibile). Validato su 23 set/7 partite reali contro i referti PDF: 21/23 set esatti (91%), 135/138 slot corretti (98%); i 2 scarti spiegati da un limite noto e già segnalato (sostituzione di un titolare prima che il suo slot arrivi mai a servire). Vedi CLAUDE.md per il meccanismo completo.
+  - [ ] Controllo incrociato con la regola strutturale di rotazione (posizione palleggiatore → pattern di ruolo atteso) — non ancora implementato, non risultato necessario nella validazione.
+  - [ ] Db ruoli esplicito per giocatori ibridi (Carrer/Sardella, anche Opposto) — rimandato.
+  - [ ] Esposizione di "rotazione" (= posizione del palleggiatore in una data azione) come dimensione riutilizzabile per analisi future — non ancora implementato.
+  - [ ] Integrazione in dashboard/notebook — per ora solo modulo `src/`, nessuna UI.
+
 ### Priorità bassa / idee future
 
 - [x] Dashboard interattiva (Streamlit) — realizzata per il confronto andata/ritorno (vedi sopra); da estendere eventualmente anche alle classifiche stagionali
