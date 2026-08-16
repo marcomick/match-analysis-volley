@@ -76,6 +76,25 @@ Nota dati: il Cognome va normalizzato (strip) prima del confronto — sui
 dati reali, "Licenziati" compare in almeno un file con uno spazio finale
 ("Licenziati "), che romperebbe silenziosamente il confronto con
 `setter_names` se non normalizzato.
+
+## Due famiglie separate, non sommate
+
+Richiesto esplicitamente dall'utente il 2026-08-16: "Attacco Alzato" non
+è un unico KPI ma due famiglie DISTINTE, mai sommate insieme, a seconda
+del voto di ricezione che precede l'attacco — la qualità della ricezione
+cambia sensibilmente le opzioni d'attacco realmente disponibili al
+palleggiatore, quindi mescolarle appiattirebbe un'informazione utile:
+  - **+/#** (`SETTER_ATTACK_REC_VOTE_POS`, ricezione ottima/perfetta):
+    `ATTACCO_ALZATO_POS_KPI_LABELS`.
+  - **!** (`SETTER_ATTACK_REC_VOTE_ESCL`, non permette 1° tempo, ma la
+    palla arriva comunque al palleggiatore): `ATTACCO_ALZATO_ESCL_KPI_LABELS`.
+Esclude sempre '-' (voto incluso invece nel default SO usato altrove nel
+progetto, es. src/leg_comparison.py) e ogni contrattacco/free ball: in
+quei casi non è affidabile assumere che sia stato il palleggiatore
+titolare ad alzare la palla (spesso è un'azione di emergenza, alzata da
+chi capita — coerente con le righe Tipo=='alzata' osservate sui dati
+reali: più frequenti nei liberi/difensori che coprono un'emergenza che
+nel palleggiatore titolare stesso).
 """
 import pandas as pd
 
@@ -89,26 +108,29 @@ DEFAULT_SETTER_NAMES = ("Caranzetti", "Licenziati")
 # Stesso schema di ATTACCO_SO_KPI_LABELS/ATTACCO_FB_KPI_LABELS/CONTRATTACCO_KPI_LABELS
 # in src/leg_comparison.py, qui per l'efficienza di attacco DEGLI ATTACCANTI
 # alzati dal palleggiatore in campo (vedi compute_setter_attack_kpis) — non un
-# KPI di attacco del palleggiatore stesso.
-ATTACCO_ALZATO_KPI_LABELS = {
-    "eff": "Attacco Alzato%",
-    "tot": "Attacco Alzato Tot",
-    "punti": "Attacco Alzato # (punti)",
-    "errori": "Attacco Alzato = (errori)",
-    "murati": "Attacco Alzato / (murati)",
+# KPI di attacco del palleggiatore stesso. Due famiglie separate (mai sommate,
+# vedi docstring di modulo) a seconda del voto di ricezione che precede
+# l'attacco: "+#" (ricezione ottima/perfetta) e "!" (non permette 1° tempo).
+ATTACCO_ALZATO_POS_KPI_LABELS = {
+    "eff": "Attacco Alzato +#%",
+    "tot": "Attacco Alzato +# Tot",
+    "punti": "Attacco Alzato +# # (punti)",
+    "errori": "Attacco Alzato +# = (errori)",
+    "murati": "Attacco Alzato +# / (murati)",
+}
+ATTACCO_ALZATO_ESCL_KPI_LABELS = {
+    "eff": "Attacco Alzato !%",
+    "tot": "Attacco Alzato ! Tot",
+    "punti": "Attacco Alzato ! # (punti)",
+    "errori": "Attacco Alzato ! = (errori)",
+    "murati": "Attacco Alzato ! / (murati)",
 }
 
-# Rec_vote qualificante per attribuire un attacco Side-Out al palleggiatore in
-# campo: '+' e '#' (ricezione ottima/perfetta) e '!' (non permette 1° tempo,
-# ma la palla arriva comunque al palleggiatore) — ESCLUDE esplicitamente '-'
+# Rec_vote di ciascuna famiglia — vedi docstring di modulo. Esclude sempre '-'
 # (voto incluso invece nel default SO usato altrove nel progetto, es.
-# src/leg_comparison.py) e ogni contrattacco/free ball: in quei casi non è
-# affidabile assumere che sia stato il palleggiatore titolare ad alzare la
-# palla (spesso è un'azione di emergenza, alzata da chi capita — coerente con
-# le righe Tipo=='alzata' osservate sui dati reali: più frequenti nei liberi/
-# difensori che coprono un'emergenza che nel palleggiatore titolare stesso).
-# Richiesto esplicitamente dall'utente, 2026-08-16.
-SETTER_ATTACK_REC_VOTE = ("+", "#", "!")
+# src/leg_comparison.py). Richiesto esplicitamente dall'utente, 2026-08-16.
+SETTER_ATTACK_REC_VOTE_POS = ("+", "#")
+SETTER_ATTACK_REC_VOTE_ESCL = ("!",)
 
 
 def _normalize_cognome(series):
@@ -159,29 +181,14 @@ def identify_active_setter(df_match, setter_names=DEFAULT_SETTER_NAMES):
     return assegnazione
 
 
-def compute_setter_attack_kpis(df_match, setter_names=DEFAULT_SETTER_NAMES, rec_vote=SETTER_ATTACK_REC_VOTE):
-    """
-    Per ciascun palleggiatore in `setter_names`: efficienza di attacco DEI
-    SUOI ATTACCANTI (non la sua) sulle sole azioni di Attacco Side-Out
-    (immediatamente dopo una ricezione con voto in `rec_vote`) avvenute
-    mentre risultava lui il palleggiatore in campo (identify_active_setter).
-    Esclude sempre contrattacco/free ball e le azioni con "palleggiatore in
-    campo" non determinabile.
-
-    Ritorna {cognome: {"efficienza": float|None, "tot": int, "punti": int,
-    "errori": int, "murati": int}} — efficienza None se tot == 0 (nessun
-    dato, non uno zero).
-    """
-    d = df_match.copy()
-    d["Cognome"] = _normalize_cognome(d["Cognome"])
-    assegnazione = identify_active_setter(d, setter_names)
-
-    so_df, _freeball_df, _contr_df = separate_attack_types(d, rec_vote=rec_vote)
-    setter_in_campo = assegnazione.reindex(so_df.index)
-
+def _attack_kpis_from_so_df(so_df, setter_in_campo, setter_names):
+    """Helper: dato un so_df già filtrato su UN SOLO rec_vote (una delle due
+    famiglie) e la Series setter_in_campo allineata al dataframe completo,
+    calcola {cognome: {"efficienza", "tot", "punti", "errori", "murati"}}."""
+    in_campo = setter_in_campo.reindex(so_df.index)
     risultati = {}
     for cognome in setter_names:
-        sub = so_df[setter_in_campo == cognome]
+        sub = so_df[in_campo == cognome]
         tot = len(sub)
         risultati[cognome] = {
             "efficienza": eff_from_calcola(sub, tipo_val="attacco", pos=["#"], neg=["=", "/"]) if tot > 0 else None,
@@ -191,6 +198,34 @@ def compute_setter_attack_kpis(df_match, setter_names=DEFAULT_SETTER_NAMES, rec_
             "murati": int((sub["Voto"] == "/").sum()),
         }
     return risultati
+
+
+def compute_setter_attack_kpis(df_match, setter_names=DEFAULT_SETTER_NAMES):
+    """
+    Per ciascun palleggiatore in `setter_names`, DUE famiglie separate
+    (mai sommate, vedi docstring di modulo) di efficienza di attacco DEI
+    SUOI ATTACCANTI (non la sua): "pos" (Side-Out dopo ricezione +/#) ed
+    "escl" (Side-Out dopo ricezione !) — entrambe solo sulle azioni
+    avvenute mentre risultava lui il palleggiatore in campo
+    (identify_active_setter). Esclude sempre contrattacco/free ball,
+    ricezione '-' e le azioni con "palleggiatore in campo" non determinabile.
+
+    Ritorna {cognome: {"pos": {...}, "escl": {...}}}, ciascuna con le
+    chiavi {"efficienza": float|None, "tot": int, "punti": int, "errori":
+    int, "murati": int} — efficienza None se tot == 0 (nessun dato, non
+    uno zero).
+    """
+    d = df_match.copy()
+    d["Cognome"] = _normalize_cognome(d["Cognome"])
+    assegnazione = identify_active_setter(d, setter_names)
+
+    so_pos_df, _, _ = separate_attack_types(d, rec_vote=SETTER_ATTACK_REC_VOTE_POS)
+    so_escl_df, _, _ = separate_attack_types(d, rec_vote=SETTER_ATTACK_REC_VOTE_ESCL)
+
+    pos_kpis = _attack_kpis_from_so_df(so_pos_df, assegnazione, setter_names)
+    escl_kpis = _attack_kpis_from_so_df(so_escl_df, assegnazione, setter_names)
+
+    return {cognome: {"pos": pos_kpis[cognome], "escl": escl_kpis[cognome]} for cognome in setter_names}
 
 
 def compute_setter_battuta_kpis(df_match, setter_names=DEFAULT_SETTER_NAMES):
@@ -232,14 +267,14 @@ def _load_setter_player_labels(setter_names):
     return out
 
 
-def build_setter_kpi_dataset(season="2025-2026", setter_names=DEFAULT_SETTER_NAMES,
-                              rec_vote=SETTER_ATTACK_REC_VOTE, matches=None):
+def build_setter_kpi_dataset(season="2025-2026", setter_names=DEFAULT_SETTER_NAMES, matches=None):
     """
     Tabella tidy (stesso formato di build_comparison_dataset: colonne
-    [opponent, leg, giornata, x_label, match_seq, player, kpi, value]) per i
-    KPI di "Attacco Alzato" (ATTACCO_ALZATO_KPI_LABELS) di ciascun
-    palleggiatore in `setter_names` — l'efficienza di attacco DEI SUOI
-    ATTACCANTI mentre lui risultava il palleggiatore in campo (vedi
+    [opponent, leg, giornata, x_label, match_seq, player, kpi, value]) per le
+    DUE famiglie di "Attacco Alzato" (ATTACCO_ALZATO_POS_KPI_LABELS/
+    ATTACCO_ALZATO_ESCL_KPI_LABELS, mai sommate — vedi docstring di modulo)
+    di ciascun palleggiatore in `setter_names` — l'efficienza di attacco DEI
+    SUOI ATTACCANTI mentre lui risultava il palleggiatore in campo (vedi
     identify_active_setter/compute_setter_attack_kpis).
 
     A differenza degli altri build_*_dataset del progetto, qui bisogna
@@ -285,22 +320,23 @@ def build_setter_kpi_dataset(season="2025-2026", setter_names=DEFAULT_SETTER_NAM
             "x_label": x_label, "match_seq": match_seq,
         }
 
-        attacco_kpis = compute_setter_attack_kpis(df, setter_names, rec_vote)
+        attacco_kpis = compute_setter_attack_kpis(df, setter_names)
         for cognome in setter_names:
             player_label = player_labels.get(cognome)
             if player_label is None:
                 continue
-            kpis = attacco_kpis[cognome]
-            if kpis["tot"] == 0:
-                continue  # nessun dato: buco, non uno zero (stesso trattamento del resto del progetto)
-            values = {
-                ATTACCO_ALZATO_KPI_LABELS["eff"]: kpis["efficienza"],
-                ATTACCO_ALZATO_KPI_LABELS["tot"]: kpis["tot"],
-                ATTACCO_ALZATO_KPI_LABELS["punti"]: kpis["punti"],
-                ATTACCO_ALZATO_KPI_LABELS["errori"]: kpis["errori"],
-                ATTACCO_ALZATO_KPI_LABELS["murati"]: kpis["murati"],
-            }
-            for kpi, value in values.items():
-                rows.append({**base_cols, "player": player_label, "kpi": kpi, "value": value})
+            for famiglia, labels in (("pos", ATTACCO_ALZATO_POS_KPI_LABELS), ("escl", ATTACCO_ALZATO_ESCL_KPI_LABELS)):
+                kpis = attacco_kpis[cognome][famiglia]
+                if kpis["tot"] == 0:
+                    continue  # nessun dato: buco, non uno zero (stesso trattamento del resto del progetto)
+                values = {
+                    labels["eff"]: kpis["efficienza"],
+                    labels["tot"]: kpis["tot"],
+                    labels["punti"]: kpis["punti"],
+                    labels["errori"]: kpis["errori"],
+                    labels["murati"]: kpis["murati"],
+                }
+                for kpi, value in values.items():
+                    rows.append({**base_cols, "player": player_label, "kpi": kpi, "value": value})
 
     return pd.DataFrame(rows)

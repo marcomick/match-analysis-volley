@@ -83,7 +83,7 @@ from src.leg_comparison import (
 )
 from src.player_report import build_player_report_base
 from src.player_season_report import build_player_season_report
-from src.setter_report import ATTACCO_ALZATO_KPI_LABELS, build_setter_kpi_dataset
+from src.setter_report import ATTACCO_ALZATO_ESCL_KPI_LABELS, ATTACCO_ALZATO_POS_KPI_LABELS, build_setter_kpi_dataset
 
 SEASON = "2025-2026"
 N_REGULAR_MATCHES = 28  # 13 andata + 13 ritorno + 2 playout (POA, POR)
@@ -425,7 +425,7 @@ def build_player_comparison_chart(
 # PERCENT_KPIS (src.leg_comparison) copre solo i 32 KPI "fissi" della
 # dashboard — "Attacco Alzato%" (ruolo palleggiatore, src.setter_report) non
 # ne fa parte ma va comunque formattato come percentuale nella pagella.
-PAGELLA_PERCENT_KPIS = set(PERCENT_KPIS) | {ATTACCO_ALZATO_KPI_LABELS["eff"]}
+PAGELLA_PERCENT_KPIS = set(PERCENT_KPIS) | {ATTACCO_ALZATO_POS_KPI_LABELS["eff"], ATTACCO_ALZATO_ESCL_KPI_LABELS["eff"]}
 
 
 def format_kpi_value(kpi, value):
@@ -754,7 +754,8 @@ EFFICIENCY_FAMILY_LABELS = {
     "attacco_fb": "Attacco FB%",
     "contrattacco": "Contrattacco%",
     "battuta": "Battuta%",
-    "attacco_alzato": ATTACCO_ALZATO_KPI_LABELS["eff"],
+    "attacco_alzato_pos": ATTACCO_ALZATO_POS_KPI_LABELS["eff"],
+    "attacco_alzato_escl": ATTACCO_ALZATO_ESCL_KPI_LABELS["eff"],
 }
 
 

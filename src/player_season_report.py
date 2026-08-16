@@ -26,10 +26,13 @@ Ruoli e KPI trattati (curatela concordata con l'utente il 2026-08-14):
     comunque rilevante.
   - Palleggiatore (P): non si valuta sulla propria efficienza di attacco
     (troppo poche azioni, non significative — vedi src.setter_report) ma
-    su "Attacco Alzato": l'efficienza di attacco DEI SUOI ATTACCANTI nelle
-    sole azioni in cui è ragionevole assumere che sia stato lui ad alzare
-    la palla (src.setter_report.identify_active_setter, necessario perché
-    in questa stagione due giocatori — Caranzetti, Licenziati — condividono
+    su "Attacco Alzato", in DUE famiglie separate e mai sommate (richiesto
+    esplicitamente il 2026-08-16): "+#" (dopo ricezione ottima/perfetta) e
+    "!" (dopo ricezione che non permette 1° tempo) — l'efficienza di
+    attacco DEI SUOI ATTACCANTI nelle sole azioni in cui è ragionevole
+    assumere che sia stato lui ad alzare la palla
+    (src.setter_report.identify_active_setter, necessario perché in
+    questa stagione due giocatori — Caranzetti, Licenziati — condividono
     il ruolo). Più Battuta (come per gli altri ruoli non liberi). Confronto
     di riferimento (mediana/media compagni) isolato tra i soli palleggiatori
     (gruppo di riferimento a sé, non pooled con Martello/Opposto: "Attacco
@@ -90,9 +93,9 @@ from src.player_report import (
     _load_player_roles,
 )
 from src.setter_report import (
-    ATTACCO_ALZATO_KPI_LABELS,
+    ATTACCO_ALZATO_ESCL_KPI_LABELS,
+    ATTACCO_ALZATO_POS_KPI_LABELS,
     DEFAULT_SETTER_NAMES,
-    SETTER_ATTACK_REC_VOTE,
     build_setter_kpi_dataset,
 )
 
@@ -297,7 +300,9 @@ BILANCIO_SPECS = {
     # Ruolo palleggiatore (src.setter_report): bilancio dei SUOI ATTACCANTI,
     # non del suo attacco personale — vuoto/None per gli altri ruoli (nessun
     # dato "Attacco Alzato" in kpi_df per loro, gestito da compute_bilancio_series).
-    "Attacco Alzato": (ATTACCO_ALZATO_KPI_LABELS["punti"], ATTACCO_ALZATO_KPI_LABELS["errori"]),
+    # Due famiglie separate (vedi src.setter_report), mai sommate insieme.
+    "Attacco Alzato +#": (ATTACCO_ALZATO_POS_KPI_LABELS["punti"], ATTACCO_ALZATO_POS_KPI_LABELS["errori"]),
+    "Attacco Alzato !": (ATTACCO_ALZATO_ESCL_KPI_LABELS["punti"], ATTACCO_ALZATO_ESCL_KPI_LABELS["errori"]),
 }
 
 
@@ -373,8 +378,13 @@ ROLE_EFFICIENCY_FAMILIES = {
     # "Attacco Alzato" (src.setter_report): efficienza DEI SUOI ATTACCANTI,
     # non dell'attacco personale del palleggiatore (troppo raro, non
     # significativo — stesso motivo per cui l'attacco generico resta escluso).
+    # Due famiglie separate, mai sommate (richiesto esplicitamente il
+    # 2026-08-16): "+#" (ricezione ottima/perfetta) e "!" (non permette
+    # 1° tempo) — la qualità della ricezione cambia le opzioni d'attacco
+    # realmente disponibili.
     ROLE_PALLEGGIATORE: [
-        ("attacco_alzato", ATTACCO_ALZATO_KPI_LABELS["eff"], ATTACCO_ALZATO_KPI_LABELS["tot"]),
+        ("attacco_alzato_pos", ATTACCO_ALZATO_POS_KPI_LABELS["eff"], ATTACCO_ALZATO_POS_KPI_LABELS["tot"]),
+        ("attacco_alzato_escl", ATTACCO_ALZATO_ESCL_KPI_LABELS["eff"], ATTACCO_ALZATO_ESCL_KPI_LABELS["tot"]),
         ("battuta", EFF_KPI_LABELS["battuta"], TOT_KPI_LABELS["battuta"]),
     ],
 }
@@ -406,7 +416,8 @@ ROLE_COUNT_KPIS = {
         "Muro # (punti)", MURO_PIU_KPI,
     ],
     ROLE_PALLEGGIATORE: [
-        ATTACCO_ALZATO_KPI_LABELS["punti"], ATTACCO_ALZATO_KPI_LABELS["errori"], ATTACCO_ALZATO_KPI_LABELS["murati"],
+        ATTACCO_ALZATO_POS_KPI_LABELS["punti"], ATTACCO_ALZATO_POS_KPI_LABELS["errori"], ATTACCO_ALZATO_POS_KPI_LABELS["murati"],
+        ATTACCO_ALZATO_ESCL_KPI_LABELS["punti"], ATTACCO_ALZATO_ESCL_KPI_LABELS["errori"], ATTACCO_ALZATO_ESCL_KPI_LABELS["murati"],
         "Battuta # (ace)", "Battuta = (errori)", BATTUTA_DIFFICOLTA_KPI, BATTUTA_CONSERVATIVA_KPI,
         DIFESA_ERRORE_KPI,
     ],
@@ -469,8 +480,9 @@ PEER_COMPARISON_SPECS = [
     ("Attacco # (punti)", "count", (ROLE_MARTELLO, ROLE_OPPOSTO)),
     # Palleggiatori: confronto isolato tra i soli titolari del ruolo (in questa
     # stagione solo Caranzetti/Licenziati) — "Attacco Alzato" non è comparabile
-    # con l'attacco personale di un attaccante di banda.
-    ("attacco_alzato", "eff", (ROLE_PALLEGGIATORE,)),
+    # con l'attacco personale di un attaccante di banda. Due famiglie separate.
+    ("attacco_alzato_pos", "eff", (ROLE_PALLEGGIATORE,)),
+    ("attacco_alzato_escl", "eff", (ROLE_PALLEGGIATORE,)),
 ]
 
 
@@ -573,7 +585,7 @@ def _median_peer_buckets(kind, kpi_or_key, own_bucket):
     if kind == "eff":
         if kpi_or_key == "ricezione":
             return (ROLE_LIBERO, ROLE_MARTELLO)
-        if kpi_or_key == "attacco_alzato":
+        if kpi_or_key in ("attacco_alzato_pos", "attacco_alzato_escl"):
             return (ROLE_PALLEGGIATORE,)  # gruppo a sé: non comparabile con l'attacco di banda
         if kpi_or_key == "battuta":
             # per un palleggiatore il riferimento è l'altro palleggiatore, non
@@ -675,7 +687,7 @@ def build_player_season_report(season="2025-2026", rec_vote=DEFAULT_REC_VOTE, ma
     # Attacco Alzato (ruolo palleggiatore): NON riusa `matches` (già filtrato/
     # normalizzato — vedi docstring di src.setter_report), ricarica gli Excel
     # grezzi da sé.
-    setter_df = build_setter_kpi_dataset(season, setter_names=DEFAULT_SETTER_NAMES, rec_vote=SETTER_ATTACK_REC_VOTE)
+    setter_df = build_setter_kpi_dataset(season, setter_names=DEFAULT_SETTER_NAMES)
     kpi_df = pd.concat([player_df, player_so_df, extra_df, setter_df], ignore_index=True)
 
     roles_by_cognome = _load_player_roles(season)

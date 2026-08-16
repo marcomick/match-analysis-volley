@@ -35,10 +35,12 @@ generica: un palleggiatore (Caranzetti/Licenziati in questa stagione)
 attacca poche volte a partita, e la sua PROPRIA efficienza di attacco non
 è comunque la metrica giusta per valutarlo. Per i giocatori con ruolo 'P'
 nel foglio Presenze D (vedi _load_player_roles), l'intera famiglia
-attacco generica (SO/FB/Contrattacco) è sostituita da "Attacco Alzato"
-(src.setter_report.ATTACCO_ALZATO_KPI_LABELS): l'efficienza di attacco
-DEI SUOI ATTACCANTI nelle sole azioni in cui è ragionevole assumere che
-sia stato lui ad alzare la palla (identify_active_setter — necessario
+attacco generica (SO/FB/Contrattacco) è sostituita da "Attacco Alzato",
+in due famiglie separate e mai sommate (src.setter_report.
+ATTACCO_ALZATO_POS_KPI_LABELS per ricezione +/#, ATTACCO_ALZATO_ESCL_KPI_LABELS
+per ricezione !): l'efficienza di attacco DEI SUOI ATTACCANTI nelle sole
+azioni in cui è ragionevole assumere che sia stato lui ad alzare la palla
+(identify_active_setter — necessario
 perché due giocatori diversi possono ricoprire il ruolo di palleggiatore
 in campo nella stessa stagione, anche nella stessa partita: es. uno dei
 due può giocare da libero, o entrambi entrare in campo in ruoli diversi
@@ -129,9 +131,9 @@ from src.leg_comparison import (
     load_all_matches,
 )
 from src.setter_report import (
-    ATTACCO_ALZATO_KPI_LABELS,
+    ATTACCO_ALZATO_ESCL_KPI_LABELS,
+    ATTACCO_ALZATO_POS_KPI_LABELS,
     DEFAULT_SETTER_NAMES,
-    SETTER_ATTACK_REC_VOTE,
     build_setter_kpi_dataset,
 )
 
@@ -160,7 +162,8 @@ PERCENT_KPI_VOLUME = {
     ATTACCO_SO_KPI_LABELS["eff"]: ATTACCO_SO_KPI_LABELS["tot"],
     ATTACCO_FB_KPI_LABELS["eff"]: ATTACCO_FB_KPI_LABELS["tot"],
     CONTRATTACCO_KPI_LABELS["eff"]: CONTRATTACCO_KPI_LABELS["tot"],
-    ATTACCO_ALZATO_KPI_LABELS["eff"]: ATTACCO_ALZATO_KPI_LABELS["tot"],
+    ATTACCO_ALZATO_POS_KPI_LABELS["eff"]: ATTACCO_ALZATO_POS_KPI_LABELS["tot"],
+    ATTACCO_ALZATO_ESCL_KPI_LABELS["eff"]: ATTACCO_ALZATO_ESCL_KPI_LABELS["tot"],
 }
 
 # Ruoli (colonna 'Ruolo' del foglio Presenze D, vedi src/attendance.py) per i
@@ -192,15 +195,20 @@ PAGELLA_ATTACK_KPIS = (
 # contiene, quindi compute_player_findings li salta comunque.
 PAGELLA_KPIS = PAGELLA_OTHER_KPIS + PAGELLA_ATTACK_KPIS
 
-# KPI di attacco per il ruolo palleggiatore ('Attacco Alzato', vedi
-# src.setter_report) — sostituisce PAGELLA_ATTACK_KPIS per i giocatori con
-# ruolo 'P' (_is_setter). Anche qui il 'Tot' resta fuori dai finding (volume,
-# non qualità) pur servendo al filtro di significatività (PERCENT_KPI_VOLUME).
+# KPI di attacco per il ruolo palleggiatore ('Attacco Alzato', due famiglie
+# separate — vedi src.setter_report) — sostituisce PAGELLA_ATTACK_KPIS per i
+# giocatori con ruolo 'P' (_is_setter). Anche qui il 'Tot' resta fuori dai
+# finding (volume, non qualità) pur servendo al filtro di significatività
+# (PERCENT_KPI_VOLUME).
 PAGELLA_SETTER_ATTACK_KPIS = [
-    ATTACCO_ALZATO_KPI_LABELS["eff"],
-    ATTACCO_ALZATO_KPI_LABELS["punti"],
-    ATTACCO_ALZATO_KPI_LABELS["errori"],
-    ATTACCO_ALZATO_KPI_LABELS["murati"],
+    ATTACCO_ALZATO_POS_KPI_LABELS["eff"],
+    ATTACCO_ALZATO_POS_KPI_LABELS["punti"],
+    ATTACCO_ALZATO_POS_KPI_LABELS["errori"],
+    ATTACCO_ALZATO_POS_KPI_LABELS["murati"],
+    ATTACCO_ALZATO_ESCL_KPI_LABELS["eff"],
+    ATTACCO_ALZATO_ESCL_KPI_LABELS["punti"],
+    ATTACCO_ALZATO_ESCL_KPI_LABELS["errori"],
+    ATTACCO_ALZATO_ESCL_KPI_LABELS["murati"],
 ]
 PAGELLA_SETTER_KPIS = PAGELLA_OTHER_KPIS + PAGELLA_SETTER_ATTACK_KPIS
 
@@ -219,7 +227,8 @@ def _build_kpi_direction():
         "Muro # (punti)": +1,
         ERRORI_KPI: -1,
     }
-    for family in (ATTACCO_SO_KPI_LABELS, ATTACCO_FB_KPI_LABELS, CONTRATTACCO_KPI_LABELS, ATTACCO_ALZATO_KPI_LABELS):
+    for family in (ATTACCO_SO_KPI_LABELS, ATTACCO_FB_KPI_LABELS, CONTRATTACCO_KPI_LABELS,
+                   ATTACCO_ALZATO_POS_KPI_LABELS, ATTACCO_ALZATO_ESCL_KPI_LABELS):
         d[family["eff"]] = +1
         d[family["punti"]] = +1
         d[family["errori"]] = -1
@@ -530,7 +539,7 @@ def build_player_report_base(season="2025-2026", rec_vote=DEFAULT_REC_VOTE,
     # Attacco Alzato (ruolo palleggiatore, src.setter_report): NON riusa `matches`
     # (già filtrato/normalizzato — vedi docstring di modulo e di src.setter_report),
     # ricarica gli Excel grezzi da sé.
-    setter_df = build_setter_kpi_dataset(season, setter_names=DEFAULT_SETTER_NAMES, rec_vote=SETTER_ATTACK_REC_VOTE)
+    setter_df = build_setter_kpi_dataset(season, setter_names=DEFAULT_SETTER_NAMES)
     # kpi_df NON è filtrato su PAGELLA_KPIS/PAGELLA_SETTER_KPIS qui: deve
     # contenere anche i KPI 'Tot' delle famiglie percentuali, usati da
     # compute_player_findings per il filtro di significatività (vedi
