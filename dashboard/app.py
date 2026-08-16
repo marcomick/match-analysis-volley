@@ -640,19 +640,6 @@ def _match_ref(ms, match_label_lookup):
     return f"{label} (partita {ms + 1})"
 
 
-def _opponent_only_ref(ms, match_label_lookup):
-    """
-    Nome avversario abbreviato SENZA l'annotazione andata/ritorno/playout
-    (es. 'S.Monica', non 'S.Monica (andata)') — per "partita migliore/
-    peggiore" e "partite notevoli", dove il riferimento al leg è superfluo
-    (richiesto esplicitamente dall'utente il 2026-08-16). Deriva da
-    match_label_lookup invece di ricostruire da team_df: build_match_label_lookup
-    resta invariato (con leg) per i finding streak/cambio livello
-    (format_finding_text/_match_ref), dove il riferimento resta utile a
-    distinguere andata/ritorno dello stesso avversario.
-    """
-    label = match_label_lookup.get(ms, f"partita {ms + 1}")
-    return label.split(" (")[0]
 
 
 def format_finding_text(finding, match_label_lookup):
@@ -838,13 +825,13 @@ def render_season_summary(season_data, match_label_lookup):
         st.markdown(f"**Partita migliore/peggiore** ({season_data['criterio_migliore_peggiore']})")
         col_c, col_d = st.columns(2)
         if best:
-            ref = _opponent_only_ref(best["match_seq"], match_label_lookup)
+            ref = match_label_lookup.get(best["match_seq"], f"partita {best['match_seq'] + 1}")
             if "netto" in best:
                 col_c.metric("Migliore", f"+{best['netto']}", help=f"{ref} — {best['punti']} punti, {best['errori']} errori")
             else:
                 col_c.metric("Migliore", f"{best['value']:.1f}%", help=ref)
         if worst:
-            ref = _opponent_only_ref(worst["match_seq"], match_label_lookup)
+            ref = match_label_lookup.get(worst["match_seq"], f"partita {worst['match_seq'] + 1}")
             if "netto" in worst:
                 col_d.metric("Peggiore", f"{worst['netto']:+d}", help=f"{ref} — {worst['punti']} punti, {worst['errori']} errori")
             else:
@@ -853,8 +840,8 @@ def render_season_summary(season_data, match_label_lookup):
     if season_data["partite_notevoli"]:
         st.markdown("**Partite singole notevoli** (bilancio punti fatti − errori fatti, per fondamentale)")
         for n in season_data["partite_notevoli"]:
-            ref_best = _opponent_only_ref(n["migliore"]["match_seq"], match_label_lookup)
-            ref_worst = _opponent_only_ref(n["peggiore"]["match_seq"], match_label_lookup)
+            ref_best = match_label_lookup.get(n["migliore"]["match_seq"], f"partita {n['migliore']['match_seq'] + 1}")
+            ref_worst = match_label_lookup.get(n["peggiore"]["match_seq"], f"partita {n['peggiore']['match_seq'] + 1}")
             st.markdown(
                 f"📊 **Bilancio {n['kpi']}** — migliore {ref_best} ({n['migliore']['value']:+.0f}), "
                 f"peggiore {ref_worst} ({n['peggiore']['value']:+.0f})"
@@ -1023,13 +1010,13 @@ def generate_player_report_docx(cognome, data, season_data, player_df_all, team_
     if best or worst:
         doc.add_paragraph(f"Criterio: {season_data['criterio_migliore_peggiore']}")
         if best:
-            ref = _opponent_only_ref(best["match_seq"], match_label_lookup)
+            ref = match_label_lookup.get(best["match_seq"], f"partita {best['match_seq'] + 1}")
             if "netto" in best:
                 doc.add_paragraph(f"Migliore: {ref} — {best['punti']} punti, {best['errori']} errori (netto {best['netto']:+d})", style="List Bullet")
             else:
                 doc.add_paragraph(f"Migliore: {ref} — {best['value']:.1f}%", style="List Bullet")
         if worst:
-            ref = _opponent_only_ref(worst["match_seq"], match_label_lookup)
+            ref = match_label_lookup.get(worst["match_seq"], f"partita {worst['match_seq'] + 1}")
             if "netto" in worst:
                 doc.add_paragraph(f"Peggiore: {ref} — {worst['punti']} punti, {worst['errori']} errori (netto {worst['netto']:+d})", style="List Bullet")
             else:
@@ -1040,8 +1027,8 @@ def generate_player_report_docx(cognome, data, season_data, player_df_all, team_
     doc.add_heading("Partite notevoli", level=1)
     if season_data["partite_notevoli"]:
         for n in season_data["partite_notevoli"]:
-            ref_best = _opponent_only_ref(n["migliore"]["match_seq"], match_label_lookup)
-            ref_worst = _opponent_only_ref(n["peggiore"]["match_seq"], match_label_lookup)
+            ref_best = match_label_lookup.get(n["migliore"]["match_seq"], f"partita {n['migliore']['match_seq'] + 1}")
+            ref_worst = match_label_lookup.get(n["peggiore"]["match_seq"], f"partita {n['peggiore']['match_seq'] + 1}")
             doc.add_paragraph(
                 f"Bilancio {n['kpi']} — migliore {ref_best} ({n['migliore']['value']:+.0f}), "
                 f"peggiore {ref_worst} ({n['peggiore']['value']:+.0f})", style="List Bullet",
