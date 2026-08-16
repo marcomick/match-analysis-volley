@@ -83,6 +83,7 @@ from src.leg_comparison import (
 )
 from src.player_report import build_player_report_base
 from src.player_season_report import build_player_season_report
+from src.setter_report import ATTACCO_ALZATO_KPI_LABELS, build_setter_kpi_dataset
 
 SEASON = "2025-2026"
 N_REGULAR_MATCHES = 28  # 13 andata + 13 ritorno + 2 playout (POA, POR)
@@ -196,6 +197,15 @@ def load_attacco_so_data(season, rec_vote):
 def load_match_outcomes(season):
     matches = load_matches_cached(season)
     return build_match_outcomes_dataset(season, matches=matches)
+
+
+@st.cache_data(show_spinner=False)
+def load_setter_kpi_data(season):
+    """"Attacco Alzato" (ruolo palleggiatore, src.setter_report) — NON riusa
+    load_matches_cached: quel `matches` è già filtrato/normalizzato, non
+    adatto alla ricostruzione formazioni/identificazione palleggiatore (vedi
+    docstring di src.setter_report)."""
+    return build_setter_kpi_dataset(season)
 
 
 @st.cache_data(show_spinner="Calcolo pagella giocatore...")
@@ -412,10 +422,16 @@ def build_player_comparison_chart(
     return fig, pd.DataFrame(stats_rows)
 
 
+# PERCENT_KPIS (src.leg_comparison) copre solo i 32 KPI "fissi" della
+# dashboard — "Attacco Alzato%" (ruolo palleggiatore, src.setter_report) non
+# ne fa parte ma va comunque formattato come percentuale nella pagella.
+PAGELLA_PERCENT_KPIS = set(PERCENT_KPIS) | {ATTACCO_ALZATO_KPI_LABELS["eff"]}
+
+
 def format_kpi_value(kpi, value):
     """Formatta un valore GREZZO di singola partita (sempre un intero per i
     conteggi), per tabelle/hover — vedi format_kpi_average per le medie."""
-    if kpi in PERCENT_KPIS:
+    if kpi in PAGELLA_PERCENT_KPIS:
         return f"{value:.1f}%"
     return f"{value:.0f}"
 
@@ -429,7 +445,7 @@ def format_kpi_average(kpi, value):
     "Ricezione = (ace subiti): da 0 a 0" con format_kpi_value su medie
     frazionarie — la differenza reale (es. 0.15 vs 0.35) restava invisibile).
     """
-    if kpi in PERCENT_KPIS:
+    if kpi in PAGELLA_PERCENT_KPIS:
         return f"{value:.1f}%"
     return f"{value:.2f}"
 
@@ -738,6 +754,7 @@ EFFICIENCY_FAMILY_LABELS = {
     "attacco_fb": "Attacco FB%",
     "contrattacco": "Contrattacco%",
     "battuta": "Battuta%",
+    "attacco_alzato": ATTACCO_ALZATO_KPI_LABELS["eff"],
 }
 
 
@@ -1042,7 +1059,9 @@ def render_player_report_section(report, not_in_registry, season_report, player_
         "stagione, non necessariamente a metà), su un sottoinsieme curato di KPI (percentuali "
         "principali + pochi conteggi mirati). Per i KPI percentuali, le partite con troppi pochi "
         "tentativi (< 5 su circa 120 azioni totali a partita) sono escluse dal calcolo. Per i "
-        "palleggiatori la famiglia attacco è esclusa a priori (dati troppo scarsi per il ruolo)."
+        "palleggiatori la famiglia attacco generica è sostituita da \"Attacco Alzato\": l'efficienza "
+        "di attacco dei loro attaccanti nelle sole azioni in cui il palleggiatore in campo è "
+        "identificabile con sufficiente sicurezza."
     )
     if not_in_registry:
         st.caption(
@@ -1143,11 +1162,14 @@ def main():
     team_df_fixed, player_df_fixed = load_data(SEASON)
     team_df_so, player_df_so = load_attacco_so_data(SEASON, tuple(selected_rec_vote))
     team_df = pd.concat([team_df_fixed, team_df_so], ignore_index=True)
+    setter_df = load_setter_kpi_data(SEASON)
     # player_df_all: senza soglia minima attacchi — è la base su cui src.player_report
     # ha calcolato i finding della pagella, i grafici di evidenza devono usare la
     # stessa serie (altrimenti un finding potrebbe riferirsi a partite che nel
-    # grafico risultano "senza dati" per effetto della soglia della sidebar).
-    player_df_all = pd.concat([player_df_fixed, player_df_so], ignore_index=True)
+    # grafico risultano "senza dati" per effetto della soglia della sidebar). Include
+    # anche "Attacco Alzato" (ruolo palleggiatore): non soggetto alla soglia minima
+    # attacchi (quella si applica solo alle famiglie di attacco generiche).
+    player_df_all = pd.concat([player_df_fixed, player_df_so, setter_df], ignore_index=True)
     player_df = apply_min_attacks_threshold(player_df_all, min_attacks)
 
     match_outcomes_df = load_match_outcomes(SEASON)
