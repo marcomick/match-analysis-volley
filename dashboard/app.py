@@ -838,14 +838,20 @@ def render_season_summary(season_data, match_label_lookup):
                 col_d.metric("Peggiore", f"{worst['value']:.1f}%", help=ref)
 
     if season_data["partite_notevoli"]:
-        st.markdown("**Partite singole notevoli** (bilancio punti fatti − errori fatti, per fondamentale)")
+        st.markdown("**Partite singole notevoli**")
         for n in season_data["partite_notevoli"]:
             ref_best = match_label_lookup.get(n["migliore"]["match_seq"], f"partita {n['migliore']['match_seq'] + 1}")
             ref_worst = match_label_lookup.get(n["peggiore"]["match_seq"], f"partita {n['peggiore']['match_seq'] + 1}")
-            st.markdown(
-                f"📊 **Bilancio {n['kpi']}** — migliore {ref_best} ({n['migliore']['value']:+.0f}), "
-                f"peggiore {ref_worst} ({n['peggiore']['value']:+.0f})"
-            )
+            if n.get("tipo") == "efficienza":
+                st.markdown(
+                    f"📊 **Efficienza {n['kpi']}** — migliore {ref_best} ({n['migliore']['value']:.1f}%), "
+                    f"peggiore {ref_worst} ({n['peggiore']['value']:.1f}%)"
+                )
+            else:
+                st.markdown(
+                    f"📊 **Bilancio {n['kpi']}** — migliore {ref_best} ({n['migliore']['value']:+.0f}), "
+                    f"peggiore {ref_worst} ({n['peggiore']['value']:+.0f})"
+                )
 
 
 # ----------------------------------------------------------------------------
@@ -1029,10 +1035,16 @@ def generate_player_report_docx(cognome, data, season_data, player_df_all, team_
         for n in season_data["partite_notevoli"]:
             ref_best = match_label_lookup.get(n["migliore"]["match_seq"], f"partita {n['migliore']['match_seq'] + 1}")
             ref_worst = match_label_lookup.get(n["peggiore"]["match_seq"], f"partita {n['peggiore']['match_seq'] + 1}")
-            doc.add_paragraph(
-                f"Bilancio {n['kpi']} — migliore {ref_best} ({n['migliore']['value']:+.0f}), "
-                f"peggiore {ref_worst} ({n['peggiore']['value']:+.0f})", style="List Bullet",
-            )
+            if n.get("tipo") == "efficienza":
+                doc.add_paragraph(
+                    f"Efficienza {n['kpi']} — migliore {ref_best} ({n['migliore']['value']:.1f}%), "
+                    f"peggiore {ref_worst} ({n['peggiore']['value']:.1f}%)", style="List Bullet",
+                )
+            else:
+                doc.add_paragraph(
+                    f"Bilancio {n['kpi']} — migliore {ref_best} ({n['migliore']['value']:+.0f}), "
+                    f"peggiore {ref_worst} ({n['peggiore']['value']:+.0f})", style="List Bullet",
+                )
     else:
         doc.add_paragraph("Nessuna di particolarmente notevole.")
 

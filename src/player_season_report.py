@@ -298,14 +298,20 @@ BILANCIO_SPECS = {
     "Attacco": ("Attacco # (punti)", "Attacco = (errori)"),
     "Battuta": ("Battuta # (ace)", "Battuta = (errori)"),
     "Muro": ("Muro # (punti)", MURO_ERRORE_KPI),
-    # Ruolo palleggiatore (src.setter_report): bilancio dei SUOI ATTACCANTI,
-    # non del suo attacco personale — vuoto/None per gli altri ruoli (nessun
-    # dato "Attacco Alzato" in kpi_df per loro, gestito da compute_bilancio_series).
-    # Due famiglie separate (vedi src.setter_report), mai sommate insieme.
-    "Attacco alzato da R+#": (ATTACCO_ALZATO_POS_KPI_LABELS["punti"], ATTACCO_ALZATO_POS_KPI_LABELS["errori"]),
-    "Attacco alzato da R!": (ATTACCO_ALZATO_ESCL_KPI_LABELS["punti"], ATTACCO_ALZATO_ESCL_KPI_LABELS["errori"]),
-    "Attacco alzato da FB": (ATTACCO_ALZATO_FB_KPI_LABELS["punti"], ATTACCO_ALZATO_FB_KPI_LABELS["errori"]),
 }
+
+# Ruolo palleggiatore (src.setter_report): la partita migliore/peggiore per
+# "Attacco Alzato" (le tre famiglie R+#/R!/FB) si individua sull'EFFICIENZA
+# di attacco dei suoi attaccanti, non su un bilancio punti-errori (richiesto
+# esplicitamente dall'utente il 2026-08-16: un bilancio pesa anche il
+# volume — più occasioni, più margine per un punteggio alto — mentre qui
+# interessa la qualità della prestazione, indipendentemente da quante
+# occasioni ci sono state). Vedi find_notable_efficiency_matches.
+SETTER_NOTABLE_EFF_SPECS = [
+    ("Attacco alzato da R+#", ATTACCO_ALZATO_POS_KPI_LABELS["eff"]),
+    ("Attacco alzato da R!", ATTACCO_ALZATO_ESCL_KPI_LABELS["eff"]),
+    ("Attacco alzato da FB", ATTACCO_ALZATO_FB_KPI_LABELS["eff"]),
+]
 
 
 def compute_bilancio_series(kpi_df, player_label, kpi_positivo, kpi_negativo):
@@ -338,8 +344,12 @@ def find_notable_bilancio_matches(kpi_df, player_label, min_points=DEFAULT_MIN_P
     dall'utente) — non serve un test di soglia separato: se il bilancio non
     varia mai (nunique<=1) semplicemente non c'è un vero migliore/peggiore.
 
-    Ritorna una lista di {"kpi", "migliore": {"match_seq","value"},
-    "peggiore": {"match_seq","value"}}.
+    Ritorna una lista di {"kpi", "tipo": "bilancio", "migliore":
+    {"match_seq","value"}, "peggiore": {"match_seq","value"}} — "tipo"
+    distingue questi dai notevoli ad EFFICIENZA (vedi
+    find_notable_efficiency_matches), formattati diversamente a valle
+    (un bilancio è un differenziale intero con segno, un'efficienza è
+    una percentuale).
     """
     notevoli = []
     for nome, (kpi_pos, kpi_neg) in BILANCIO_SPECS.items():
@@ -351,9 +361,32 @@ def find_notable_bilancio_matches(kpi_df, player_label, min_points=DEFAULT_MIN_P
         i_max, i_min = int(np.argmax(values)), int(np.argmin(values))
         notevoli.append({
             "kpi": nome,
+            "tipo": "bilancio",
             "migliore": {"match_seq": int(match_seq[i_max]), "value": float(values[i_max])},
             "peggiore": {"match_seq": int(match_seq[i_min]), "value": float(values[i_min])},
         })
+    return notevoli
+
+
+def find_notable_efficiency_matches(kpi_df, player_label, specs=SETTER_NOTABLE_EFF_SPECS, min_points=DEFAULT_MIN_POINTS):
+    """
+    Come find_notable_bilancio_matches, ma per KPI di EFFICIENZA diretta
+    (non un bilancio punti-errori) — richiesto esplicitamente dall'utente
+    il 2026-08-16 per "Attacco Alzato" del palleggiatore: la partita
+    migliore/peggiore va individuata sull'efficienza di attacco dei suoi
+    attaccanti (qualità), non sul bilancio punti-errori (che pesa anche
+    il volume). Riusa find_best_worst_by_kpi (stessa logica già usata per
+    Ricezione% dei liberi).
+
+    Ritorna una lista di {"kpi", "tipo": "efficienza", "migliore":
+    {"match_seq","value"}, "peggiore": {"match_seq","value"}}.
+    """
+    notevoli = []
+    for nome, kpi in specs:
+        best, worst = find_best_worst_by_kpi(kpi_df, player_label, kpi, min_points=min_points)
+        if best is None:
+            continue
+        notevoli.append({"kpi": nome, "tipo": "efficienza", "migliore": best, "peggiore": worst})
     return notevoli
 
 
@@ -760,6 +793,8 @@ def build_player_season_report(season="2025-2026", rec_vote=DEFAULT_REC_VOTE, ma
             criterio_migliore = "Punteggio composito (punti fatti − errori fatti)"
 
         notevoli = find_notable_bilancio_matches(kpi_df, player_label)
+        if bucket == ROLE_PALLEGGIATORE:
+            notevoli += find_notable_efficiency_matches(kpi_df, player_label)
 
         punti_forza = []
         punti_deboli = _absolute_threshold_flags(efficienze, conteggi)
