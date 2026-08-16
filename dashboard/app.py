@@ -83,7 +83,12 @@ from src.leg_comparison import (
 )
 from src.player_report import build_player_report_base
 from src.player_season_report import build_player_season_report
-from src.setter_report import ATTACCO_ALZATO_ESCL_KPI_LABELS, ATTACCO_ALZATO_POS_KPI_LABELS, build_setter_kpi_dataset
+from src.setter_report import (
+    ATTACCO_ALZATO_ESCL_KPI_LABELS,
+    ATTACCO_ALZATO_FB_KPI_LABELS,
+    ATTACCO_ALZATO_POS_KPI_LABELS,
+    build_setter_kpi_dataset,
+)
 
 SEASON = "2025-2026"
 N_REGULAR_MATCHES = 28  # 13 andata + 13 ritorno + 2 playout (POA, POR)
@@ -425,7 +430,9 @@ def build_player_comparison_chart(
 # PERCENT_KPIS (src.leg_comparison) copre solo i 32 KPI "fissi" della
 # dashboard — "Attacco Alzato%" (ruolo palleggiatore, src.setter_report) non
 # ne fa parte ma va comunque formattato come percentuale nella pagella.
-PAGELLA_PERCENT_KPIS = set(PERCENT_KPIS) | {ATTACCO_ALZATO_POS_KPI_LABELS["eff"], ATTACCO_ALZATO_ESCL_KPI_LABELS["eff"]}
+PAGELLA_PERCENT_KPIS = set(PERCENT_KPIS) | {
+    ATTACCO_ALZATO_POS_KPI_LABELS["eff"], ATTACCO_ALZATO_ESCL_KPI_LABELS["eff"], ATTACCO_ALZATO_FB_KPI_LABELS["eff"],
+}
 
 
 def format_kpi_value(kpi, value):
@@ -633,6 +640,21 @@ def _match_ref(ms, match_label_lookup):
     return f"{label} (partita {ms + 1})"
 
 
+def _opponent_only_ref(ms, match_label_lookup):
+    """
+    Nome avversario abbreviato SENZA l'annotazione andata/ritorno/playout
+    (es. 'S.Monica', non 'S.Monica (andata)') — per "partita migliore/
+    peggiore" e "partite notevoli", dove il riferimento al leg è superfluo
+    (richiesto esplicitamente dall'utente il 2026-08-16). Deriva da
+    match_label_lookup invece di ricostruire da team_df: build_match_label_lookup
+    resta invariato (con leg) per i finding streak/cambio livello
+    (format_finding_text/_match_ref), dove il riferimento resta utile a
+    distinguere andata/ritorno dello stesso avversario.
+    """
+    label = match_label_lookup.get(ms, f"partita {ms + 1}")
+    return label.split(" (")[0]
+
+
 def format_finding_text(finding, match_label_lookup):
     """Frase discorsiva per un finding di src.player_report (streak o cambio
     di livello) — vedi build_finding_chart per l'evidenza grafica."""
@@ -648,8 +670,7 @@ def format_finding_text(finding, match_label_lookup):
     return (
         f"**{kpi}** — cambio di livello **{direzione}** da {_match_ref(finding['split_match_seq'], match_label_lookup)} "
         f"in poi: da {format_kpi_average(kpi, finding['prima_media'])} a "
-        f"{format_kpi_average(kpi, finding['dopo_media'])} "
-        f"(pendenza di regressione: {finding['slope']:+.3f} per partita)."
+        f"{format_kpi_average(kpi, finding['dopo_media'])}."
     )
 
 
@@ -756,6 +777,7 @@ EFFICIENCY_FAMILY_LABELS = {
     "battuta": "Battuta%",
     "attacco_alzato_pos": ATTACCO_ALZATO_POS_KPI_LABELS["eff"],
     "attacco_alzato_escl": ATTACCO_ALZATO_ESCL_KPI_LABELS["eff"],
+    "attacco_alzato_fb": ATTACCO_ALZATO_FB_KPI_LABELS["eff"],
 }
 
 
@@ -777,7 +799,7 @@ def render_season_summary(season_data, match_label_lookup):
         cols = st.columns(min(len(efficienze), 4))
         for i, (key, (eff, tot)) in enumerate(efficienze.items()):
             label = EFFICIENCY_FAMILY_LABELS.get(key, key)
-            cols[i % len(cols)].metric(label, f"{eff:.1f}%", help=f"{tot} tentativi in stagione")
+            cols[i % len(cols)].metric(label, f"{eff:.1f}%", help=f"{tot} totali in stagione")
 
     conteggi = {k: v for k, v in season_data["conteggi_medi_partita"].items() if v[0] is not None}
     if conteggi:
@@ -816,13 +838,13 @@ def render_season_summary(season_data, match_label_lookup):
         st.markdown(f"**Partita migliore/peggiore** ({season_data['criterio_migliore_peggiore']})")
         col_c, col_d = st.columns(2)
         if best:
-            ref = match_label_lookup.get(best["match_seq"], f"partita {best['match_seq'] + 1}")
+            ref = _opponent_only_ref(best["match_seq"], match_label_lookup)
             if "netto" in best:
                 col_c.metric("Migliore", f"+{best['netto']}", help=f"{ref} — {best['punti']} punti, {best['errori']} errori")
             else:
                 col_c.metric("Migliore", f"{best['value']:.1f}%", help=ref)
         if worst:
-            ref = match_label_lookup.get(worst["match_seq"], f"partita {worst['match_seq'] + 1}")
+            ref = _opponent_only_ref(worst["match_seq"], match_label_lookup)
             if "netto" in worst:
                 col_d.metric("Peggiore", f"{worst['netto']:+d}", help=f"{ref} — {worst['punti']} punti, {worst['errori']} errori")
             else:
@@ -831,9 +853,12 @@ def render_season_summary(season_data, match_label_lookup):
     if season_data["partite_notevoli"]:
         st.markdown("**Partite singole notevoli** (bilancio punti fatti − errori fatti, per fondamentale)")
         for n in season_data["partite_notevoli"]:
-            ref = match_label_lookup.get(n["match_seq"], f"partita {n['match_seq'] + 1}")
-            simbolo = "📈" if n["tipo"] == "migliore" else "📉"
-            st.markdown(f"{simbolo} **Bilancio {n['kpi']}** — {n['tipo']} a {ref}: {n['value']:+.0f}")
+            ref_best = _opponent_only_ref(n["migliore"]["match_seq"], match_label_lookup)
+            ref_worst = _opponent_only_ref(n["peggiore"]["match_seq"], match_label_lookup)
+            st.markdown(
+                f"📊 **Bilancio {n['kpi']}** — migliore {ref_best} ({n['migliore']['value']:+.0f}), "
+                f"peggiore {ref_worst} ({n['peggiore']['value']:+.0f})"
+            )
 
 
 # ----------------------------------------------------------------------------
@@ -965,7 +990,7 @@ def generate_player_report_docx(cognome, data, season_data, player_df_all, team_
     efficienze = {k: v for k, v in season_data["efficienze"].items() if v[0] is not None}
     if efficienze:
         _docx_add_table(
-            doc, ["KPI", "Efficienza", "Tentativi in stagione"],
+            doc, ["KPI", "Efficienza", "Totali in stagione"],
             [(EFFICIENCY_FAMILY_LABELS.get(k, k), f"{eff:.1f}%", tot) for k, (eff, tot) in efficienze.items()],
         )
 
@@ -998,13 +1023,13 @@ def generate_player_report_docx(cognome, data, season_data, player_df_all, team_
     if best or worst:
         doc.add_paragraph(f"Criterio: {season_data['criterio_migliore_peggiore']}")
         if best:
-            ref = match_label_lookup.get(best["match_seq"], f"partita {best['match_seq'] + 1}")
+            ref = _opponent_only_ref(best["match_seq"], match_label_lookup)
             if "netto" in best:
                 doc.add_paragraph(f"Migliore: {ref} — {best['punti']} punti, {best['errori']} errori (netto {best['netto']:+d})", style="List Bullet")
             else:
                 doc.add_paragraph(f"Migliore: {ref} — {best['value']:.1f}%", style="List Bullet")
         if worst:
-            ref = match_label_lookup.get(worst["match_seq"], f"partita {worst['match_seq'] + 1}")
+            ref = _opponent_only_ref(worst["match_seq"], match_label_lookup)
             if "netto" in worst:
                 doc.add_paragraph(f"Peggiore: {ref} — {worst['punti']} punti, {worst['errori']} errori (netto {worst['netto']:+d})", style="List Bullet")
             else:
@@ -1015,8 +1040,12 @@ def generate_player_report_docx(cognome, data, season_data, player_df_all, team_
     doc.add_heading("Partite notevoli", level=1)
     if season_data["partite_notevoli"]:
         for n in season_data["partite_notevoli"]:
-            ref = match_label_lookup.get(n["match_seq"], f"partita {n['match_seq'] + 1}")
-            doc.add_paragraph(f"Bilancio {n['kpi']} — {n['tipo']} a {ref}: {n['value']:+.0f}", style="List Bullet")
+            ref_best = _opponent_only_ref(n["migliore"]["match_seq"], match_label_lookup)
+            ref_worst = _opponent_only_ref(n["peggiore"]["match_seq"], match_label_lookup)
+            doc.add_paragraph(
+                f"Bilancio {n['kpi']} — migliore {ref_best} ({n['migliore']['value']:+.0f}), "
+                f"peggiore {ref_worst} ({n['peggiore']['value']:+.0f})", style="List Bullet",
+            )
     else:
         doc.add_paragraph("Nessuna di particolarmente notevole.")
 

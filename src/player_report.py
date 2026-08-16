@@ -132,6 +132,7 @@ from src.leg_comparison import (
 )
 from src.setter_report import (
     ATTACCO_ALZATO_ESCL_KPI_LABELS,
+    ATTACCO_ALZATO_FB_KPI_LABELS,
     ATTACCO_ALZATO_POS_KPI_LABELS,
     DEFAULT_SETTER_NAMES,
     build_setter_kpi_dataset,
@@ -164,6 +165,7 @@ PERCENT_KPI_VOLUME = {
     CONTRATTACCO_KPI_LABELS["eff"]: CONTRATTACCO_KPI_LABELS["tot"],
     ATTACCO_ALZATO_POS_KPI_LABELS["eff"]: ATTACCO_ALZATO_POS_KPI_LABELS["tot"],
     ATTACCO_ALZATO_ESCL_KPI_LABELS["eff"]: ATTACCO_ALZATO_ESCL_KPI_LABELS["tot"],
+    ATTACCO_ALZATO_FB_KPI_LABELS["eff"]: ATTACCO_ALZATO_FB_KPI_LABELS["tot"],
 }
 
 # Ruoli (colonna 'Ruolo' del foglio Presenze D, vedi src/attendance.py) per i
@@ -209,6 +211,10 @@ PAGELLA_SETTER_ATTACK_KPIS = [
     ATTACCO_ALZATO_ESCL_KPI_LABELS["punti"],
     ATTACCO_ALZATO_ESCL_KPI_LABELS["errori"],
     ATTACCO_ALZATO_ESCL_KPI_LABELS["murati"],
+    ATTACCO_ALZATO_FB_KPI_LABELS["eff"],
+    ATTACCO_ALZATO_FB_KPI_LABELS["punti"],
+    ATTACCO_ALZATO_FB_KPI_LABELS["errori"],
+    ATTACCO_ALZATO_FB_KPI_LABELS["murati"],
 ]
 PAGELLA_SETTER_KPIS = PAGELLA_OTHER_KPIS + PAGELLA_SETTER_ATTACK_KPIS
 
@@ -228,7 +234,7 @@ def _build_kpi_direction():
         ERRORI_KPI: -1,
     }
     for family in (ATTACCO_SO_KPI_LABELS, ATTACCO_FB_KPI_LABELS, CONTRATTACCO_KPI_LABELS,
-                   ATTACCO_ALZATO_POS_KPI_LABELS, ATTACCO_ALZATO_ESCL_KPI_LABELS):
+                   ATTACCO_ALZATO_POS_KPI_LABELS, ATTACCO_ALZATO_ESCL_KPI_LABELS, ATTACCO_ALZATO_FB_KPI_LABELS):
         d[family["eff"]] = +1
         d[family["punti"]] = +1
         d[family["errori"]] = -1

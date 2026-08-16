@@ -77,24 +77,30 @@ dati reali, "Licenziati" compare in almeno un file con uno spazio finale
 ("Licenziati "), che romperebbe silenziosamente il confronto con
 `setter_names` se non normalizzato.
 
-## Due famiglie separate, non sommate
+## Tre famiglie separate, non sommate
 
 Richiesto esplicitamente dall'utente il 2026-08-16: "Attacco Alzato" non
-è un unico KPI ma due famiglie DISTINTE, mai sommate insieme, a seconda
-del voto di ricezione che precede l'attacco — la qualità della ricezione
-cambia sensibilmente le opzioni d'attacco realmente disponibili al
-palleggiatore, quindi mescolarle appiattirebbe un'informazione utile:
-  - **+/#** (`SETTER_ATTACK_REC_VOTE_POS`, ricezione ottima/perfetta):
-    `ATTACCO_ALZATO_POS_KPI_LABELS`.
-  - **!** (`SETTER_ATTACK_REC_VOTE_ESCL`, non permette 1° tempo, ma la
-    palla arriva comunque al palleggiatore): `ATTACCO_ALZATO_ESCL_KPI_LABELS`.
-Esclude sempre '-' (voto incluso invece nel default SO usato altrove nel
-progetto, es. src/leg_comparison.py) e ogni contrattacco/free ball: in
-quei casi non è affidabile assumere che sia stato il palleggiatore
-titolare ad alzare la palla (spesso è un'azione di emergenza, alzata da
-chi capita — coerente con le righe Tipo=='alzata' osservate sui dati
-reali: più frequenti nei liberi/difensori che coprono un'emergenza che
-nel palleggiatore titolare stesso).
+è un unico KPI ma tre famiglie DISTINTE, mai sommate insieme:
+  - **R+#** (`SETTER_ATTACK_REC_VOTE_POS`, Side-Out dopo ricezione
+    ottima/perfetta): `ATTACCO_ALZATO_POS_KPI_LABELS`.
+  - **R!** (`SETTER_ATTACK_REC_VOTE_ESCL`, Side-Out dopo ricezione che
+    non permette 1° tempo, ma la palla arriva comunque al
+    palleggiatore): `ATTACCO_ALZATO_ESCL_KPI_LABELS`.
+  - **FB** (dopo free ball, cioè una difesa Voto '!' — vedi
+    separate_free_ball in src/efficiency.py): `ATTACCO_ALZATO_FB_KPI_LABELS`.
+    Meno dati rispetto alle altre due famiglie: la codifica della free
+    ball (difesa Voto '!') è stata introdotta dall'utente solo a partire
+    da un certo punto della stagione 2025-2026 (data esatta non nota) —
+    le partite precedenti a quell'introduzione risultano semplicemente
+    senza dati per questa famiglia (buco, non uno zero), stesso
+    trattamento del resto del progetto per i dati mancanti.
+Esclude sempre ricezione '-' (voto incluso invece nel default SO usato
+altrove nel progetto, es. src/leg_comparison.py) e il contrattacco
+generico: in quei casi non è affidabile assumere che sia stato il
+palleggiatore titolare ad alzare la palla (spesso è un'azione di
+emergenza, alzata da chi capita — coerente con le righe Tipo=='alzata'
+osservate sui dati reali: più frequenti nei liberi/difensori che
+coprono un'emergenza che nel palleggiatore titolare stesso).
 """
 import pandas as pd
 
@@ -108,27 +114,39 @@ DEFAULT_SETTER_NAMES = ("Caranzetti", "Licenziati")
 # Stesso schema di ATTACCO_SO_KPI_LABELS/ATTACCO_FB_KPI_LABELS/CONTRATTACCO_KPI_LABELS
 # in src/leg_comparison.py, qui per l'efficienza di attacco DEGLI ATTACCANTI
 # alzati dal palleggiatore in campo (vedi compute_setter_attack_kpis) — non un
-# KPI di attacco del palleggiatore stesso. Due famiglie separate (mai sommate,
-# vedi docstring di modulo) a seconda del voto di ricezione che precede
-# l'attacco: "+#" (ricezione ottima/perfetta) e "!" (non permette 1° tempo).
+# KPI di attacco del palleggiatore stesso. Tre famiglie separate (mai sommate,
+# vedi docstring di modulo). Dicitura "Eff. attacco alzato da R+#/R!/FB"
+# (non "Attacco Alzato +#..."), richiesta esplicitamente dall'utente il
+# 2026-08-16 per il solo KPI di efficienza (%) — i conteggi assoluti restano
+# senza il prefisso "Eff.", non essendo percentuali.
 ATTACCO_ALZATO_POS_KPI_LABELS = {
-    "eff": "Attacco Alzato +#%",
-    "tot": "Attacco Alzato +# Tot",
-    "punti": "Attacco Alzato +# # (punti)",
-    "errori": "Attacco Alzato +# = (errori)",
-    "murati": "Attacco Alzato +# / (murati)",
+    "eff": "Eff. attacco alzato da R+#",
+    "tot": "Attacco alzato da R+# Tot",
+    "punti": "Attacco alzato da R+# # (punti)",
+    "errori": "Attacco alzato da R+# = (errori)",
+    "murati": "Attacco alzato da R+# / (murati)",
 }
 ATTACCO_ALZATO_ESCL_KPI_LABELS = {
-    "eff": "Attacco Alzato !%",
-    "tot": "Attacco Alzato ! Tot",
-    "punti": "Attacco Alzato ! # (punti)",
-    "errori": "Attacco Alzato ! = (errori)",
-    "murati": "Attacco Alzato ! / (murati)",
+    "eff": "Eff. attacco alzato da R!",
+    "tot": "Attacco alzato da R! Tot",
+    "punti": "Attacco alzato da R! # (punti)",
+    "errori": "Attacco alzato da R! = (errori)",
+    "murati": "Attacco alzato da R! / (murati)",
+}
+ATTACCO_ALZATO_FB_KPI_LABELS = {
+    "eff": "Eff. attacco alzato da FB",
+    "tot": "Attacco alzato da FB Tot",
+    "punti": "Attacco alzato da FB # (punti)",
+    "errori": "Attacco alzato da FB = (errori)",
+    "murati": "Attacco alzato da FB / (murati)",
 }
 
-# Rec_vote di ciascuna famiglia — vedi docstring di modulo. Esclude sempre '-'
-# (voto incluso invece nel default SO usato altrove nel progetto, es.
-# src/leg_comparison.py). Richiesto esplicitamente dall'utente, 2026-08-16.
+# Rec_vote delle due famiglie Side-Out — vedi docstring di modulo. Esclude
+# sempre '-' (voto incluso invece nel default SO usato altrove nel progetto,
+# es. src/leg_comparison.py). Richiesto esplicitamente dall'utente, 2026-08-16.
+# La famiglia FB non ha un rec_vote proprio: separate_attack_types la
+# classifica in base alla riga precedente (difesa Voto '!'), indipendente
+# dal rec_vote passato — vedi compute_setter_attack_kpis.
 SETTER_ATTACK_REC_VOTE_POS = ("+", "#")
 SETTER_ATTACK_REC_VOTE_ESCL = ("!",)
 
@@ -202,30 +220,40 @@ def _attack_kpis_from_so_df(so_df, setter_in_campo, setter_names):
 
 def compute_setter_attack_kpis(df_match, setter_names=DEFAULT_SETTER_NAMES):
     """
-    Per ciascun palleggiatore in `setter_names`, DUE famiglie separate
+    Per ciascun palleggiatore in `setter_names`, TRE famiglie separate
     (mai sommate, vedi docstring di modulo) di efficienza di attacco DEI
-    SUOI ATTACCANTI (non la sua): "pos" (Side-Out dopo ricezione +/#) ed
-    "escl" (Side-Out dopo ricezione !) — entrambe solo sulle azioni
-    avvenute mentre risultava lui il palleggiatore in campo
-    (identify_active_setter). Esclude sempre contrattacco/free ball,
+    SUOI ATTACCANTI (non la sua): "pos" (Side-Out dopo ricezione +/#),
+    "escl" (Side-Out dopo ricezione !) e "fb" (dopo free ball) — tutte
+    solo sulle azioni avvenute mentre risultava lui il palleggiatore in
+    campo (identify_active_setter). Esclude sempre contrattacco generico,
     ricezione '-' e le azioni con "palleggiatore in campo" non determinabile.
 
-    Ritorna {cognome: {"pos": {...}, "escl": {...}}}, ciascuna con le
-    chiavi {"efficienza": float|None, "tot": int, "punti": int, "errori":
-    int, "murati": int} — efficienza None se tot == 0 (nessun dato, non
-    uno zero).
+    separate_attack_types classifica la free ball in base alla riga
+    precedente (difesa Voto '!'), indipendentemente dal rec_vote passato:
+    basta quindi prendere il suo secondo valore di ritorno da UNA delle
+    due chiamate già necessarie per "pos"/"escl" (freeball_df è identico
+    in entrambe), non serve una terza chiamata a separate_attack_types.
+
+    Ritorna {cognome: {"pos": {...}, "escl": {...}, "fb": {...}}},
+    ciascuna con le chiavi {"efficienza": float|None, "tot": int, "punti":
+    int, "errori": int, "murati": int} — efficienza None se tot == 0
+    (nessun dato, non uno zero).
     """
     d = df_match.copy()
     d["Cognome"] = _normalize_cognome(d["Cognome"])
     assegnazione = identify_active_setter(d, setter_names)
 
-    so_pos_df, _, _ = separate_attack_types(d, rec_vote=SETTER_ATTACK_REC_VOTE_POS)
+    so_pos_df, freeball_df, _ = separate_attack_types(d, rec_vote=SETTER_ATTACK_REC_VOTE_POS)
     so_escl_df, _, _ = separate_attack_types(d, rec_vote=SETTER_ATTACK_REC_VOTE_ESCL)
 
     pos_kpis = _attack_kpis_from_so_df(so_pos_df, assegnazione, setter_names)
     escl_kpis = _attack_kpis_from_so_df(so_escl_df, assegnazione, setter_names)
+    fb_kpis = _attack_kpis_from_so_df(freeball_df, assegnazione, setter_names)
 
-    return {cognome: {"pos": pos_kpis[cognome], "escl": escl_kpis[cognome]} for cognome in setter_names}
+    return {
+        cognome: {"pos": pos_kpis[cognome], "escl": escl_kpis[cognome], "fb": fb_kpis[cognome]}
+        for cognome in setter_names
+    }
 
 
 def compute_setter_battuta_kpis(df_match, setter_names=DEFAULT_SETTER_NAMES):
@@ -271,11 +299,11 @@ def build_setter_kpi_dataset(season="2025-2026", setter_names=DEFAULT_SETTER_NAM
     """
     Tabella tidy (stesso formato di build_comparison_dataset: colonne
     [opponent, leg, giornata, x_label, match_seq, player, kpi, value]) per le
-    DUE famiglie di "Attacco Alzato" (ATTACCO_ALZATO_POS_KPI_LABELS/
-    ATTACCO_ALZATO_ESCL_KPI_LABELS, mai sommate — vedi docstring di modulo)
-    di ciascun palleggiatore in `setter_names` — l'efficienza di attacco DEI
-    SUOI ATTACCANTI mentre lui risultava il palleggiatore in campo (vedi
-    identify_active_setter/compute_setter_attack_kpis).
+    TRE famiglie di "Attacco Alzato" (ATTACCO_ALZATO_POS_KPI_LABELS/
+    ATTACCO_ALZATO_ESCL_KPI_LABELS/ATTACCO_ALZATO_FB_KPI_LABELS, mai sommate
+    — vedi docstring di modulo) di ciascun palleggiatore in `setter_names` —
+    l'efficienza di attacco DEI SUOI ATTACCANTI mentre lui risultava il
+    palleggiatore in campo (vedi identify_active_setter/compute_setter_attack_kpis).
 
     A differenza degli altri build_*_dataset del progetto, qui bisogna
     ricaricare ogni Excel GREZZO (non filtrato/normalizzato) — il `matches`
@@ -325,7 +353,12 @@ def build_setter_kpi_dataset(season="2025-2026", setter_names=DEFAULT_SETTER_NAM
             player_label = player_labels.get(cognome)
             if player_label is None:
                 continue
-            for famiglia, labels in (("pos", ATTACCO_ALZATO_POS_KPI_LABELS), ("escl", ATTACCO_ALZATO_ESCL_KPI_LABELS)):
+            famiglie = (
+                ("pos", ATTACCO_ALZATO_POS_KPI_LABELS),
+                ("escl", ATTACCO_ALZATO_ESCL_KPI_LABELS),
+                ("fb", ATTACCO_ALZATO_FB_KPI_LABELS),
+            )
+            for famiglia, labels in famiglie:
                 kpis = attacco_kpis[cognome][famiglia]
                 if kpis["tot"] == 0:
                     continue  # nessun dato: buco, non uno zero (stesso trattamento del resto del progetto)

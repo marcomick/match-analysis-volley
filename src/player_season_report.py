@@ -94,6 +94,7 @@ from src.player_report import (
 )
 from src.setter_report import (
     ATTACCO_ALZATO_ESCL_KPI_LABELS,
+    ATTACCO_ALZATO_FB_KPI_LABELS,
     ATTACCO_ALZATO_POS_KPI_LABELS,
     DEFAULT_SETTER_NAMES,
     build_setter_kpi_dataset,
@@ -301,8 +302,9 @@ BILANCIO_SPECS = {
     # non del suo attacco personale — vuoto/None per gli altri ruoli (nessun
     # dato "Attacco Alzato" in kpi_df per loro, gestito da compute_bilancio_series).
     # Due famiglie separate (vedi src.setter_report), mai sommate insieme.
-    "Attacco Alzato +#": (ATTACCO_ALZATO_POS_KPI_LABELS["punti"], ATTACCO_ALZATO_POS_KPI_LABELS["errori"]),
-    "Attacco Alzato !": (ATTACCO_ALZATO_ESCL_KPI_LABELS["punti"], ATTACCO_ALZATO_ESCL_KPI_LABELS["errori"]),
+    "Attacco alzato da R+#": (ATTACCO_ALZATO_POS_KPI_LABELS["punti"], ATTACCO_ALZATO_POS_KPI_LABELS["errori"]),
+    "Attacco alzato da R!": (ATTACCO_ALZATO_ESCL_KPI_LABELS["punti"], ATTACCO_ALZATO_ESCL_KPI_LABELS["errori"]),
+    "Attacco alzato da FB": (ATTACCO_ALZATO_FB_KPI_LABELS["punti"], ATTACCO_ALZATO_FB_KPI_LABELS["errori"]),
 }
 
 
@@ -325,13 +327,19 @@ def compute_bilancio_series(kpi_df, player_label, kpi_positivo, kpi_negativo):
 def find_notable_bilancio_matches(kpi_df, player_label, min_points=DEFAULT_MIN_POINTS):
     """
     Per ciascun bilancio in BILANCIO_SPECS, la partita migliore (bilancio
-    più alto della stagione) e quella peggiore (più basso) — non più il
+    più alto della stagione) E quella peggiore (più basso), in UN SOLO
+    elemento per bilancio (richiesto esplicitamente dall'utente il
+    2026-08-16: non due righe separate "bilancio KPI - peggiore" e
+    "bilancio KPI - migliore", un'unica riga con entrambe) — non più il
     singolo KPI assoluto (troppo rumoroso, sostituito il 2026-08-15 su
     richiesta esplicita dell'utente). Il massimo/minimo di una serie è per
     costruzione al di sopra/sotto dell'80°/20° percentile della
     distribuzione del giocatore (il criterio di notabilità indicato
     dall'utente) — non serve un test di soglia separato: se il bilancio non
     varia mai (nunique<=1) semplicemente non c'è un vero migliore/peggiore.
+
+    Ritorna una lista di {"kpi", "migliore": {"match_seq","value"},
+    "peggiore": {"match_seq","value"}}.
     """
     notevoli = []
     for nome, (kpi_pos, kpi_neg) in BILANCIO_SPECS.items():
@@ -341,8 +349,11 @@ def find_notable_bilancio_matches(kpi_df, player_label, min_points=DEFAULT_MIN_P
         values = bilancio.to_numpy(dtype=float)
         match_seq = bilancio.index.to_numpy()
         i_max, i_min = int(np.argmax(values)), int(np.argmin(values))
-        notevoli.append({"kpi": nome, "tipo": "migliore", "match_seq": int(match_seq[i_max]), "value": float(values[i_max])})
-        notevoli.append({"kpi": nome, "tipo": "peggiore", "match_seq": int(match_seq[i_min]), "value": float(values[i_min])})
+        notevoli.append({
+            "kpi": nome,
+            "migliore": {"match_seq": int(match_seq[i_max]), "value": float(values[i_max])},
+            "peggiore": {"match_seq": int(match_seq[i_min]), "value": float(values[i_min])},
+        })
     return notevoli
 
 
@@ -385,6 +396,7 @@ ROLE_EFFICIENCY_FAMILIES = {
     ROLE_PALLEGGIATORE: [
         ("attacco_alzato_pos", ATTACCO_ALZATO_POS_KPI_LABELS["eff"], ATTACCO_ALZATO_POS_KPI_LABELS["tot"]),
         ("attacco_alzato_escl", ATTACCO_ALZATO_ESCL_KPI_LABELS["eff"], ATTACCO_ALZATO_ESCL_KPI_LABELS["tot"]),
+        ("attacco_alzato_fb", ATTACCO_ALZATO_FB_KPI_LABELS["eff"], ATTACCO_ALZATO_FB_KPI_LABELS["tot"]),
         ("battuta", EFF_KPI_LABELS["battuta"], TOT_KPI_LABELS["battuta"]),
     ],
 }
@@ -418,6 +430,7 @@ ROLE_COUNT_KPIS = {
     ROLE_PALLEGGIATORE: [
         ATTACCO_ALZATO_POS_KPI_LABELS["punti"], ATTACCO_ALZATO_POS_KPI_LABELS["errori"], ATTACCO_ALZATO_POS_KPI_LABELS["murati"],
         ATTACCO_ALZATO_ESCL_KPI_LABELS["punti"], ATTACCO_ALZATO_ESCL_KPI_LABELS["errori"], ATTACCO_ALZATO_ESCL_KPI_LABELS["murati"],
+        ATTACCO_ALZATO_FB_KPI_LABELS["punti"], ATTACCO_ALZATO_FB_KPI_LABELS["errori"], ATTACCO_ALZATO_FB_KPI_LABELS["murati"],
         "Battuta # (ace)", "Battuta = (errori)", BATTUTA_DIFFICOLTA_KPI, BATTUTA_CONSERVATIVA_KPI,
         DIFESA_ERRORE_KPI,
     ],
@@ -483,6 +496,7 @@ PEER_COMPARISON_SPECS = [
     # con l'attacco personale di un attaccante di banda. Due famiglie separate.
     ("attacco_alzato_pos", "eff", (ROLE_PALLEGGIATORE,)),
     ("attacco_alzato_escl", "eff", (ROLE_PALLEGGIATORE,)),
+    ("attacco_alzato_fb", "eff", (ROLE_PALLEGGIATORE,)),
 ]
 
 
@@ -540,6 +554,18 @@ def _compute_peer_averages(kpi_df, roles, efficienze_by_player):
     return values_by_spec
 
 
+# Etichetta leggibile per le chiavi interne 'eff' che non sono già una parola
+# leggibile di per sé (a differenza di "attacco"/"ricezione"/"battuta", usate
+# altrove in PEER_COMPARISON_SPECS senza bisogno di mappatura) — senza questo,
+# _peer_comparison_flags mostrerebbe la chiave grezza (es. "Efficienza
+# attacco_alzato_fb") in punti_forza/punti_deboli.
+_PEER_EFF_DISPLAY_LABELS = {
+    "attacco_alzato_pos": ATTACCO_ALZATO_POS_KPI_LABELS["eff"],
+    "attacco_alzato_escl": ATTACCO_ALZATO_ESCL_KPI_LABELS["eff"],
+    "attacco_alzato_fb": ATTACCO_ALZATO_FB_KPI_LABELS["eff"],
+}
+
+
 def _peer_comparison_flags(player_label, peer_values):
     """Punti di forza/debolezza dal confronto con la media dei compagni
     (esclude se stesso dalla media di riferimento) — vedi docstring di modulo."""
@@ -553,7 +579,7 @@ def _peer_comparison_flags(player_label, peer_values):
         peer_avg = sum(others.values()) / len(others)
         value = per_player[player_label]
         tol = max(abs(peer_avg) * PEER_COMPARISON_TOL_REL, 1e-9)
-        label = kpi_or_key if tipo == "count" else f"Efficienza {kpi_or_key}"
+        label = kpi_or_key if tipo == "count" else _PEER_EFF_DISPLAY_LABELS.get(kpi_or_key, f"Efficienza {kpi_or_key}")
         if value - peer_avg > tol:
             flags.append({
                 "tipo": "punto_forza", "area": label,
@@ -585,7 +611,7 @@ def _median_peer_buckets(kind, kpi_or_key, own_bucket):
     if kind == "eff":
         if kpi_or_key == "ricezione":
             return (ROLE_LIBERO, ROLE_MARTELLO)
-        if kpi_or_key in ("attacco_alzato_pos", "attacco_alzato_escl"):
+        if kpi_or_key in ("attacco_alzato_pos", "attacco_alzato_escl", "attacco_alzato_fb"):
             return (ROLE_PALLEGGIATORE,)  # gruppo a sé: non comparabile con l'attacco di banda
         if kpi_or_key == "battuta":
             # per un palleggiatore il riferimento è l'altro palleggiatore, non
