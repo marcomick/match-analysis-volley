@@ -11,29 +11,50 @@ def is_colab() -> bool:
     return "COLAB_RELEASE_TAG" in os.environ or os.path.exists("/content")
 
 
-def get_base_path() -> Path:
-    """
-    Ritorna il path base alla cartella dei dati.
-    - Su Colab: usa il path Drive hardcodato in seasons.csv
-    - In locale: legge VOLLEY_DATA_PATH da .env
-    """
-    if is_colab():
-        return None  # il path drive viene costruito per stagione
-    
-    # carica .env se presente
+def _load_dotenv():
     try:
         from dotenv import load_dotenv
         load_dotenv()
     except ImportError:
         pass
-    
+
+
+def get_base_path() -> Path:
+    """
+    Path legacy alla cartella dati di UNA stagione (VOLLEY_DATA_PATH in .env).
+    Usato solo se VOLLEY_DRIVE_ROOT non è impostata — vedi season_base_path.
+    """
+    if is_colab():
+        return None  # il path drive viene costruito per stagione
+
+    _load_dotenv()
     local_path = os.environ.get("VOLLEY_DATA_PATH")
     if not local_path:
         raise EnvironmentError(
-            "Variabile VOLLEY_DATA_PATH non trovata.\n"
+            "Variabili VOLLEY_DRIVE_ROOT / VOLLEY_DATA_PATH non trovate.\n"
             "Copia .env.example in .env e imposta il percorso locale."
         )
     return Path(local_path)
+
+
+def season_base_path(drive_path: str) -> Path:
+    """
+    Cartella dati di una stagione, dato il suo base_path_drive (seasons.csv,
+    relativo alla radice di Google Drive).
+    - Su Colab: /content/drive/MyDrive / base_path_drive
+    - In locale con VOLLEY_DRIVE_ROOT (radice "Il mio Drive"): stessa logica
+      di Colab, quindi ogni stagione punta alla propria cartella
+    - In locale con solo VOLLEY_DATA_PATH (legacy): quel path così com'è —
+      valido per una sola stagione, quella a cui punta
+    """
+    if is_colab():
+        return Path("/content/drive/MyDrive") / drive_path
+
+    _load_dotenv()
+    drive_root = os.environ.get("VOLLEY_DRIVE_ROOT")
+    if drive_root:
+        return Path(drive_root) / drive_path
+    return get_base_path()
 
 
 # ---------------------------------------------------------------------------
@@ -64,13 +85,7 @@ def build_file_list(season: str) -> tuple[list, list]:
     if season_row.empty:
         raise ValueError(f"Stagione '{season}' non trovata in seasons.csv")
     
-    drive_path = season_row["base_path_drive"].iloc[0]
-
-    # costruisce il base path in base all'ambiente
-    if is_colab():
-        base = Path("/content/drive/MyDrive") / drive_path
-    else:
-        base = get_base_path()
+    base = season_base_path(season_row["base_path_drive"].iloc[0])
 
     # filtra le partite attive per la stagione
     season_matches = matches[
@@ -92,12 +107,7 @@ def build_base_path(season: str) -> Path:
     if season_row.empty:
         raise ValueError(f"Stagione '{season}' non trovata in seasons.csv")
 
-    drive_path = season_row["base_path_drive"].iloc[0]
-
-    if is_colab():
-        return Path("/content/drive/MyDrive") / drive_path
-    else:
-        return get_base_path()
+    return season_base_path(season_row["base_path_drive"].iloc[0])
 
 
 def build_competition_root_path(season: str) -> Path:

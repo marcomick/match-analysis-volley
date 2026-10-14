@@ -569,15 +569,28 @@ def build_player_report_base(season="2025-2026", rec_vote=DEFAULT_REC_VOTE,
             ),
         }
 
-    presence_df = load_presence(season)
-    presence_known, not_in_registry = filter_known_players(presence_df)
-    attendance = compute_attendance_summary(presence_known, event_types=DEFAULT_EVENT_TYPES)
-    attendance_by_type = compute_attendance_summary_by_type(presence_known, event_types=DEFAULT_EVENT_TYPES)
-    attendance_by_cognome = attendance.set_index("cognome").to_dict(orient="index")
+    # Foglio presenze non disponibile per la stagione (es. 2026-2027: tenuto
+    # come Google Sheet nativo, senza un .xlsx locale leggibile): pagella
+    # senza presenze invece di nessuna pagella — stesso trattamento di
+    # _load_player_roles.
+    try:
+        presence_df = load_presence(season)
+    except Exception:
+        presence_df = None
+    if presence_df is not None:
+        presence_known, not_in_registry = filter_known_players(presence_df)
+        attendance = compute_attendance_summary(presence_known, event_types=DEFAULT_EVENT_TYPES)
+        attendance_by_type = compute_attendance_summary_by_type(presence_known, event_types=DEFAULT_EVENT_TYPES)
+        attendance_by_cognome = attendance.set_index("cognome").to_dict(orient="index")
+    else:
+        not_in_registry, attendance_by_type, attendance_by_cognome = [], None, {}
 
     report = {}
     for cognome in set(findings_by_cognome) | set(attendance_by_cognome):
-        by_type_rows = attendance_by_type[attendance_by_type["cognome"] == cognome].to_dict(orient="records")
+        by_type_rows = (
+            attendance_by_type[attendance_by_type["cognome"] == cognome].to_dict(orient="records")
+            if attendance_by_type is not None else []
+        )
         report[cognome] = {
             "player_label": findings_by_cognome.get(cognome, {}).get("player_label"),
             "ruolo": findings_by_cognome.get(cognome, {}).get("ruolo", roles.get(cognome)),

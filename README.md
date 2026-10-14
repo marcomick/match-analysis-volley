@@ -53,9 +53,11 @@ cp .env.example .env
 
 ```
 
-Imposta `VOLLEY_DATA_PATH` nel file `.env` con il percorso locale
+Imposta `VOLLEY_DRIVE_ROOT` nel file `.env` con il percorso locale
 
-alla cartella Drive sincronizzata (vedi `data/README.md`).
+alla radice di Google Drive ("Il mio Drive") sincronizzata: ogni stagione
+
+usa poi il proprio `base_path_drive` da `config/seasons.csv` (vedi `data/README.md`).
 
 ### Su Google Colab
 

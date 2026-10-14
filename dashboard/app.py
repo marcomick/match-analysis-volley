@@ -1,14 +1,31 @@
 # dashboard/app.py
 """
-Dashboard interattiva: confronto KPI andata vs ritorno (con playout per JVC)
+Dashboard interattiva: confronto KPI andata vs ritorno (ed eventuale playout)
 tra le partite della stagione, sia a livello squadra che per giocatore, più un
 confronto multi-giocatore per singolo KPI lungo tutta la stagione.
 
 Avvio: streamlit run dashboard/app.py
 
+Stagione e partite (sidebar): la stagione si sceglie tra quelle attive in
+config/seasons.csv (default: l'ultima); le partite sono quelle registrate in
+config/matches.csv per quella stagione, filtrabili da un multiselect (default:
+tutte) — le sezioni 1-3 mostrano solo le partite selezionate, la pagella
+(sezione 4) resta sempre su tutta la stagione registrata. Una partita appena
+aggiunta a matches.csv compare da sola (la cache è legata alla data di modifica
+dei CSV di config); "Ricarica dati" forza la rilettura degli Excel da Drive
+(es. dopo aver corretto uno scout già caricato).
+
+Tab "Classifiche" e "Tabellino": le stesse informazioni dei report PDF
+inviati in stagione — le 6 classifiche di classifiche.ipynb (src.rankings) e
+il tabellino side-out/break point dell'export "[tabellino F]"
+(src.efficiency.compute_tabellino), su una partita o sulle partite selezionate.
+
+Tab "Andamento KPI" (sezioni 1-3 qui sotto) e "Pagella" (sezione 4, solo se
+attivata dalla sidebar: è pensata per fine stagione).
+
 Sezione 1 — "Confronto per KPI — Squadra / Giocatore":
-per ogni avversario (13, in ordine di giornata di andata) + una 14ª posizione
-per il playout (solo JVC): barre raggruppate andata/ritorno/playout-andata/
+per ogni avversario (in ordine di giornata di andata) + una posizione a sé
+per l'eventuale playout: barre raggruppate andata/ritorno/playout-andata/
 playout-ritorno, e due linee di trend sovrapposte (andata, ritorno) che
 uniscono i valori delle 13 giornate di ciascun girone. Le linee sono lisciate
 con un kernel gaussiano e si interrompono dove mancano dati (giocatore non in
@@ -16,8 +33,8 @@ campo); barre e/o trend sono attivabili/disattivabili.
 
 Sezione 2 — "Confronto tra giocatori":
 per un KPI scelto, una linea continua per ciascuna entità selezionata
-(Squadra e/o giocatori) lungo tutte le 28 partite della stagione (andata,
-ritorno, playout andata = 27ª, playout ritorno = 28ª), con tabella
+(Squadra e/o giocatori) lungo le partite della stagione (andata, ritorno,
+playout andata, playout ritorno — 28 nella 2025-2026), con tabella
 riepilogativa min/mediana/max per entità.
 
 Sezione 3 — "Confronto KPI per una singola entità":
@@ -81,7 +98,23 @@ from src.leg_comparison import (
     get_x_axis_order,
     load_all_matches,
 )
+from config.paths import ROOT, load_seasons
+from src.efficiency import (
+    TABELLINO_BOTTOM_SECTIONS,
+    TABELLINO_TOP_SECTIONS,
+    compute_tabellino,
+    export_tabellino_to_xlsx,
+)
 from src.player_report import build_player_report_base
+from src.rankings import (
+    build_ace_man,
+    build_best_attack,
+    build_best_block,
+    build_best_rec,
+    build_spike_guarantee,
+    build_srv_shame,
+    calculate_player_scores_by_type,
+)
 from src.player_season_report import build_player_season_report
 from src.setter_report import (
     ATTACCO_ALZATO_ESCL_KPI_LABELS,
@@ -90,8 +123,9 @@ from src.setter_report import (
     build_setter_kpi_dataset,
 )
 
-SEASON = "2025-2026"
-N_REGULAR_MATCHES = 28  # 13 andata + 13 ritorno + 2 playout (POA, POR)
+# CSV di config la cui modifica deve invalidare la cache (una partita appena
+# aggiunta a matches.csv, una terna appena registrata nel check terne).
+CONFIG_FILES = ("matches.csv", "player_identities.csv", "players.csv", "seasons.csv")
 REC_VOTE_OPTIONS = ["#", "+", "!", "-", "/", "="]
 
 # ALL_KPIS + i KPI "Attacco SO"/"Attacco FB"/"Contrattacco" (parametrici
@@ -151,7 +185,7 @@ def hex_to_rgba(hex_color, alpha):
     return f"rgba({r},{g},{b},{alpha})"
 
 # Abbreviazioni per i nomi avversario più lunghi, usate come etichette sull'asse X
-# del grafico "Confronto tra giocatori" (28 posizioni, poco spazio per ciascuna).
+# del grafico "Confronto tra giocatori" (fino a ~28 posizioni, poco spazio per ciascuna).
 OPPONENT_ABBR = {
     "Monterotondo": "M.tondo",
     "Stella Mantus": "S.Mantus",
@@ -165,47 +199,66 @@ def abbr_opponent(name):
     return OPPONENT_ABBR.get(name, name)
 
 
-def match_seq_tick_labels(opponent_order):
+_PLAYOUT_TICK_SUFFIX = {"POA": " (PO-A)", "POR": " (PO-R)"}
+
+
+def build_match_axis(team_df):
     """
-    Etichette asse X del grafico "Confronto tra giocatori": nome avversario
-    (abbreviato se necessario), ripetuto per andata (0..12) e ritorno (13..25);
-    playout (26, 27) con suffisso per distinguere andata/ritorno.
+    Asse X dei grafici lungo la stagione (sezioni 2/3, pagella): (match_seq
+    in ordine cronologico, etichette) — solo le partite presenti in `team_df`
+    (quindi registrate e selezionate), non un numero fisso di partite.
+    Etichetta = nome avversario (abbreviato se necessario), ripetuto per
+    andata e ritorno; playout con suffisso per distinguere andata/ritorno.
     """
-    labels = [abbr_opponent(o) for o in opponent_order]
-    labels += [abbr_opponent(o) for o in opponent_order]
-    labels += [f"{abbr_opponent('JVC')} (PO-A)", f"{abbr_opponent('JVC')} (PO-R)"]
-    return labels
+    rows = team_df[["match_seq", "opponent", "leg"]].drop_duplicates("match_seq").sort_values("match_seq")
+    seqs = [int(ms) for ms in rows["match_seq"]]
+    labels = [abbr_opponent(o) + _PLAYOUT_TICK_SUFFIX.get(leg, "") for o, leg in zip(rows["opponent"], rows["leg"])]
+    return seqs, labels
 
-st.set_page_config(page_title="Decimo Roma — Andata vs Ritorno", layout="wide")
+st.set_page_config(page_title="Decimo Roma — Match analysis", layout="wide")
 
 
+def config_version():
+    """Data di modifica dei CSV di config, passata a ogni loader cacheato come
+    parte della chiave: aggiungere una partita a matches.csv (o registrare una
+    terna) invalida la cache da sé, senza riavviare la dashboard."""
+    return tuple((ROOT / "config" / name).stat().st_mtime for name in CONFIG_FILES)
+
+
+def active_seasons():
+    seasons = load_seasons()
+    return list(seasons[seasons["active"] == 1]["season"])
+
+
+# `version` (config_version()) non è usato nel corpo dei loader: serve solo
+# come chiave di cache.
 @st.cache_data(show_spinner="Caricamento partite della stagione da Google Drive...")
-def load_matches_cached(season):
+def load_matches_cached(season, version):
     """Cache separata dal resto: è la parte lenta (lettura Excel da Drive), riusata
     sia dal dataset KPI fisso sia da quello parametrico "Attacco SO"."""
     return load_all_matches(season)
 
 
 @st.cache_data(show_spinner=False)
-def load_data(season):
-    matches = load_matches_cached(season)
+def load_data(season, version):
+    matches = load_matches_cached(season, version)
     return build_comparison_dataset(season, matches=matches)
 
 
 @st.cache_data(show_spinner=False)
-def load_attacco_so_data(season, rec_vote):
-    matches = load_matches_cached(season)
+def load_attacco_so_data(season, rec_vote, version):
+    matches = load_matches_cached(season, version)
     return build_attacco_so_dataset(season, rec_vote=rec_vote, matches=matches)
 
 
 @st.cache_data(show_spinner=False)
-def load_match_outcomes(season):
-    matches = load_matches_cached(season)
+def load_match_outcomes(season, version):
+    matches = load_matches_cached(season, version)
     return build_match_outcomes_dataset(season, matches=matches)
 
 
 @st.cache_data(show_spinner=False)
-def load_setter_kpi_data(season):
+def load_setter_kpi_data(season, version):
     """"Attacco Alzato" (ruolo palleggiatore, src.setter_report) — NON riusa
     load_matches_cached: quel `matches` è già filtrato/normalizzato, non
     adatto alla ricostruzione formazioni/identificazione palleggiatore (vedi
@@ -214,14 +267,14 @@ def load_setter_kpi_data(season):
 
 
 @st.cache_data(show_spinner="Calcolo pagella giocatore...")
-def load_player_report(season, rec_vote):
-    matches = load_matches_cached(season)
+def load_player_report(season, rec_vote, version):
+    matches = load_matches_cached(season, version)
     return build_player_report_base(season, rec_vote=rec_vote, matches=matches)
 
 
 @st.cache_data(show_spinner="Calcolo report di sintesi stagionale...")
-def load_player_season_report(season, rec_vote):
-    matches = load_matches_cached(season)
+def load_player_season_report(season, rec_vote, version):
+    matches = load_matches_cached(season, version)
     return build_player_season_report(season, rec_vote=rec_vote, matches=matches)
 
 
@@ -384,15 +437,16 @@ def build_kpi_chart(df, kpi, entity_label, x_axis_order, show_bars, show_trend, 
 
 
 def build_player_comparison_chart(
-    kpi, selected_entities, team_df, player_df, entity_master_order, bandwidth, opponent_order,
+    kpi, selected_entities, team_df, player_df, entity_master_order, bandwidth, match_axis,
     match_outcomes_df,
 ):
     """
-    Grafico di confronto multi-entità: una linea continua per entità su tutte
-    le 28 partite, con una striscia vinta/persa sotto (vedi add_result_strip).
+    Grafico di confronto multi-entità: una linea continua per entità sulle
+    partite di `match_axis` (vedi build_match_axis), con una striscia
+    vinta/persa sotto (vedi add_result_strip).
     """
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.85, 0.15], vertical_spacing=0.04)
-    match_seq_full = list(range(N_REGULAR_MATCHES))
+    match_seq_full, tick_labels = match_axis
     stats_rows = []
 
     for entity in selected_entities:
@@ -421,7 +475,6 @@ def build_player_comparison_chart(
             "Max": float(np.max(raw_valid)),
         })
 
-    tick_labels = match_seq_tick_labels(opponent_order)
     add_result_strip(fig, match_outcomes_df, match_seq_full, tick_labels, row=2, col=1)
     fig.update_layout(**base_layout(f"Confronto giocatori — {kpi}", "Avversario", kpi))
     return fig, pd.DataFrame(stats_rows)
@@ -458,16 +511,16 @@ def format_kpi_average(kpi, value):
 
 
 def build_kpi_comparison_chart(
-    entity, selected_kpis, team_df, player_df, kpi_master_order, bandwidth, opponent_order,
+    entity, selected_kpis, team_df, player_df, kpi_master_order, bandwidth, match_axis,
     match_outcomes_df,
 ):
     """
     Grafico di confronto multi-KPI per una singola entità: una linea continua
-    per KPI su tutte le 28 partite, con una striscia vinta/persa sotto (vedi
-    add_result_strip).
+    per KPI sulle partite di `match_axis` (vedi build_match_axis), con una
+    striscia vinta/persa sotto (vedi add_result_strip).
     """
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.85, 0.15], vertical_spacing=0.04)
-    match_seq_full = list(range(N_REGULAR_MATCHES))
+    match_seq_full, tick_labels = match_axis
     stats_rows = []
 
     df = team_df if entity == "Squadra" else player_df[player_df["player"] == entity]
@@ -497,7 +550,6 @@ def build_kpi_comparison_chart(
             "Max": format_kpi_value(kpi, np.max(raw_valid)),
         })
 
-    tick_labels = match_seq_tick_labels(opponent_order)
     add_result_strip(fig, match_outcomes_df, match_seq_full, tick_labels, row=2, col=1)
     fig.update_layout(**base_layout(f"Confronto KPI — {entity}", "Avversario", "Valore"))
     return fig, pd.DataFrame(stats_rows)
@@ -545,9 +597,9 @@ def render_kpi_section(team_df, player_df, x_axis_order, entity_options):
                     st.dataframe(table, width="stretch")
 
 
-def render_comparison_section(team_df, player_df, entity_options, opponent_order, match_outcomes_df):
+def render_comparison_section(team_df, player_df, entity_options, match_axis, match_outcomes_df):
     st.header("Confronto tra giocatori")
-    st.caption("Linea continua per entità lungo tutta la stagione (asse X: avversario, andata poi ritorno; in coda il playout, sempre JVC) — striscia sotto: esito partita (verde=vinta, rosso=persa)")
+    st.caption("Linea continua per entità lungo le partite selezionate (asse X: avversario, andata poi ritorno; in coda l'eventuale playout) — striscia sotto: esito partita (verde=vinta, rosso=persa)")
 
     col_a, col_b = st.columns(2)
     with col_a:
@@ -565,7 +617,7 @@ def render_comparison_section(team_df, player_df, entity_options, opponent_order
     for kpi in compare_kpis:
         fig, stats_df = build_player_comparison_chart(
             kpi, compare_entities, team_df, player_df, entity_options, st.session_state["bandwidth"],
-            opponent_order, match_outcomes_df,
+            match_axis, match_outcomes_df,
         )
         st.plotly_chart(fig, theme=None)
 
@@ -585,9 +637,9 @@ def render_comparison_section(team_df, player_df, entity_options, opponent_order
             st.warning(f"Nessun dato per {kpi} sulle entità selezionate.")
 
 
-def render_kpi_comparison_section(team_df, player_df, entity_options, opponent_order, match_outcomes_df):
+def render_kpi_comparison_section(team_df, player_df, entity_options, match_axis, match_outcomes_df):
     st.header("Confronto KPI per una singola entità")
-    st.caption("Linea continua per KPI, per Squadra o un giocatore, lungo tutta la stagione — striscia sotto: esito partita (verde=vinta, rosso=persa)")
+    st.caption("Linea continua per KPI, per Squadra o un giocatore, lungo le partite selezionate — striscia sotto: esito partita (verde=vinta, rosso=persa)")
 
     col_a, col_b = st.columns(2)
     with col_a:
@@ -605,7 +657,7 @@ def render_kpi_comparison_section(team_df, player_df, entity_options, opponent_o
 
     fig, stats_df = build_kpi_comparison_chart(
         compare_entity, compare_kpis2, team_df, player_df, DISPLAY_KPIS, st.session_state["bandwidth"],
-        opponent_order, match_outcomes_df,
+        match_axis, match_outcomes_df,
     )
     st.plotly_chart(fig, theme=None)
 
@@ -661,7 +713,7 @@ def format_finding_text(finding, match_label_lookup):
     )
 
 
-def _add_finding_annotation(fig, finding, colors):
+def _add_finding_annotation(fig, finding, colors, match_seqs):
     """
     Aggiunge a `fig` l'evidenza grafica di UN finding (rettangolo per uno
     streak, linea di spartiacque + medie per un cambio di livello) — verde
@@ -686,21 +738,20 @@ def _add_finding_annotation(fig, finding, colors):
         split = finding["split_match_seq"] - 0.5
         fig.add_vline(x=split, line_dash="dash", line_color=colors["grid"], annotation_text="cambio di livello")
         fig.add_shape(
-            type="line", x0=0, x1=split,
+            type="line", x0=match_seqs[0], x1=split,
             y0=finding["prima_media"], y1=finding["prima_media"],
             line=dict(color=colors["grid"], dash="dot", width=2),
         )
         fig.add_shape(
-            type="line", x0=split, x1=N_REGULAR_MATCHES - 1,
+            type="line", x0=split, x1=match_seqs[-1],
             y0=finding["dopo_media"], y1=finding["dopo_media"],
             line=dict(color=highlight_color, dash="dot", width=2),
         )
 
 
-def _build_base_kpi_figure(kpi, player_label, player_df_all):
-    """Traccia di base (serie grezza del KPI lungo le 28 partite) condivisa
+def _build_base_kpi_figure(kpi, player_label, player_df_all, match_seq_full):
+    """Traccia di base (serie grezza del KPI lungo la stagione) condivisa
     da build_finding_chart e build_unified_finding_chart."""
-    match_seq_full = list(range(N_REGULAR_MATCHES))
     sub = player_df_all[(player_df_all["player"] == player_label) & (player_df_all["kpi"] == kpi)]
     sub = sub.set_index("match_seq").reindex(match_seq_full)
     values = sub["value"].to_numpy()
@@ -714,28 +765,28 @@ def _build_base_kpi_figure(kpi, player_label, player_df_all):
         customdata=[format_kpi_value(kpi, v) if not np.isnan(v) else "" for v in values],
         hovertemplate="%{x}<br>%{customdata}<extra></extra>",
     ))
-    return fig, colors, match_seq_full
+    return fig, colors
 
 
-def build_finding_chart(kpi, player_label, finding, player_df_all, opponent_order):
+def build_finding_chart(kpi, player_label, finding, player_df_all, match_axis):
     """
     Grafico di evidenza per un singolo finding: la serie grezza del KPI lungo
-    tutta la stagione (28 partite), con la porzione che ha generato il
+    tutta la stagione, con la porzione che ha generato il
     finding evidenziata — verde = favorevole, rosso = sfavorevole (stessa
     convenzione status color di add_result_strip, qui applicata al
     finding invece che all'esito partita).
     """
-    fig, colors, match_seq_full = _build_base_kpi_figure(kpi, player_label, player_df_all)
-    _add_finding_annotation(fig, finding, colors)
+    match_seq_full, tick_labels = match_axis
+    fig, colors = _build_base_kpi_figure(kpi, player_label, player_df_all, match_seq_full)
+    _add_finding_annotation(fig, finding, colors, match_seq_full)
 
-    tick_labels = match_seq_tick_labels(opponent_order)
     fig.update_xaxes(tickmode="array", tickvals=match_seq_full, ticktext=tick_labels)
     fig.update_layout(**base_layout(f"{kpi} — {player_label}", "Avversario", kpi))
     fig.update_layout(height=320, margin=dict(t=60, b=40))
     return fig
 
 
-def build_unified_finding_chart(kpi, player_label, findings, player_df_all, opponent_order):
+def build_unified_finding_chart(kpi, player_label, findings, player_df_all, match_axis):
     """
     Come build_finding_chart, ma con PIÙ finding sullo stesso KPI evidenziati
     su un unico grafico invece di uno per finding — usata dal report Word
@@ -744,11 +795,11 @@ def build_unified_finding_chart(kpi, player_label, findings, player_df_all, oppo
     allo stesso kpi"), non dalla tab dashboard (che resta con un grafico per
     finding, già verificata).
     """
-    fig, colors, match_seq_full = _build_base_kpi_figure(kpi, player_label, player_df_all)
+    match_seq_full, tick_labels = match_axis
+    fig, colors = _build_base_kpi_figure(kpi, player_label, player_df_all, match_seq_full)
     for finding in findings:
-        _add_finding_annotation(fig, finding, colors)
+        _add_finding_annotation(fig, finding, colors, match_seq_full)
 
-    tick_labels = match_seq_tick_labels(opponent_order)
     fig.update_xaxes(tickmode="array", tickvals=match_seq_full, ticktext=tick_labels)
     fig.update_layout(**base_layout(f"{kpi} — {player_label}", "Avversario", kpi))
     fig.update_layout(height=320, margin=dict(t=60, b=40))
@@ -951,7 +1002,7 @@ def _docx_add_table(doc, headers, rows):
     return table
 
 
-def generate_player_report_docx(cognome, data, season_data, player_df_all, team_df, opponent_order, match_label_lookup):
+def generate_player_report_docx(cognome, data, season_data, player_df_all, team_df, match_axis, match_label_lookup):
     """
     Assembla il report Word della pagella giocatore, sezione per sezione
     (ordine richiesto esplicitamente dall'utente il 2026-08-15): giudizio
@@ -1061,7 +1112,7 @@ def generate_player_report_docx(cognome, data, season_data, player_df_all, team_
             doc.add_heading(kpi, level=2)
             for finding in kpi_findings:
                 _docx_add_markdown_bold_paragraph(doc, format_finding_text(finding, match_label_lookup))
-            fig = build_unified_finding_chart(kpi, player_label, kpi_findings, player_df_all, opponent_order)
+            fig = build_unified_finding_chart(kpi, player_label, kpi_findings, player_df_all, match_axis)
             png_bytes = fig.to_image(format="png", width=900, height=320, scale=2)
             doc.add_picture(io.BytesIO(png_bytes), width=Inches(6))
 
@@ -1079,7 +1130,7 @@ def generate_player_report_docx(cognome, data, season_data, player_df_all, team_
     return buffer.getvalue()
 
 
-def render_player_report_section(report, not_in_registry, season_report, player_df_all, team_df, opponent_order):
+def render_player_report_section(report, not_in_registry, season_report, player_df_all, team_df, match_axis):
     st.header("Pagella giocatore")
     st.caption(
         "Presenze/assenze e finding di rendimento più notevoli per giocatore — streak (media mobile "
@@ -1133,7 +1184,7 @@ def render_player_report_section(report, not_in_registry, season_report, player_
             else:
                 for finding in data["findings"]:
                     st.markdown(format_finding_text(finding, match_label_lookup))
-                    fig = build_finding_chart(finding["kpi"], player_label, finding, player_df_all, opponent_order)
+                    fig = build_finding_chart(finding["kpi"], player_label, finding, player_df_all, match_axis)
                     st.plotly_chart(fig, theme=None)
 
             if season_data:
@@ -1142,7 +1193,7 @@ def render_player_report_section(report, not_in_registry, season_report, player_
                 if st.button("📄 Genera report", key=f"genera_report_{cognome}"):
                     with st.spinner("Generazione report Word..."):
                         st.session_state[report_key] = generate_player_report_docx(
-                            cognome, data, season_data, player_df_all, team_df, opponent_order, match_label_lookup,
+                            cognome, data, season_data, player_df_all, team_df, match_axis, match_label_lookup,
                         )
                 if report_key in st.session_state:
                     st.download_button(
@@ -1154,11 +1205,205 @@ def render_player_report_section(report, not_in_registry, season_report, player_
                     )
 
 
+# ---------------------------------------------------------------------------
+# Classifiche (come il PDF di classifiche.ipynb)
+# ---------------------------------------------------------------------------
+# Default di classifiche.ipynb: soglie minime di volume sulla stagione e
+# giocatori esclusi per fondamentale (scelta editoriale: es. il libero non
+# compare nelle classifiche di battuta/attacco/muro). Modificabili dal tab.
+RANKING_DEFAULT_IGNORE = {
+    "battuta": ["Pedico", "Amore"],
+    "attacco": ["Pedico"],
+    "muro": ["Pedico"],
+    "ricezione": ["Amore", "Caranzetti"],
+}
+RANKING_DEFAULT_MIN = {"battute": 10, "attacchi": 50, "ricezioni": 40}
+
+
+def render_classifiche_section(season_df, n_partite):
+    st.header("Classifiche")
+    st.caption(f"Sulle {n_partite} partite selezionate — stesse regole del PDF di classifiche.ipynb.")
+
+    cognomi = sorted(season_df["Cognome"].unique())
+    with st.expander("Impostazioni classifiche (soglie minime ed esclusioni)"):
+        c1, c2, c3 = st.columns(3)
+        min_battute = c1.number_input("Min. battute (Ace Man)", 0, value=RANKING_DEFAULT_MIN["battute"], step=1)
+        min_attacchi = c2.number_input("Min. attacchi (Spike Guarantee)", 0, value=RANKING_DEFAULT_MIN["attacchi"], step=1)
+        min_ricezioni = c3.number_input("Min. ricezioni (Miglior ricevitore)", 0, value=RANKING_DEFAULT_MIN["ricezioni"], step=1)
+        st.caption(
+            "Le soglie sono sul totale delle partite selezionate: a inizio stagione abbassale, "
+            "altrimenti Spike Guarantee e Miglior ricevitore restano quasi vuote."
+        )
+        ignore = {}
+        cols = st.columns(len(RANKING_DEFAULT_IGNORE))
+        for col, (tipo, default) in zip(cols, RANKING_DEFAULT_IGNORE.items()):
+            ignore[tipo] = col.multiselect(
+                f"Esclusi da {tipo}", cognomi, default=[c for c in default if c in cognomi], key=f"ignore_{tipo}",
+            )
+
+    srv = calculate_player_scores_by_type(season_df, "battuta", ignore_list=ignore["battuta"])
+    att = calculate_player_scores_by_type(season_df, "attacco", ignore_list=ignore["attacco"])
+    blk = calculate_player_scores_by_type(season_df, "muro", ignore_list=ignore["muro"])
+    rec = calculate_player_scores_by_type(season_df, "ricezione", ignore_list=ignore["ricezione"])
+    tables = [
+        ("Ace Man", build_ace_man(srv, min_battute=min_battute)),
+        ("Spike Leader", build_best_attack(att)),
+        ("Spike Guarantee", build_spike_guarantee(att, min_attacchi=min_attacchi)),
+        ("Block Monster", build_best_block(blk)),
+        ("Miglior ricevitore", build_best_rec(rec, min_ricezioni=min_ricezioni)),
+        ("Muro della vergogna (battute sbagliate)", build_srv_shame(srv)),
+    ]
+    for row_start in range(0, len(tables), 3):
+        cols = st.columns(3)
+        for col, (title, table) in zip(cols, tables[row_start:row_start + 3]):
+            with col:
+                st.subheader(title)
+                if table.empty:
+                    st.caption("Nessun giocatore sopra la soglia minima.")
+                else:
+                    st.dataframe(table, hide_index=True, width="stretch")
+
+
+# ---------------------------------------------------------------------------
+# Tabellino side-out / break point (come l'export "[tabellino F]")
+# ---------------------------------------------------------------------------
+def _eff_background(value):
+    """Stessa scala a 3 colori dell'export Excel: -100% rosso, 0 bianco, +100% verde."""
+    v = max(-1.0, min(1.0, value))
+    red, white, green = (0xFF, 0x00, 0x00), (0xFF, 0xFF, 0xFF), (0x00, 0xB0, 0x50)
+    end = green if v >= 0 else red
+    t = abs(v)
+    r, g, b = (round(w + (e - w) * t) for w, e in zip(white, end))
+    return f"background-color: rgb({r},{g},{b}); color: #000"
+
+
+def _tabellino_block_html(title, sections, maps, players):
+    rows = players + ["Totale"]
+    columns = pd.MultiIndex.from_tuples([(sec, sub) for sec, subs in sections for sub in subs])
+    raw = pd.DataFrame(
+        [[maps[i][p].get(sub, "") for i, (_, subs) in enumerate(sections) for sub in subs] for p in rows],
+        index=rows, columns=columns,
+    )
+
+    def _fmt(v, sub):
+        if v == "" or pd.isna(v):
+            return "-"
+        return f"{v * 100:.0f}%" if sub == "Eff" else f"{int(v)}"
+
+    display = raw.copy()
+    for col in raw.columns:
+        display[col] = [_fmt(v, col[1]) for v in raw[col]]
+
+    def _style(_):
+        styles = pd.DataFrame("", index=raw.index, columns=raw.columns)
+        for col in raw.columns:
+            if col[1] == "Eff":
+                styles[col] = [_eff_background(v) if v != "" and pd.notna(v) else "" for v in raw[col]]
+        styles.loc["Totale"] = [s + "; font-weight: bold; border-top: 2px solid currentColor" for s in styles.loc["Totale"]]
+        return styles
+
+    styler = (
+        display.style.apply(_style, axis=None)
+        .set_table_styles([
+            {"selector": "", "props": "border-collapse: collapse; font-size: 0.8rem;"},
+            {"selector": "th, td", "props": "border: 1px solid rgba(128,128,128,0.4); padding: 2px 6px; text-align: center;"},
+            {"selector": "th.row_heading", "props": "text-align: left; white-space: nowrap;"},
+        ])
+    )
+    return f"<h4>{title}</h4><div style='overflow-x: auto'>{styler.to_html()}</div>"
+
+
+def render_tabellino_section(matches, selected_seqs, match_label_lookup):
+    st.header("Tabellino")
+    by_seq = {m["match_seq"]: m for m in matches}
+    aggregate = f"Tutte le partite selezionate ({len(selected_seqs)})"
+    options = [aggregate] + list(selected_seqs)
+    choice = st.selectbox(
+        "Partita", options, index=len(options) - 1,
+        format_func=lambda o: o if o == aggregate else _match_option_label(o, match_label_lookup),
+        help="Di default l'ultima partita selezionata; la prima voce somma tutte le partite selezionate.",
+    )
+    seqs = list(selected_seqs) if choice == aggregate else [choice]
+    # ignore_index: le funzioni di separazione side-out/contrattacco indicizzano
+    # per etichetta, servono indici univoci anche concatenando più partite.
+    df = pd.concat([by_seq[ms]["df"] for ms in seqs], ignore_index=True)
+
+    players, top_maps, bottom_maps = compute_tabellino(df)
+    st.html(_tabellino_block_html("Side-out", TABELLINO_TOP_SECTIONS, top_maps, players))
+    st.html(_tabellino_block_html("Break point", TABELLINO_BOTTOM_SECTIONS, bottom_maps, players))
+    st.caption(
+        "Eff ricezione = (# + +) − (= + /); Eff attacco = # − (= + /); Eff battuta = (# + + + /) − =; "
+        "Eff muro = (# + +) − (= + /) — tutte sul totale. R#+ / R! / R−: attacco dopo ricezione con quel voto."
+    )
+
+    buffer = io.BytesIO()
+    export_tabellino_to_xlsx(df, buffer)
+    name = "tutte" if choice == aggregate else match_label_lookup[choice]
+    st.download_button(
+        "⬇️ Scarica tabellino Excel", data=buffer.getvalue(), file_name=f"tabellino {name}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+def _match_option_label(match_seq, match_label_lookup):
+    return f"{match_seq + 1}. {match_label_lookup[match_seq]}"
+
+
+def _filter_by_matches(df, selected_seqs):
+    return df[df["match_seq"].isin(selected_seqs)] if not df.empty else df
+
+
 def main():
-    st.title("Decimo Roma — Confronto Andata vs Ritorno")
-    st.caption(f"Stagione {SEASON} · playout (solo JVC) mostrato come 14ª posizione / 27ª-28ª partita")
+    st.title("Decimo Roma — Match analysis")
+
+    seasons = active_seasons()
+    with st.sidebar:
+        st.header("Stagione e partite")
+        season = st.selectbox("Stagione", seasons, index=len(seasons) - 1, key="season")
+        if st.button("🔄 Ricarica dati da Drive", help=(
+            "Rilegge tutti gli Excel della stagione. Una partita appena aggiunta a "
+            "config/matches.csv compare già da sola: serve solo se hai modificato "
+            "uno scout già caricato."
+        )):
+            st.cache_data.clear()
+
+    version = config_version()
+    matches = load_matches_cached(season, version)
+    if not matches:
+        st.info(
+            f"Nessuna partita caricata per la stagione {season}. Per aggiungerne una: carica "
+            "l'Excel dello scout sul Drive, aggiungi una riga in config/matches.csv "
+            "(season, leg, opponent, path relativo alla cartella della stagione, active=1) "
+            "e fai il check terne in notebooks/classifiche.ipynb per i giocatori nuovi."
+        )
+        st.stop()
+
+    unregistered = sorted({t for m in matches for t in m["unregistered"]})
+    if unregistered:
+        st.warning(
+            "Giocatori Decimo presenti negli scout ma non ancora registrati in "
+            "config/player_identities.csv — esclusi da tutti i KPI finché non li "
+            "gestisci nel check terne di notebooks/classifiche.ipynb: "
+            + ", ".join(unregistered)
+        )
 
     with st.sidebar:
+        team_df_fixed, player_df_fixed = load_data(season, version)
+        match_label_lookup_full = build_match_label_lookup(team_df_fixed)
+        all_seqs = sorted(match_label_lookup_full)
+        selected_seqs = st.multiselect(
+            "Partite", all_seqs, default=all_seqs, key=f"partite_{season}",
+            format_func=lambda ms: _match_option_label(ms, match_label_lookup_full),
+            help=(
+                "Partite registrate in config/matches.csv per la stagione. Filtra le sezioni "
+                "di confronto KPI; la pagella giocatore resta sempre su tutta la stagione."
+            ),
+        )
+        show_pagella = st.toggle(
+            "Mostra pagella giocatore", value=False,
+            help="Pagella e finding di rendimento: pensati per fine stagione, calcolo più lento.",
+        )
+        st.divider()
         st.header("Impostazioni generali")
         st.slider(
             "Smoothing linee di trend (kernel gaussiano)", 0.0, 3.0, 1.2, 0.1,
@@ -1188,38 +1433,58 @@ def main():
         )
         st.divider()
 
-    team_df_fixed, player_df_fixed = load_data(SEASON)
-    team_df_so, player_df_so = load_attacco_so_data(SEASON, tuple(selected_rec_vote))
-    team_df = pd.concat([team_df_fixed, team_df_so], ignore_index=True)
-    setter_df = load_setter_kpi_data(SEASON)
-    # player_df_all: senza soglia minima attacchi — è la base su cui src.player_report
-    # ha calcolato i finding della pagella, i grafici di evidenza devono usare la
-    # stessa serie (altrimenti un finding potrebbe riferirsi a partite che nel
-    # grafico risultano "senza dati" per effetto della soglia della sidebar). Include
-    # anche "Attacco Alzato" (ruolo palleggiatore): non soggetto alla soglia minima
+    selected_seqs = sorted(selected_seqs)
+    st.caption(f"Stagione {season} · {len(selected_seqs)} di {len(all_seqs)} partite selezionate")
+    if not selected_seqs:
+        st.info("Seleziona almeno una partita dalla barra laterale.")
+        st.stop()
+
+    team_df_so, player_df_so = load_attacco_so_data(season, tuple(selected_rec_vote), version)
+    team_df_all = pd.concat([team_df_fixed, team_df_so], ignore_index=True)
+    setter_df = load_setter_kpi_data(season, version)
+    # player_df_all: senza soglia minima attacchi e su tutta la stagione — è la
+    # base su cui src.player_report ha calcolato i finding della pagella, i
+    # grafici di evidenza devono usare la stessa serie (altrimenti un finding
+    # potrebbe riferirsi a partite che nel grafico risultano "senza dati" per
+    # effetto della soglia o del filtro partite della sidebar). Include anche
+    # "Attacco Alzato" (ruolo palleggiatore): non soggetto alla soglia minima
     # attacchi (quella si applica solo alle famiglie di attacco generiche).
     player_df_all = pd.concat([player_df_fixed, player_df_so, setter_df], ignore_index=True)
-    player_df = apply_min_attacks_threshold(player_df_all, min_attacks)
 
-    match_outcomes_df = load_match_outcomes(SEASON)
-    rec_vote_for_report = tuple(selected_rec_vote) if selected_rec_vote else DEFAULT_REC_VOTE
-    player_report, player_report_missing = load_player_report(SEASON, rec_vote_for_report)
-    season_report = load_player_season_report(SEASON, rec_vote_for_report)
+    team_df = _filter_by_matches(team_df_all, selected_seqs)
+    player_df = apply_min_attacks_threshold(_filter_by_matches(player_df_all, selected_seqs), min_attacks)
+    match_outcomes_df = load_match_outcomes(season, version)
 
-    x_axis_order = get_x_axis_order(SEASON)
+    present_labels = set(team_df["x_label"])
+    x_axis_order = [x for x in get_x_axis_order(season) if x in present_labels]
     players = sorted(player_df["player"].unique())
     entity_options = ["Squadra"] + players
-    opponent_order = x_axis_order[:-1]  # senza PLAYOUT_LABEL, per il grafico 2
+    match_axis = build_match_axis(team_df)
 
-    render_kpi_section(team_df, player_df, x_axis_order, entity_options)
-    st.divider()
-    render_comparison_section(team_df, player_df, entity_options, opponent_order, match_outcomes_df)
-    st.divider()
-    render_kpi_comparison_section(team_df, player_df, entity_options, opponent_order, match_outcomes_df)
-    st.divider()
-    render_player_report_section(
-        player_report, player_report_missing, season_report, player_df_all, team_df, opponent_order,
-    )
+    selected_matches = [m for m in matches if m["match_seq"] in selected_seqs]
+    season_df = pd.concat([m["df"] for m in selected_matches], ignore_index=True)
+
+    tab_names = ["Classifiche", "Tabellino", "Andamento KPI"] + (["Pagella"] if show_pagella else [])
+    tabs = st.tabs(tab_names)
+    with tabs[0]:
+        render_classifiche_section(season_df, len(selected_seqs))
+    with tabs[1]:
+        render_tabellino_section(matches, selected_seqs, match_label_lookup_full)
+    with tabs[2]:
+        render_kpi_section(team_df, player_df, x_axis_order, entity_options)
+        st.divider()
+        render_comparison_section(team_df, player_df, entity_options, match_axis, match_outcomes_df)
+        st.divider()
+        render_kpi_comparison_section(team_df, player_df, entity_options, match_axis, match_outcomes_df)
+    if show_pagella:
+        with tabs[3]:
+            rec_vote_for_report = tuple(selected_rec_vote) if selected_rec_vote else DEFAULT_REC_VOTE
+            player_report, player_report_missing = load_player_report(season, rec_vote_for_report, version)
+            season_report = load_player_season_report(season, rec_vote_for_report, version)
+            render_player_report_section(
+                player_report, player_report_missing, season_report, player_df_all, team_df_all,
+                build_match_axis(team_df_all),
+            )
 
 
 if __name__ == "__main__":

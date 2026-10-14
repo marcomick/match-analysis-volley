@@ -333,43 +333,42 @@ def compute_set_metrics(
     return pd.DataFrame(out_rows).set_index(set_col).sort_index()
 
 
-def export_tabellino_to_xlsx(
-    df,
-    filepath,
-    sheet_name="Tabellino",
-    top_start_row=0,
-    bottom_start_row=None,   # <-- può essere None/auto
-    bottom_gap_rows=1        # <-- righe vuote tra blocco alto e basso
-):
-    """Esporta un tabellino con blocco Ricezione/Attacco(sopra) + Battuta/Contrattacco/Free Ball/Muro/Errori(sotto)."""
-    import pandas as pd
-    import xlsxwriter
+# Sezioni del tabellino: (titolo, sottocolonne). Blocco sopra = side-out
+# (ricezione e attacco dopo ricezione), blocco sotto = break point (battuta,
+# contrattacco, free ball, muro) + errori. Insieme di voti ampio per gli
+# attacchi, per coprire ogni evenienza.
+TABELLINO_ATT_VOTES = ['-', '#', '+', '/', '=', '!']
+TABELLINO_REC_VOTES = ['#', '+', '!', '-', '/', '=']
+TABELLINO_TOP_SECTIONS = [
+    ("Ricezione", ['Eff', 'Tot'] + TABELLINO_REC_VOTES),
+    ("Attacco(R tot)", ['Eff', 'Tot'] + TABELLINO_ATT_VOTES),
+    ("Attacco(R#+)", ['Eff', 'Tot'] + TABELLINO_ATT_VOTES),
+    ("Attacco(R!)", ['Eff', 'Tot'] + TABELLINO_ATT_VOTES),
+    ("Attacco(R-)", ['Eff', 'Tot'] + TABELLINO_ATT_VOTES),
+]
+TABELLINO_BOTTOM_SECTIONS = [
+    ("Battuta", ['Eff', 'Tot'] + TABELLINO_ATT_VOTES),
+    ("Contrattacco", ['Eff', 'Tot'] + TABELLINO_ATT_VOTES),
+    ("Attacco(Free Ball)", ['Eff', 'Tot'] + TABELLINO_ATT_VOTES),
+    ("Muro", ['Eff', 'Tot'] + ['#', '+', '!', '/', '=']),
+    ("Errori", ['Bat', 'Att', 'Muro', 'Alz']),
+]
 
-    # ---------- helper ----------
-    def _set_col_width_px(ws, first_col, last_col, pixels):
-        if hasattr(ws, "set_column_pixels"):
-            ws.set_column_pixels(first_col, last_col, int(pixels))
-        else:
-            width_chars = max(0.0, (float(pixels) - 5.0) / 7.0)
-            ws.set_column(first_col, last_col, width_chars)
 
-    def _safe_write(ws, r, c, val, fmt=None):
-        if isinstance(val, str) and val[:1] in ("=", "+", "-", "@"):
-            ws.write_string(r, c, val, fmt)
-        else:
-            ws.write(r, c, val, fmt)
+def compute_tabellino(df):
+    """
+    Calcoli del tabellino "[tabellino F]" (vedi export_tabellino_to_xlsx),
+    separati dalla scrittura Excel per riusarli anche in dashboard.
 
-    def _num(val):
-        if val == '' or pd.isna(val):
-            return None
-        try:
-            return float(val)
-        except Exception:
-            try:
-                return int(val)
-            except Exception:
-                return val
+    Ritorna (players, top_maps, bottom_maps): players = giocatori in ordine
+    alfabetico (senza 'Totale'); top_maps/bottom_maps = una mappa per sezione
+    di TABELLINO_TOP_SECTIONS/TABELLINO_BOTTOM_SECTIONS, nello stesso ordine,
+    {giocatore o 'Totale': {sottocolonna: valore, '' se assente}}.
 
+    `df` può contenere più partite concatenate (con indice univoco): la
+    separazione side-out/contrattacco richiede ricezione e attacco nello stesso
+    set con lo stesso punteggio, quindi non aggancia mai azioni di partite diverse.
+    """
     # ---------- calcoli base (riuso funzioni esistenti) ----------
     rice_eff = calcola_efficienza(df, 'ricezione', pos=['#', '+'], neg=['=', '/'])
 
@@ -410,28 +409,7 @@ def export_tabellino_to_xlsx(
         battuta, muro, contr, free_ball_eff, errors
     )
 
-    # ---------- layout ----------
-    # mantengo un set ampio di voti per coprire ogni evenienza negli attacchi
-    ATT_VOTES = ['-', '#', '+', '/', '=', '!']
-    REC_VOTES = ['#', '+', '!', '-', '/', '=']
-
-    # BLOCCO SOPRA (Free Ball non c'è qui)
-    TOP_SECTIONS = [
-        ("Ricezione", ['Eff', 'Tot'] + REC_VOTES),
-        ("Attacco(R tot)", ['Eff', 'Tot'] + ATT_VOTES),
-        ("Attacco(R#+)", ['Eff', 'Tot'] + ATT_VOTES),
-        ("Attacco(R!)", ['Eff', 'Tot'] + ATT_VOTES),
-        ("Attacco(R-)", ['Eff', 'Tot'] + ATT_VOTES),
-    ]
-
-    # BLOCCO SOTTO (Free Ball aggiunto qui, dopo Contrattacco)
-    BOTTOM_SECTIONS = [
-        ("Battuta", ['Eff', 'Tot'] + ATT_VOTES),
-        ("Contrattacco", ['Eff', 'Tot'] + ATT_VOTES),
-        ("Attacco(Free Ball)", ['Eff', 'Tot'] + ATT_VOTES),
-        ("Muro", ['Eff', 'Tot'] + ['#', '+', '!', '/', '=']),
-        ("Errori", ['Bat', 'Att', 'Muro', 'Alz']),
-    ]
+    TOP_SECTIONS, BOTTOM_SECTIONS = TABELLINO_TOP_SECTIONS, TABELLINO_BOTTOM_SECTIONS
 
     # mappa DF -> dict per scrittura (con rinomina anche di 'muro' -> 'Muro')
     def _df_to_map(fr, subcols, kind):
@@ -468,6 +446,50 @@ def export_tabellino_to_xlsx(
     m_fball = _df_to_map(free_ball_eff, BOTTOM_SECTIONS[2][1], 'eff')
     m_muro = _df_to_map(muro, BOTTOM_SECTIONS[3][1], 'eff')
     m_err = _df_to_map(errors, BOTTOM_SECTIONS[4][1], 'err')
+
+    return players, [m_rice, m_rtot, m_rpos, m_rexc, m_rneg], [m_bat, m_con, m_fball, m_muro, m_err]
+
+
+def export_tabellino_to_xlsx(
+    df,
+    filepath,
+    sheet_name="Tabellino",
+    top_start_row=0,
+    bottom_start_row=None,   # <-- può essere None/auto
+    bottom_gap_rows=1        # <-- righe vuote tra blocco alto e basso
+):
+    """Esporta un tabellino con blocco Ricezione/Attacco(sopra) + Battuta/Contrattacco/Free Ball/Muro/Errori(sotto)."""
+    import pandas as pd
+    import xlsxwriter
+
+    # ---------- helper ----------
+    def _set_col_width_px(ws, first_col, last_col, pixels):
+        if hasattr(ws, "set_column_pixels"):
+            ws.set_column_pixels(first_col, last_col, int(pixels))
+        else:
+            width_chars = max(0.0, (float(pixels) - 5.0) / 7.0)
+            ws.set_column(first_col, last_col, width_chars)
+
+    def _safe_write(ws, r, c, val, fmt=None):
+        if isinstance(val, str) and val[:1] in ("=", "+", "-", "@"):
+            ws.write_string(r, c, val, fmt)
+        else:
+            ws.write(r, c, val, fmt)
+
+    def _num(val):
+        if val == '' or pd.isna(val):
+            return None
+        try:
+            return float(val)
+        except Exception:
+            try:
+                return int(val)
+            except Exception:
+                return val
+
+    # ---------- calcoli (vedi compute_tabellino) ----------
+    players, (m_rice, m_rtot, m_rpos, m_rexc, m_rneg), (m_bat, m_con, m_fball, m_muro, m_err) = compute_tabellino(df)
+    TOP_SECTIONS, BOTTOM_SECTIONS = TABELLINO_TOP_SECTIONS, TABELLINO_BOTTOM_SECTIONS
 
     # ---------- workbook / formati ----------
     wb = xlsxwriter.Workbook(filepath)

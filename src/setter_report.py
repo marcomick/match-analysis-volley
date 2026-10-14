@@ -106,7 +106,7 @@ import pandas as pd
 
 from config.paths import ROOT, build_base_path, load_matches
 from src.efficiency import calcola_efficienza, eff_from_calcola, separate_attack_types, SRV_POS, SRV_NEG
-from src.leg_comparison import PLAYOUT_LABEL, get_opponent_order
+from src.leg_comparison import get_opponent_order, match_position
 from src.lineup import reconstruct_starting_lineup
 
 DEFAULT_SETTER_NAMES = ("Caranzetti", "Licenziati")
@@ -321,28 +321,20 @@ def build_setter_kpi_dataset(season="2025-2026", setter_names=DEFAULT_SETTER_NAM
 
     base = build_base_path(season=season)
     opponent_order = get_opponent_order(season)
-    n_opponents = len(opponent_order)
     player_labels = _load_setter_player_labels(setter_names)
 
     rows = []
     for match in matches:
-        df = pd.read_excel(base / match["path"], skiprows=1)
+        try:
+            df = pd.read_excel(base / match["path"], skiprows=1)
+        except Exception as e:
+            # stesso trattamento di load_all_matches: un file non leggibile (es.
+            # ancora in sincronizzazione da Drive) salta la partita, non blocca tutto
+            print(f"Errore caricando {base / match['path']}: {e}")
+            continue
 
         leg = match["leg"]
-        try:
-            giornata = opponent_order.index(match["opponent"])
-        except ValueError:
-            giornata = None
-        if leg == "A":
-            x_label, match_seq = match["opponent"], giornata
-        elif leg == "R":
-            x_label, match_seq = match["opponent"], n_opponents + giornata
-        elif leg == "POA":
-            x_label, match_seq = PLAYOUT_LABEL, 2 * n_opponents
-        elif leg == "POR":
-            x_label, match_seq = PLAYOUT_LABEL, 2 * n_opponents + 1
-        else:
-            x_label, match_seq = match["opponent"], None
+        giornata, x_label, match_seq = match_position(leg, match["opponent"], opponent_order)
         base_cols = {
             "opponent": match["opponent"], "leg": leg, "giornata": giornata,
             "x_label": x_label, "match_seq": match_seq,

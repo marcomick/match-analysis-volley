@@ -8,7 +8,7 @@ Il progetto è stato migrato da Google Colab a una repo strutturata con supporto
 - `notebooks/` — notebook Jupyter (classifiche.ipynb, tabellino.ipynb)
 - `config/` — CSV di configurazione (seasons, matches, players, player_identities)
 - `src/` — moduli Python (rankings.py, efficiency.py, attacks.py, leg_comparison.py)
-- `dashboard/` — app Streamlit (`app.py`), `streamlit run dashboard/app.py`
+- `dashboard/` — app Streamlit (`app.py`), `streamlit run dashboard/app.py` — tab Classifiche / Tabellino / Andamento KPI / Pagella (fine stagione)
 - `data/` — esclusa dal repo, dati reali su Google Drive
 - `docs/roadmap.md` — sviluppi futuri
 
@@ -18,7 +18,7 @@ Il progetto è stato migrato da Google Colab a una repo strutturata con supporto
 - Dipendenze in `requirements.txt`
 - Dati su Google Drive, accessibili in locale via:
   `/Users/Marco.Miccheli/Library/CloudStorage/GoogleDrive-marco86sim@gmail.com/Il mio Drive/Pallavolo/Decimo Roma/`
-- Path configurato in `.env` tramite `VOLLEY_DATA_PATH`
+- Path configurato in `.env` tramite `VOLLEY_DRIVE_ROOT` (radice "Il mio Drive"): ogni stagione risolve la propria cartella come `VOLLEY_DRIVE_ROOT / base_path_drive` (`config.paths.season_base_path`, stessa logica di Colab). `VOLLEY_DATA_PATH` (legacy, una sola stagione) è usata solo se `VOLLEY_DRIVE_ROOT` manca
 
 ## Decisioni architetturali prese
 - Nel refactoring di `tabellino.ipynb` verso `src/`, tutto da "# altro" in poi (celle ad-hoc per singola partita, sezione "tabellino" standard con `create_player_summary_df`, "SO per rotazioni") resta intenzionalmente **fuori scope**, non refactorato: quelle celle restano invariate nel notebook, non spostate in `src/`
@@ -33,7 +33,18 @@ Il progetto è stato migrato da Google Colab a una repo strutturata con supporto
 - Terne da ignorare in modo permanente (es. giocatori occasionali non più di interesse) si marcano con `player_id = IGNORED` in `player_identities.csv`: il check terne le riconosce come già gestite (nessun nuovo prompt) e la cella FILTRO le esclude esplicitamente dalle classifiche
 - `save_identity`/`save_player` nel notebook usano `csv.writer(f, lineterminator='\n')` per evitare terminazioni di riga miste (`\r\n`) nei CSV — da mantenere in eventuali refactor
 
-## Stato attuale (aggiornato 2026-08-15)
+## Stato attuale (aggiornato 2026-10-14)
+- **Stagione 2026-2027 predisposta** (2026-10-14, prima partita di campionato a metà ottobre): riga in `config/seasons.csv` con `base_path_drive = Pallavolo/Decimo Roma/2026-2027/Match Analysis` (struttura cartelle diversa dalla 2025-2026: niente livello `Serie D/`, "Analysis" maiuscolo). Dashboard resa indipendente dalla stagione:
+  - sidebar "Stagione e partite": selectbox stagione (stagioni `active=1`, default l'ultima) + multiselect "Partite" (default tutte, etichette "N. Avversario (andata/ritorno)") che filtra le sezioni 1-3; la pagella (sezione 4) resta sempre su tutta la stagione registrata.
+  - asse X dei grafici lungo la stagione costruito dalle partite effettivamente presenti/selezionate (`build_match_axis`), non più un numero fisso di 28; `match_seq` = andata 0..N-1, ritorno N..2N-1, playout 2N/2N+1 con N = partite di andata registrate (`match_position` in `src/leg_comparison.py`, condivisa con `src/setter_report.py`). Etichetta playout per avversario (`playout_label`), non più fissa "JVC (PO)"; nel file risultati ufficiali i blocchi playout sono indicizzati per leg (`POA`/`POR`), non più sulle giornate 27/28.
+  - cache legata alla data di modifica dei CSV di `config/` (`config_version`): una partita appena aggiunta a `matches.csv` compare senza riavviare; pulsante "Ricarica dati da Drive" per rileggere scout già caricati e poi modificati.
+  - stagione senza partite → messaggio con le istruzioni invece di un errore.
+  - avviso in pagina per terne Decimo presenti negli scout ma mai gestite nel check terne (`unregistered` in `load_all_matches`) — prima venivano escluse in silenzio.
+  - **Rinumerazione per cognome, allineata a `classifiche.ipynb`** (2026-10-14): la cella di caricamento del notebook (quella che produce i PDF classifiche inviati in stagione) rinumera ogni giocatore sull'ULTIMO numero con cui compare nella stagione prima del filtro terne — un giocatore con maglie diverse (Caranzetti 17 "in prestito" a inizio 2025-2026 → 14, Licenziati 27 → 1) resta uno solo. `src/leg_comparison.py` non lo faceva: dal 2026-08 i KPI della dashboard escludevano le 5 partite di Caranzetti con la 17 e 1 di Licenziati con la 27. Ora `load_all_matches` applica la stessa regola (`_season_cognome_to_numero`, sulla stagione intera, prima passata di lettura). Effetto verificato sulla 2025-2026: cambiano solo le righe di Caranzetti 14/Licenziati 1 e i totali squadra delle partite 1-5 di andata (+ Attacco SO di Sardella nelle stesse partite, ora che le alzate di Caranzetti tra ricezione e attacco non vengono più filtrate); esiti partita/set, Attacco Alzato e ordine asse invariati; le 6 classifiche ricalcolate dalla dashboard coincidono esattamente con `classifiche (28).pdf`. Limite (lo stesso del notebook): due giocatori Decimo con lo stesso cognome nella stessa stagione verrebbero fusi.
+  - **Rosa per stagione**: nessun registro per stagione — confermato dall'utente il 2026-10-14 che va bene così: in dashboard compaiono solo i giocatori presenti negli scout della stagione scelta (chi non gioca più, es. Licenziati nella 2026-2027, non compare), chi torna con stesso cognome+numero è riconosciuto in automatico, i nuovi passano dal check terne.
+  - **Tab della dashboard** (2026-10-14, richiesto dall'utente: in stagione la dashboard deve contenere le informazioni dei report PDF inviati l'anno scorso): "Classifiche" (le 6 classifiche di `src/rankings.py` sulle partite selezionate, con soglie minime ed esclusioni per fondamentale modificabili in un expander, default = valori di `classifiche.ipynb`: 10 battute/50 attacchi/40 ricezioni, esclusi Pedico/Amore da battuta, Pedico da attacco/muro, Amore/Caranzetti da ricezione — le soglie sono sul totale delle partite selezionate, a inizio stagione vanno abbassate), "Tabellino" (side-out/break point come l'export `[tabellino F]`, per una partita — default l'ultima selezionata — o aggregato sulle selezionate, con scala colori rosso/bianco/verde sulle colonne Eff come in Excel e download dell'Excel), "Andamento KPI" (le 3 sezioni esistenti), "Pagella" (solo con il toggle "Mostra pagella giocatore" in sidebar, default spento: per fine stagione). `compute_tabellino` in `src/efficiency.py` estrae i calcoli di `export_tabellino_to_xlsx` (che ora la usa): verificato export Excel identico cella per cella pre/post su 8 partite 2025-2026.
+  - pagella senza foglio presenze leggibile (2026-2027: `Serie D u19.gsheet`, Google Sheet nativo senza `.xlsx` locale) → presenze/ruoli "n/d" invece di un crash. Senza ruoli, nessuna esclusione/profilo per ruolo; i palleggiatori "Attacco Alzato" restano `DEFAULT_SETTER_NAMES` (Caranzetti, Licenziati).
+  - Verificato: dataset 2025-2026 (KPI, Attacco SO, esiti partita/set, Attacco Alzato, ordine asse X) identici pre/post modifica; AppTest headless senza eccezioni su 2026-2027 vuota, stagione simulata con 1 e 3 partite, 2025-2026 completa e filtrata a 5 partite, cambio stagione avanti/indietro, generazione report Word.
 - Stagione 2025-2026 completa in `config/matches.csv`: 28 partite (andata + ritorno + playout), tutte `active=1`
 - `config/players.csv` / `config/player_identities.csv` popolati con 11 giocatori Decimo + 4 terne marcate `IGNORED` (Martignoni, Amore, Ferrazzi, Principato)
 - `notebooks/classifiche.ipynb` verificato end-to-end senza errori (caricamento, check terne, filtro, classifiche, export PDF)
@@ -111,7 +122,7 @@ Il progetto è stato migrato da Google Colab a una repo strutturata con supporto
     - **Non ancora implementato**: la regola strutturale di rotazione come controllo incrociato (posizione palleggiatore → pattern di ruolo atteso attorno alla rotazione, P2=Martello/P3=Centrale/P4=Opposto/P5=Martello/P6=Centrale) e un "db ruoli" esplicito per i giocatori ibridi (Carrer e Sardella giocano anche Opposto oltre al proprio ruolo primario) — rimandati, la validazione attuale non li ha resi necessari.
 
 ## Workflow settimanale (nuova partita)
-1. Aggiungi riga in `config/matches.csv`
+1. Carica l'Excel dello scout su Drive (sotto `Pallavolo/Decimo Roma/<stagione>/Match Analysis/`) e aggiungi riga in `config/matches.csv` (`path` relativo a quella cartella; le partite di andata vanno registrate in ordine di giornata, il ritorno segue lo stesso ordine)
 2. Apri `notebooks/classifiche.ipynb` in Cursor o Colab
 3. Esegui cella per cella — il check terne rileva nuovi giocatori
 4. Committa `config/players.csv` e `config/player_identities.csv` dopo il check
@@ -120,4 +131,3 @@ Il progetto è stato migrato da Google Colab a una repo strutturata con supporto
 ## Prossimi sviluppi (vedi docs/roadmap.md)
 - Confronto KPI cross-stagione (in standby, richiede più stagioni)
 - Eventuale estrazione della sezione "altro" di tabellino.ipynb
-- Aggiunta stagione 2026-2027 a settembre

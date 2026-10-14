@@ -13,12 +13,15 @@ Concetti chiave:
   - `giornata`: posizione dell'avversario nell'ordine del girone di andata
     (0-based) — usata per allineare andata/ritorno dello stesso avversario;
   - `x_label`: etichetta per l'asse X del grafico "per avversario" (grafico 1):
-    il nome avversario per A/R, `PLAYOUT_LABEL` per POA/POR — il playout ha
-    una posizione propria in coda (dopo l'ultimo avversario del girone), non
-    è più raggruppato con la partita di andata/ritorno contro JVC;
-  - `match_seq`: indice cronologico assoluto 0..27 su tutta la stagione,
-    usato dal grafico "confronto giocatori" (grafico 2): andata (0..12),
-    ritorno (13..25), POA (26 = 27ª partita), POR (27 = 28ª partita).
+    il nome avversario per A/R, `playout_label(avversario)` per POA/POR — il
+    playout ha una posizione propria in coda (dopo l'ultimo avversario del
+    girone), non è raggruppato con la partita di andata/ritorno contro lo
+    stesso avversario;
+  - `match_seq`: indice cronologico assoluto su tutta la stagione, usato dai
+    grafici lungo la stagione: con N avversari registrati nel girone di
+    andata, andata 0..N-1, ritorno N..2N-1, POA 2N, POR 2N+1 (2025-2026:
+    N=13, 28 partite). N è il numero di partite di andata registrate in
+    config/matches.csv — a stagione in corso cresce man mano.
 - Il filtro giocatori riusa config/player_identities.csv (stessa logica della
   cella FILTRO di classifiche.ipynb): esclude terne non riconosciute o marcate
   IGNORED. Non usa player_id per canonicalizzare il nome mostrato — identico
@@ -48,9 +51,13 @@ from src.efficiency import (
 TEAM = "Decimo"
 IDENTITIES_CSV = ROOT / "config" / "player_identities.csv"
 
-# Etichetta per la posizione "playout" nel grafico per avversario (grafico 1):
-# una 14ª posizione a sé stante, dopo l'ultimo avversario del girone di andata.
-PLAYOUT_LABEL = "JVC (PO)"
+
+
+def playout_label(opponent):
+    """Etichetta per la posizione "playout" nel grafico per avversario
+    (grafico 1): una posizione a sé stante, dopo l'ultimo avversario del
+    girone di andata (2025-2026: "JVC (PO)")."""
+    return f"{opponent} (PO)"
 
 # Per ciascun fondamentale, i voti positivi/negativi usati per il KPI di efficienza
 # percentuale (stile tabellino) — anche fonte dei conteggi voto grezzi riusati dai
@@ -149,9 +156,9 @@ OFFICIAL_RESULTS_FILENAME = "risultati_decimo_{season}.txt"
 
 
 # Intestazioni di blocco per i 2 playout, oltre a "Giornata N" (regular season)
-# — mappate sulle stesse posizioni 27/28 usate da match_seq + 1 (POA -> giornata
-# 27, match_seq 26; POR -> giornata 28, match_seq 27).
-_PLAYOUT_BLOCK_GIORNATA = {"Playout Andata": 27, "Playout Ritorno": 28}
+# — indicizzate per leg (non per un numero di giornata fisso: il numero di
+# giornate dipende da quante squadre ha il girone, diverso stagione per stagione).
+_PLAYOUT_BLOCK_LEG = {"Playout Andata": "POA", "Playout Ritorno": "POR"}
 
 
 def _parse_set_score(token):
@@ -180,8 +187,8 @@ def parse_official_results(file_path):
 
     Ritorna un dict {giornata: {squadra_a, squadra_b, sets_a, sets_b, parziali}},
     con `parziali` = lista di tuple (punti_a, punti_b) una per set. `giornata`
-    per i playout è 27/28 (vedi _PLAYOUT_BLOCK_GIORNATA), corrispondente a
-    match_seq + 1 come per il campionato regolare.
+    è il numero intero N per i blocchi "Giornata N" (= match_seq + 1), e la
+    stringa "POA"/"POR" per i playout (vedi _PLAYOUT_BLOCK_LEG).
     """
     results = {}
     giornata = None
@@ -193,8 +200,8 @@ def parse_official_results(file_path):
             if m:
                 giornata = int(m.group(1))
                 continue
-            if stripped in _PLAYOUT_BLOCK_GIORNATA:
-                giornata = _PLAYOUT_BLOCK_GIORNATA[stripped]
+            if stripped in _PLAYOUT_BLOCK_LEG:
+                giornata = _PLAYOUT_BLOCK_LEG[stripped]
                 continue
             parts = line.split("\t")
             if len(parts) < 7 or parts[0].strip() in ("", "N."):
@@ -297,36 +304,96 @@ def _parse_decimo_locali(file_path):
     return ruolo == "locali"
 
 
-def _load_known_identity_keys():
-    """Terne (team, cognome, numero) riconosciute e non marcate IGNORED."""
+def _load_known_identity_keys(include_ignored=False):
+    """Terne (team, cognome, numero) riconosciute e non marcate IGNORED
+    (con include_ignored=True: tutte le terne già gestite nel check terne,
+    IGNORED comprese)."""
     identities = pd.read_csv(IDENTITIES_CSV)
-    known = identities[identities["player_id"] != "IGNORED"]
+    known = identities if include_ignored else identities[identities["player_id"] != "IGNORED"]
     return set(zip(known["team"], known["cognome"], known["numero"].astype(str)))
 
 
-def _normalize_and_filter_players(df, known_keys):
-    """Normalizza Cognome, crea 'Giocatore' ed esclude le terne non riconosciute/IGNORED."""
+def _normalize_cognome(cognome):
+    return str(cognome).replace("’", "'").strip().capitalize()
+
+
+def _normalize_and_filter_players(df, known_keys, cognome_to_numero=None):
+    """
+    Normalizza Cognome, crea 'Giocatore' ed esclude le terne non
+    riconosciute/IGNORED. Con `cognome_to_numero` (vedi
+    _season_cognome_to_numero) rinumera prima ogni giocatore sul suo numero
+    di riferimento per la stagione, come la cella di caricamento di
+    classifiche.ipynb.
+    """
     df = df.copy()
-    df["Cognome"] = df["Cognome"].astype(str).apply(lambda x: x.replace("’", "'").strip().capitalize())
+    df["Cognome"] = df["Cognome"].apply(_normalize_cognome)
+    if cognome_to_numero is not None:
+        df["Numero"] = df["Cognome"].map(cognome_to_numero).fillna(df["Numero"]).astype(int)
     df["Giocatore"] = df["Cognome"] + " " + df["Numero"].astype(str)
     mask = df.apply(lambda r: (TEAM, r["Cognome"], str(int(r["Numero"]))) in known_keys, axis=1)
     return df[mask]
 
 
+def _season_cognome_to_numero(dfs):
+    """
+    Cognome -> ultimo numero di maglia con cui compare nella stagione (partite
+    nell'ordine di config/matches.csv) — stessa regola della cella di
+    caricamento di classifiche.ipynb, che produce le classifiche PDF: un
+    giocatore con maglie diverse nel corso della stagione (es. Caranzetti con
+    la 17 "in prestito" a inizio 2025-2026, poi la 14) resta un unico
+    giocatore, sotto l'ultimo numero. Limite (lo stesso del notebook): due
+    giocatori Decimo con lo stesso cognome nella stessa stagione verrebbero
+    fusi in uno.
+    """
+    mapping = {}
+    for df in dfs:
+        for cognome, numero in zip(df["Cognome"].apply(_normalize_cognome), df["Numero"]):
+            mapping[cognome] = int(numero)
+    return mapping
+
+
+def _active_season_matches(season):
+    matches = load_matches()
+    return matches[(matches["season"] == season) & (matches["active"] == 1)]
+
+
 def get_opponent_order(season="2025-2026"):
     """Ordine avversari del girone di andata — definisce le posizioni sull'asse X."""
-    matches = load_matches()
-    season_matches = matches[(matches["season"] == season) & (matches["active"] == 1)]
+    season_matches = _active_season_matches(season)
     return list(season_matches[season_matches["leg"] == "A"]["opponent"])
 
 
 def get_x_axis_order(season="2025-2026"):
     """
     Le posizioni (in ordine) dell'asse X del grafico "per avversario" (grafico 1):
-    i 13 avversari del girone di andata, seguiti dalla posizione playout a sé
-    stante (PLAYOUT_LABEL).
+    gli avversari del girone di andata, seguiti dalla posizione playout a sé
+    stante (playout_label), se in stagione è registrato un playout.
     """
-    return get_opponent_order(season) + [PLAYOUT_LABEL]
+    season_matches = _active_season_matches(season)
+    playout_opponents = season_matches[season_matches["leg"].isin(["POA", "POR"])]["opponent"]
+    return get_opponent_order(season) + [playout_label(o) for o in dict.fromkeys(playout_opponents)]
+
+
+def match_position(leg, opponent, opponent_order):
+    """
+    (giornata, x_label, match_seq) di una partita — vedi docstring di modulo.
+    Condivisa con src.setter_report, che ricarica gli Excel per conto proprio.
+    """
+    n_opponents = len(opponent_order)
+    try:
+        giornata = opponent_order.index(opponent)
+    except ValueError:
+        giornata = None  # avversario non presente nel girone di andata (caso anomalo)
+
+    if leg == "A":
+        return giornata, opponent, giornata
+    if leg == "R":
+        return giornata, opponent, None if giornata is None else n_opponents + giornata
+    if leg == "POA":
+        return giornata, playout_label(opponent), 2 * n_opponents
+    if leg == "POR":
+        return giornata, playout_label(opponent), 2 * n_opponents + 1
+    return giornata, opponent, None
 
 
 def load_all_matches(season="2025-2026"):
@@ -335,22 +402,30 @@ def load_all_matches(season="2025-2026"):
     una per una, filtrate sui giocatori riconosciuti.
 
     Ritorna una lista di dict: {leg, opponent, giornata, x_label, match_seq,
-    decimo_locali, official_result, df}. `official_result` è il risultato
+    decimo_locali, official_result, unregistered, df}. I giocatori sono
+    rinumerati per cognome sull'ultimo numero della stagione (vedi
+    _season_cognome_to_numero) prima del filtro, come in classifiche.ipynb.
+    `unregistered`: terne Decimo ("Cognome Numero", dopo la rinumerazione)
+    presenti nel file ma mai gestite nel check terne di classifiche.ipynb (né
+    riconosciute né IGNORED) — escluse dal `df` come le altre non
+    riconosciute, ma segnalate: a inizio stagione (nuovi giocatori, numeri di
+    maglia cambiati) altrimenti sparirebbero in silenzio. `official_result` è il risultato
     ufficiale (vedi parse_official_results) se disponibile per questa partita
     — copre le 26 di andata/ritorno se il file dei risultati esiste per la
     stagione, None per i playout (o se il file manca): in quel caso
     compute_set_outcomes/compute_match_outcome ricostruiscono un'approssimazione
     dal file Excel di match analysis.
     """
-    matches = load_matches()
-    season_matches = matches[(matches["season"] == season) & (matches["active"] == 1)]
+    season_matches = _active_season_matches(season)
     base = build_base_path(season=season)
     known_keys = _load_known_identity_keys()
+    handled_keys = _load_known_identity_keys(include_ignored=True)
     opponent_order = get_opponent_order(season)
-    n_opponents = len(opponent_order)
     official_results = _load_official_results(season)
 
-    out = []
+    # Prima passata: lettura di tutti i file, serve la stagione intera per la
+    # rinumerazione per cognome (vedi _season_cognome_to_numero).
+    loaded = []
     for _, row in season_matches.iterrows():
         file_path = str(base / row["path"])
         try:
@@ -359,36 +434,26 @@ def load_all_matches(season="2025-2026"):
         except Exception as e:
             print(f"Errore caricando {file_path}: {e}")
             continue
-
         df = df.dropna(subset=["Numero"]).copy()
         df["Numero"] = df["Numero"].astype(int)
-        df = _normalize_and_filter_players(df, known_keys)
+        loaded.append((row, decimo_locali, df))
+    cognome_to_numero = _season_cognome_to_numero([df for _, _, df in loaded])
+
+    out = []
+    for row, decimo_locali, df in loaded:
+        terne = {(c, str(cognome_to_numero[c])) for c in df["Cognome"].apply(_normalize_cognome)}
+        unregistered = sorted(f"{c} {n}" for c, n in terne if (TEAM, c, n) not in handled_keys)
+        df = _normalize_and_filter_players(df, known_keys, cognome_to_numero)
 
         leg = row["leg"]
-        try:
-            giornata = opponent_order.index(row["opponent"])
-        except ValueError:
-            giornata = None  # avversario non presente nel girone di andata (caso anomalo)
+        giornata, x_label, match_seq = match_position(leg, row["opponent"], opponent_order)
 
-        if leg == "A":
-            x_label = row["opponent"]
-            match_seq = giornata
-        elif leg == "R":
-            x_label = row["opponent"]
-            match_seq = n_opponents + giornata
-        elif leg == "POA":
-            x_label = PLAYOUT_LABEL
-            match_seq = 2 * n_opponents        # 27ª partita (0-based: n_opponents*2)
-        elif leg == "POR":
-            x_label = PLAYOUT_LABEL
-            match_seq = 2 * n_opponents + 1    # 28ª partita
+        # giornata ufficiale = match_seq + 1 per andata/ritorno (match_seq è
+        # 0-based); i playout sono indicizzati per leg (vedi _PLAYOUT_BLOCK_LEG).
+        if leg in ("POA", "POR"):
+            official_result = official_results.get(leg)
         else:
-            x_label = row["opponent"]
-            match_seq = None
-
-        # giornata ufficiale = match_seq + 1 (match_seq è 0-based, 0..25 per andata+ritorno,
-        # 26/27 per i playout — mai presenti nel file dei risultati ufficiali).
-        official_result = official_results.get(match_seq + 1) if match_seq is not None else None
+            official_result = official_results.get(match_seq + 1) if match_seq is not None else None
 
         out.append({
             "leg": leg,
@@ -398,6 +463,7 @@ def load_all_matches(season="2025-2026"):
             "match_seq": match_seq,
             "decimo_locali": decimo_locali,
             "official_result": official_result,
+            "unregistered": unregistered,
             "df": df,
         })
     return out
