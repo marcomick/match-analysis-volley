@@ -92,6 +92,7 @@ un falso "incerto" che un'assegnazione sbagliata data per buona.
 import pandas as pd
 
 from config.paths import build_base_path
+from src.scout_files import read_match_file
 
 BATTUTA = "battuta"
 CAMBIO_CONFIGURAZIONE = "cambio configurazione"
@@ -106,7 +107,8 @@ def load_match_for_lineup(season, path):
     altrove vengono esclusi da classifiche/KPI.
     """
     file_path = build_base_path(season=season) / path
-    return pd.read_excel(file_path, skiprows=1)
+    df, _, _ = read_match_file(file_path)
+    return df
 
 
 def _determine_offset(sub):

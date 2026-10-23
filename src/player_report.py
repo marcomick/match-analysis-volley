@@ -134,7 +134,6 @@ from src.setter_report import (
     ATTACCO_ALZATO_ESCL_KPI_LABELS,
     ATTACCO_ALZATO_FB_KPI_LABELS,
     ATTACCO_ALZATO_POS_KPI_LABELS,
-    DEFAULT_SETTER_NAMES,
     build_setter_kpi_dataset,
 )
 
@@ -545,7 +544,7 @@ def build_player_report_base(season="2025-2026", rec_vote=DEFAULT_REC_VOTE,
     # Attacco Alzato (ruolo palleggiatore, src.setter_report): NON riusa `matches`
     # (già filtrato/normalizzato — vedi docstring di modulo e di src.setter_report),
     # ricarica gli Excel grezzi da sé.
-    setter_df = build_setter_kpi_dataset(season, setter_names=DEFAULT_SETTER_NAMES)
+    setter_df = build_setter_kpi_dataset(season)
     # kpi_df NON è filtrato su PAGELLA_KPIS/PAGELLA_SETTER_KPIS qui: deve
     # contenere anche i KPI 'Tot' delle famiglie percentuali, usati da
     # compute_player_findings per il filtro di significatività (vedi

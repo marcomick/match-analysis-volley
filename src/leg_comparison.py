@@ -32,13 +32,17 @@ Concetti chiave:
   sapere se le colonne 'Punti Locali'/'Punti Ospiti' del resto del file si
   riferiscono al Decimo o all'avversario: il nome della cartella/file NON è
   attendibile (verificato: discorda dalla riga 0 in alcuni casi, es. andata
-  vs Roman). Vedi `_parse_decimo_locali`.
+  vs Roman). Vedi `src.scout_files.parse_decimo_locali`. Per i .dvw (dal
+  2026-2027) lo dice l'intestazione del file (squadra di casa/ospite).
 """
 import re
 
 import pandas as pd
 
-from config.paths import ROOT, build_base_path, load_matches
+from config.paths import ROOT, build_base_path, load_matches, load_seasons
+from src.dvw import dvw_official_result
+from src.fipav import load_decimo_results
+from src.scout_files import read_match_file
 from src.efficiency import (
     calcola_efficienza,
     find_errors,
@@ -237,6 +241,16 @@ def _load_official_results(season):
         return {}
 
 
+def _load_fipav_results(season):
+    """Risultati del Decimo dal sito federale ({data: risultato}, vedi
+    src.fipav), se in config/seasons.csv la stagione ha un `fipav_girone`."""
+    seasons = load_seasons()
+    row = seasons[seasons["season"] == season]
+    if row.empty or "fipav_girone" not in row.columns or pd.isna(row["fipav_girone"].iloc[0]):
+        return {}
+    return load_decimo_results(int(row["fipav_girone"].iloc[0]))
+
+
 def _decimo_side(official_result):
     """'a' o 'b': quale squadra è il Decimo in questo risultato ufficiale."""
     if TEAM.lower() in official_result["squadra_a"].lower():
@@ -279,29 +293,6 @@ def compute_match_outcome_from_official(official_result):
         "n_set_totali": len(sets),
         "n_set_completi": len(sets),
     }
-
-
-def _parse_decimo_locali(file_path):
-    """
-    Legge la riga 0 del file Excel (dichiarazione "Locali: <squadra>" /
-    "Ospiti: <squadra>", saltata da skiprows=1 nel resto del caricamento) e
-    determina se il Decimo è "Locali" o "Ospiti" in questa specifica partita.
-    Ritorna True se Decimo è Locali, False se è Ospiti.
-
-    Solleva ValueError se l'etichetta non è nel formato atteso o non menziona
-    il Decimo — meglio fallire in modo rumoroso che dedurre l'informazione da
-    fonti meno affidabili (es. il nome della cartella/file, che in alcuni casi
-    reali diverge da questa dichiarazione).
-    """
-    label_row = pd.read_excel(file_path, header=None, nrows=1)
-    label = str(label_row.iloc[0, 0])
-    match = re.match(r"\s*(Locali|Ospiti)\s*:\s*(.+)", label, re.IGNORECASE)
-    if not match:
-        raise ValueError(f"Etichetta Locali/Ospiti non trovata in riga 0 di {file_path}: {label!r}")
-    ruolo, squadra = match.group(1).lower(), match.group(2)
-    if TEAM.lower() not in squadra.lower():
-        raise ValueError(f"L'etichetta '{label}' in {file_path} non menziona '{TEAM}'")
-    return ruolo == "locali"
 
 
 def _load_known_identity_keys(include_ignored=False):
@@ -352,14 +343,14 @@ def _season_cognome_to_numero(dfs):
     return mapping
 
 
-def _active_season_matches(season):
+def active_season_matches(season):
     matches = load_matches()
     return matches[(matches["season"] == season) & (matches["active"] == 1)]
 
 
 def get_opponent_order(season="2025-2026"):
     """Ordine avversari del girone di andata — definisce le posizioni sull'asse X."""
-    season_matches = _active_season_matches(season)
+    season_matches = active_season_matches(season)
     return list(season_matches[season_matches["leg"] == "A"]["opponent"])
 
 
@@ -369,7 +360,7 @@ def get_x_axis_order(season="2025-2026"):
     gli avversari del girone di andata, seguiti dalla posizione playout a sé
     stante (playout_label), se in stagione è registrato un playout.
     """
-    season_matches = _active_season_matches(season)
+    season_matches = active_season_matches(season)
     playout_opponents = season_matches[season_matches["leg"].isin(["POA", "POR"])]["opponent"]
     return get_opponent_order(season) + [playout_label(o) for o in dict.fromkeys(playout_opponents)]
 
@@ -410,18 +401,19 @@ def load_all_matches(season="2025-2026"):
     riconosciute né IGNORED) — escluse dal `df` come le altre non
     riconosciute, ma segnalate: a inizio stagione (nuovi giocatori, numeri di
     maglia cambiati) altrimenti sparirebbero in silenzio. `official_result` è il risultato
-    ufficiale (vedi parse_official_results) se disponibile per questa partita
-    — copre le 26 di andata/ritorno se il file dei risultati esiste per la
-    stagione, None per i playout (o se il file manca): in quel caso
+    ufficiale (vedi parse_official_results) se disponibile per questa partita;
+    in mancanza, per un .dvw, il risultato dello scout se tutti i set sono
+    conclusi (src.dvw.dvw_official_result); altrimenti None, e
     compute_set_outcomes/compute_match_outcome ricostruiscono un'approssimazione
-    dal file Excel di match analysis.
+    dal file di scout.
     """
-    season_matches = _active_season_matches(season)
+    season_matches = active_season_matches(season)
     base = build_base_path(season=season)
     known_keys = _load_known_identity_keys()
     handled_keys = _load_known_identity_keys(include_ignored=True)
     opponent_order = get_opponent_order(season)
     official_results = _load_official_results(season)
+    fipav_results = _load_fipav_results(season)
 
     # Prima passata: lettura di tutti i file, serve la stagione intera per la
     # rinumerazione per cognome (vedi _season_cognome_to_numero).
@@ -429,18 +421,19 @@ def load_all_matches(season="2025-2026"):
     for _, row in season_matches.iterrows():
         file_path = str(base / row["path"])
         try:
-            df = pd.read_excel(file_path, skiprows=1)
-            decimo_locali = _parse_decimo_locali(file_path)
+            df, decimo_locali, dvw_parsed = read_match_file(file_path)
         except Exception as e:
             print(f"Errore caricando {file_path}: {e}")
             continue
         df = df.dropna(subset=["Numero"]).copy()
         df["Numero"] = df["Numero"].astype(int)
-        loaded.append((row, decimo_locali, df))
-    cognome_to_numero = _season_cognome_to_numero([df for _, _, df in loaded])
+        dvw_result = dvw_official_result(dvw_parsed) if dvw_parsed is not None else None
+        data = dvw_parsed["data"] if dvw_parsed is not None else None
+        loaded.append((row, decimo_locali, dvw_result, data, df))
+    cognome_to_numero = _season_cognome_to_numero([df for *_, df in loaded])
 
     out = []
-    for row, decimo_locali, df in loaded:
+    for row, decimo_locali, dvw_result, data, df in loaded:
         terne = {(c, str(cognome_to_numero[c])) for c in df["Cognome"].apply(_normalize_cognome)}
         unregistered = sorted(f"{c} {n}" for c, n in terne if (TEAM, c, n) not in handled_keys)
         df = _normalize_and_filter_players(df, known_keys, cognome_to_numero)
@@ -448,12 +441,23 @@ def load_all_matches(season="2025-2026"):
         leg = row["leg"]
         giornata, x_label, match_seq = match_position(leg, row["opponent"], opponent_order)
 
-        # giornata ufficiale = match_seq + 1 per andata/ritorno (match_seq è
-        # 0-based); i playout sono indicizzati per leg (vedi _PLAYOUT_BLOCK_LEG).
-        if leg in ("POA", "POR"):
-            official_result = official_results.get(leg)
-        else:
-            official_result = official_results.get(match_seq + 1) if match_seq is not None else None
+        # Risultato, in ordine di priorità:
+        # 1. sito federale, abbinato per DATA (dal .dvw): robusto anche se una
+        #    partita non viene scoutata/registrata, a differenza della giornata;
+        # 2. file risultati manuale: giornata ufficiale = match_seq + 1 per
+        #    andata/ritorno (match_seq è 0-based, quindi presuppone tutte le
+        #    partite registrate in ordine), playout indicizzati per leg (vedi
+        #    _PLAYOUT_BLOCK_LEG);
+        # 3. il .dvw stesso, se tutti i set sono conclusi nello scout (vedi
+        #    src.dvw.dvw_official_result).
+        official_result = fipav_results.get(data) if data else None
+        if official_result is None:
+            if leg in ("POA", "POR"):
+                official_result = official_results.get(leg)
+            else:
+                official_result = official_results.get(match_seq + 1) if match_seq is not None else None
+        if official_result is None:
+            official_result = dvw_result
 
         out.append({
             "leg": leg,

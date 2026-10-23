@@ -91,6 +91,7 @@ from src.leg_comparison import (
     CONTRATTACCO_KPI_LABELS,
     DEFAULT_REC_VOTE,
     PERCENT_KPIS,
+    active_season_matches,
     apply_min_attacks_threshold,
     build_attacco_so_dataset,
     build_comparison_dataset,
@@ -1361,21 +1362,34 @@ def main():
         st.header("Stagione e partite")
         season = st.selectbox("Stagione", seasons, index=len(seasons) - 1, key="season")
         if st.button("🔄 Ricarica dati da Drive", help=(
-            "Rilegge tutti gli Excel della stagione. Una partita appena aggiunta a "
-            "config/matches.csv compare già da sola: serve solo se hai modificato "
-            "uno scout già caricato."
+            "Rilegge gli scout della stagione e riscarica i risultati dal sito federale. "
+            "Una partita appena aggiunta a config/matches.csv compare già da sola: serve se "
+            "hai modificato uno scout già caricato o per un risultato pubblicato da poco."
         )):
             st.cache_data.clear()
 
     version = config_version()
     matches = load_matches_cached(season, version)
-    if not matches:
-        st.info(
-            f"Nessuna partita caricata per la stagione {season}. Per aggiungerne una: carica "
-            "l'Excel dello scout sul Drive, aggiungi una riga in config/matches.csv "
-            "(season, leg, opponent, path relativo alla cartella della stagione, active=1) "
-            "e fai il check terne in notebooks/classifiche.ipynb per i giocatori nuovi."
+    loaded_keys = {(m["leg"], m["opponent"]) for m in matches}
+    not_loaded = [
+        f"{r.opponent} ({LEG_LABELS.get(r.leg, r.leg).lower()}) — {r.path}"
+        for r in active_season_matches(season).itertuples() if (r.leg, r.opponent) not in loaded_keys
+    ]
+    if not_loaded:
+        st.error(
+            "Partite registrate in config/matches.csv ma non lette: file non trovato (path sbagliato "
+            "o Drive non ancora sincronizzato) oppure Excel nel formato 2026-2027, non supportato — "
+            "registra il file .dvw della partita. Poi premi \"Ricarica dati da Drive\".\n\n- "
+            + "\n- ".join(not_loaded)
         )
+    if not matches:
+        if not not_loaded:
+            st.info(
+                f"Nessuna partita caricata per la stagione {season}. Per aggiungerne una: carica "
+                "il file .dvw dello scout sul Drive, aggiungi una riga in config/matches.csv "
+                "(season, leg, opponent, path relativo alla cartella della stagione, active=1) "
+                "e fai il check terne in notebooks/classifiche.ipynb per i giocatori nuovi."
+            )
         st.stop()
 
     unregistered = sorted({t for m in matches for t in m["unregistered"]})

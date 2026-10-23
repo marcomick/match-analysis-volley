@@ -96,7 +96,6 @@ from src.setter_report import (
     ATTACCO_ALZATO_ESCL_KPI_LABELS,
     ATTACCO_ALZATO_FB_KPI_LABELS,
     ATTACCO_ALZATO_POS_KPI_LABELS,
-    DEFAULT_SETTER_NAMES,
     build_setter_kpi_dataset,
 )
 
@@ -746,7 +745,7 @@ def build_player_season_report(season="2025-2026", rec_vote=DEFAULT_REC_VOTE, ma
     # Attacco Alzato (ruolo palleggiatore): NON riusa `matches` (già filtrato/
     # normalizzato — vedi docstring di src.setter_report), ricarica gli Excel
     # grezzi da sé.
-    setter_df = build_setter_kpi_dataset(season, setter_names=DEFAULT_SETTER_NAMES)
+    setter_df = build_setter_kpi_dataset(season)
     kpi_df = pd.concat([player_df, player_so_df, extra_df, setter_df], ignore_index=True)
 
     roles_by_cognome = _load_player_roles(season)

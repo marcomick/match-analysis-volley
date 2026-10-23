@@ -108,6 +108,7 @@ from config.paths import ROOT, build_base_path, load_matches
 from src.efficiency import calcola_efficienza, eff_from_calcola, separate_attack_types, SRV_POS, SRV_NEG
 from src.leg_comparison import get_opponent_order, match_position
 from src.lineup import reconstruct_starting_lineup
+from src.scout_files import read_match_file
 
 DEFAULT_SETTER_NAMES = ("Caranzetti", "Licenziati")
 
@@ -164,7 +165,12 @@ def identify_active_setter(df_match, setter_names=DEFAULT_SETTER_NAMES):
     Ritorna una pd.Series allineata all'indice originale di `df_match`:
     il cognome del palleggiatore in campo, o None se non determinabile
     con sufficiente sicurezza (vedi meccanismo nel docstring del modulo).
+
+    Per un .dvw il palleggiatore in campo è un dato esplicito del file
+    (colonna 'Palleggiatore in campo', vedi src.dvw): nessuna ricostruzione.
     """
+    if "Palleggiatore in campo" in df_match.columns:
+        return df_match["Palleggiatore in campo"].where(df_match["Palleggiatore in campo"].notna(), None)
     original_index = df_match.index
     d = df_match.reset_index(drop=True).copy()
     d["Cognome"] = _normalize_cognome(d["Cognome"])
@@ -295,7 +301,7 @@ def _load_setter_player_labels(setter_names):
     return out
 
 
-def build_setter_kpi_dataset(season="2025-2026", setter_names=DEFAULT_SETTER_NAMES, matches=None):
+def build_setter_kpi_dataset(season="2025-2026", setter_names=None, matches=None):
     """
     Tabella tidy (stesso formato di build_comparison_dataset: colonne
     [opponent, leg, giornata, x_label, match_seq, player, kpi, value]) per le
@@ -313,6 +319,10 @@ def build_setter_kpi_dataset(season="2025-2026", setter_names=DEFAULT_SETTER_NAM
     identificazione palleggiatore. `matches` qui (opzionale) accetta invece
     una lista di dict {opponent, leg, path} già risolti da config/matches.csv
     (evita solo di rileggere quel CSV, non gli Excel).
+
+    `setter_names=None`: per un .dvw i palleggiatori che risultano in campo
+    nel file stesso (colonna 'Palleggiatore in campo'), per un Excel
+    2025-2026 DEFAULT_SETTER_NAMES.
     """
     if matches is None:
         all_matches = load_matches()
@@ -321,12 +331,10 @@ def build_setter_kpi_dataset(season="2025-2026", setter_names=DEFAULT_SETTER_NAM
 
     base = build_base_path(season=season)
     opponent_order = get_opponent_order(season)
-    player_labels = _load_setter_player_labels(setter_names)
-
     rows = []
     for match in matches:
         try:
-            df = pd.read_excel(base / match["path"], skiprows=1)
+            df, _, _ = read_match_file(base / match["path"])
         except Exception as e:
             # stesso trattamento di load_all_matches: un file non leggibile (es.
             # ancora in sincronizzazione da Drive) salta la partita, non blocca tutto
@@ -340,8 +348,15 @@ def build_setter_kpi_dataset(season="2025-2026", setter_names=DEFAULT_SETTER_NAM
             "x_label": x_label, "match_seq": match_seq,
         }
 
-        attacco_kpis = compute_setter_attack_kpis(df, setter_names)
-        for cognome in setter_names:
+        if setter_names is not None:
+            match_setters = tuple(setter_names)
+        elif "Palleggiatore in campo" in df.columns:
+            match_setters = tuple(sorted(df["Palleggiatore in campo"].dropna().unique()))
+        else:
+            match_setters = DEFAULT_SETTER_NAMES
+        player_labels = _load_setter_player_labels(match_setters)
+        attacco_kpis = compute_setter_attack_kpis(df, match_setters)
+        for cognome in match_setters:
             player_label = player_labels.get(cognome)
             if player_label is None:
                 continue
