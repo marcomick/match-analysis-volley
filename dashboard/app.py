@@ -15,6 +15,10 @@ aggiunta a matches.csv compare da sola (la cache è legata alla data di modifica
 dei CSV di config); "Ricarica dati" forza la rilettura degli Excel da Drive
 (es. dopo aver corretto uno scout già caricato).
 
+Tab "Report partita": il PDF post-partita da mandare ai giocatori (src.match_report,
+src.match_report_pdf), con un commento libero dell'allenatore in apertura; solo
+per le partite con scout .dvw.
+
 Tab "Classifiche" e "Tabellino": le stesse informazioni dei report PDF
 inviati in stagione — le 6 classifiche di classifiche.ipynb (src.rankings) e
 il tabellino side-out/break point dell'export "[tabellino F]"
@@ -106,6 +110,15 @@ from src.efficiency import (
     compute_tabellino,
     export_tabellino_to_xlsx,
 )
+from src.match_report import (
+    load_report_source,
+    match_header,
+    player_table,
+    point_sources,
+    setter_table,
+    team_comparison,
+)
+from src.match_report_pdf import build_match_report_pdf
 from src.player_report import build_player_report_base
 from src.rankings import (
     build_ace_man,
@@ -1221,6 +1234,71 @@ RANKING_DEFAULT_IGNORE = {
 RANKING_DEFAULT_MIN = {"battute": 10, "attacchi": 50, "ricezioni": 40}
 
 
+def build_rankings(season_df, ignore, min_battute=0, min_attacchi=0, min_ricezioni=0):
+    """Le 6 classifiche di classifiche.ipynb: [(titolo, tabella)]."""
+    srv = calculate_player_scores_by_type(season_df, "battuta", ignore_list=ignore["battuta"])
+    att = calculate_player_scores_by_type(season_df, "attacco", ignore_list=ignore["attacco"])
+    blk = calculate_player_scores_by_type(season_df, "muro", ignore_list=ignore["muro"])
+    rec = calculate_player_scores_by_type(season_df, "ricezione", ignore_list=ignore["ricezione"])
+    return [
+        ("Ace Man", build_ace_man(srv, min_battute=min_battute)),
+        ("Spike Leader", build_best_attack(att)),
+        ("Spike Guarantee", build_spike_guarantee(att, min_attacchi=min_attacchi)),
+        ("Block Monster", build_best_block(blk)),
+        ("Miglior ricevitore", build_best_rec(rec, min_ricezioni=min_ricezioni)),
+        ("Muro della vergogna (battute sbagliate)", build_srv_shame(srv)),
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Report post-partita (PDF per i giocatori, src.match_report/_pdf)
+# ---------------------------------------------------------------------------
+def render_match_report_section(matches, match_label_lookup):
+    st.header("Report partita")
+    st.caption(
+        "Il PDF da mandare ai giocatori dopo la partita, impaginato per il telefono: risultato, il tuo "
+        "commento, da dove arrivano i punti (nostri e loro), noi e loro set per set, tabellino giocatori, "
+        "palleggiatori e classifiche della stagione aggiornate a questa partita (senza soglie)."
+    )
+    dvw_matches = sorted(
+        (m for m in matches if str(m.get("file_path", "")).lower().endswith(".dvw")), key=lambda m: m["match_seq"],
+    )
+    if not dvw_matches:
+        st.info("Il report richiede lo scout in formato .dvw (azioni di entrambe le squadre): nessuna partita disponibile.")
+        return
+    by_seq = {m["match_seq"]: m for m in dvw_matches}
+    seq = st.selectbox(
+        "Partita", list(by_seq), index=len(by_seq) - 1,
+        format_func=lambda ms: _match_option_label(ms, match_label_lookup), key="report_partita",
+    )
+    comment = st.text_area(
+        "Commento (in apertura del report)", key=f"report_commento_{seq}", height=130,
+        placeholder="Cosa è andato bene, cosa no, su cosa lavorare in settimana...",
+    )
+    if st.button("📄 Genera PDF", key="report_genera"):
+        match = by_seq[seq]
+        with st.spinner("Generazione del report..."):
+            source = load_report_source(match["file_path"])
+            season_df = pd.concat([m["df"] for m in matches if m["match_seq"] <= seq], ignore_index=True)
+            cognomi = set(season_df["Cognome"])
+            ignore = {t: [c for c in names if c in cognomi] for t, names in RANKING_DEFAULT_IGNORE.items()}
+            header = match_header(source, match["official_result"])
+            pdf = build_match_report_pdf(
+                header, comment, point_sources(source), team_comparison(source), player_table(source),
+                setter_table(source), build_rankings(season_df, ignore), source["nome_noi"], source["nome_loro"],
+                n_partite_stagione=sum(1 for m in matches if m["match_seq"] <= seq),
+            )
+            name = f"Report {header['casa']} - {header['ospite']} {header['data'] or ''}".strip().replace("/", "-")
+            st.session_state["report_pdf"] = (seq, name, pdf)
+    stored = st.session_state.get("report_pdf")
+    if stored and stored[0] == seq:
+        st.download_button(
+            "⬇️ Scarica PDF", data=stored[2], file_name=f"{stored[1]}.pdf", mime="application/pdf",
+            key="report_scarica",
+        )
+        st.caption("Se cambi il commento, premi di nuovo \"Genera PDF\" prima di scaricarlo.")
+
+
 def render_classifiche_section(season_df, n_partite):
     st.header("Classifiche")
     st.caption(f"Sulle {n_partite} partite selezionate — stesse regole del PDF di classifiche.ipynb.")
@@ -1242,18 +1320,7 @@ def render_classifiche_section(season_df, n_partite):
                 f"Esclusi da {tipo}", cognomi, default=[c for c in default if c in cognomi], key=f"ignore_{tipo}",
             )
 
-    srv = calculate_player_scores_by_type(season_df, "battuta", ignore_list=ignore["battuta"])
-    att = calculate_player_scores_by_type(season_df, "attacco", ignore_list=ignore["attacco"])
-    blk = calculate_player_scores_by_type(season_df, "muro", ignore_list=ignore["muro"])
-    rec = calculate_player_scores_by_type(season_df, "ricezione", ignore_list=ignore["ricezione"])
-    tables = [
-        ("Ace Man", build_ace_man(srv, min_battute=min_battute)),
-        ("Spike Leader", build_best_attack(att)),
-        ("Spike Guarantee", build_spike_guarantee(att, min_attacchi=min_attacchi)),
-        ("Block Monster", build_best_block(blk)),
-        ("Miglior ricevitore", build_best_rec(rec, min_ricezioni=min_ricezioni)),
-        ("Muro della vergogna (battute sbagliate)", build_srv_shame(srv)),
-    ]
+    tables = build_rankings(season_df, ignore, min_battute, min_attacchi, min_ricezioni)
     for row_start in range(0, len(tables), 3):
         cols = st.columns(3)
         for col, (title, table) in zip(cols, tables[row_start:row_start + 3]):
@@ -1478,20 +1545,22 @@ def main():
     selected_matches = [m for m in matches if m["match_seq"] in selected_seqs]
     season_df = pd.concat([m["df"] for m in selected_matches], ignore_index=True)
 
-    tab_names = ["Classifiche", "Tabellino", "Andamento KPI"] + (["Pagella"] if show_pagella else [])
+    tab_names = ["Report partita", "Classifiche", "Tabellino", "Andamento KPI"] + (["Pagella"] if show_pagella else [])
     tabs = st.tabs(tab_names)
     with tabs[0]:
-        render_classifiche_section(season_df, len(selected_seqs))
+        render_match_report_section(matches, match_label_lookup_full)
     with tabs[1]:
-        render_tabellino_section(matches, selected_seqs, match_label_lookup_full)
+        render_classifiche_section(season_df, len(selected_seqs))
     with tabs[2]:
+        render_tabellino_section(matches, selected_seqs, match_label_lookup_full)
+    with tabs[3]:
         render_kpi_section(team_df, player_df, x_axis_order, entity_options)
         st.divider()
         render_comparison_section(team_df, player_df, entity_options, match_axis, match_outcomes_df)
         st.divider()
         render_kpi_comparison_section(team_df, player_df, entity_options, match_axis, match_outcomes_df)
     if show_pagella:
-        with tabs[3]:
+        with tabs[4]:
             rec_vote_for_report = tuple(selected_rec_vote) if selected_rec_vote else DEFAULT_REC_VOTE
             player_report, player_report_missing = load_player_report(season, rec_vote_for_report, version)
             season_report = load_player_season_report(season, rec_vote_for_report, version)

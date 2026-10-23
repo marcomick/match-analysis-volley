@@ -95,11 +95,15 @@ ABS_KPI_DEFS = {
 ERRORI_KPI = "Errori"
 
 # KPI "Attacco SO" (side-out: attacco immediatamente successivo a una ricezione,
-# al più con un'alzata di mezzo), "Attacco FB" (free ball: attacco immediatamente
-# successivo a una difesa Voto '!', palla facile rimandata nel nostro campo — vedi
-# separate_free_ball) e "Contrattacco" (tutti gli altri attacchi) — vedi
-# separate_attack_types, che li produce come tre gruppi disgiunti ed esaustivi
-# (Attacco SO Tot + Attacco FB Tot + Contrattacco Tot == Attacco Tot, sempre).
+# al più con un'alzata di mezzo), "Contrattacco" (tutti gli altri attacchi,
+# free ball COMPRESE) e "Attacco FB" (il sottoinsieme del contrattacco
+# immediatamente successivo a una difesa Voto '!', palla facile rimandata nel
+# nostro campo — vedi separate_free_ball). La free ball fa parte del
+# contrattacco (indicazione esplicita dell'utente, 2026-10-23: dal 2026-08-12
+# al 2026-10-23 il contrattacco la escludeva, in disaccordo col tabellino):
+# Attacco SO Tot + Contrattacco Tot == Attacco Tot, Attacco FB Tot <=
+# Contrattacco Tot. separate_attack_types produce SO/FB/resto disgiunti, il
+# contrattacco è FB + resto (vedi _split_so_fb_contrattacco).
 # Il voto di ricezione che qualifica l'attacco come "SO" è parametrico
 # (`rec_vote`), non fisso: la dashboard lo espone come filtro, quindi questi KPI
 # non fanno parte di ALL_KPIS/build_comparison_dataset (calcolati una volta per
@@ -393,7 +397,7 @@ def load_all_matches(season="2025-2026"):
     una per una, filtrate sui giocatori riconosciuti.
 
     Ritorna una lista di dict: {leg, opponent, giornata, x_label, match_seq,
-    decimo_locali, official_result, unregistered, df}. I giocatori sono
+    decimo_locali, official_result, unregistered, file_path, df}. I giocatori sono
     rinumerati per cognome sull'ultimo numero della stagione (vedi
     _season_cognome_to_numero) prima del filtro, come in classifiche.ipynb.
     `unregistered`: terne Decimo ("Cognome Numero", dopo la rinumerazione)
@@ -468,6 +472,7 @@ def load_all_matches(season="2025-2026"):
             "decimo_locali": decimo_locali,
             "official_result": official_result,
             "unregistered": unregistered,
+            "file_path": str(base / row["path"]),
             "df": df,
         })
     return out
@@ -664,16 +669,22 @@ def _attack_split_player_totals(sub_df):
     return per_player
 
 
+def _split_so_fb_contrattacco(df_match, rec_vote):
+    """(so_df, fb_df, contrattacco_df): il contrattacco comprende le free ball
+    (vedi commento su ATTACCO_SO_KPI_LABELS), FB ne è un sottoinsieme."""
+    so_df, fb_df, rest_df = separate_attack_types(df_match, rec_vote=rec_vote)
+    return so_df, fb_df, pd.concat([fb_df, rest_df]).sort_index()
+
+
 def compute_team_attacco_so_kpis(df_match, rec_vote=DEFAULT_REC_VOTE):
     """
     KPI squadra "Attacco SO", "Attacco FB" e "Contrattacco" per una singola
-    partita: efficienza e conteggi assoluti (totale/punti/errori/murati) sui
-    tre sottoinsiemi disgiunti di attacchi determinati da separate_attack_types
-    (SO = dopo una ricezione con voto in `rec_vote`, al più con un'alzata di
-    mezzo; FB = dopo una free ball; contrattacco = tutti gli altri). Ritorna
-    {kpi_label: valore}.
+    partita: efficienza e conteggi assoluti (totale/punti/errori/murati) su
+    SO (dopo una ricezione con voto in `rec_vote`, al più con un'alzata di
+    mezzo), contrattacco (tutti gli altri, free ball comprese) e FB (dopo una
+    free ball, sottoinsieme del contrattacco). Ritorna {kpi_label: valore}.
     """
-    so_df, fb_df, ctr_df = separate_attack_types(df_match, rec_vote=rec_vote)
+    so_df, fb_df, ctr_df = _split_so_fb_contrattacco(df_match, rec_vote)
     so_stats = _attack_split_totals(so_df)
     fb_stats = _attack_split_totals(fb_df)
     ctr_stats = _attack_split_totals(ctr_df)
@@ -696,7 +707,7 @@ def compute_player_attacco_so_kpis(df_match, rec_vote=DEFAULT_REC_VOTE):
     famiglie non ha fatto nessun attacco di quel tipo in questa partita
     (buco, non uno zero esplicito).
     """
-    so_df, fb_df, ctr_df = separate_attack_types(df_match, rec_vote=rec_vote)
+    so_df, fb_df, ctr_df = _split_so_fb_contrattacco(df_match, rec_vote)
     so_player = _attack_split_player_totals(so_df)
     fb_player = _attack_split_player_totals(fb_df)
     ctr_player = _attack_split_player_totals(ctr_df)

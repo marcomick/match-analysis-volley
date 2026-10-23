@@ -107,24 +107,27 @@ def build_best_block(blk_scores):
 def build_best_rec(pos_rec, min_ricezioni=40):
     """
     MIGLIOR RICEVITORE
-    - Pos% = (# + +) / ricezioni totali
+    - Eff% = ((# + +) - (/ + =)) / ricezioni totali: la stessa efficienza di
+      ricezione dei KPI della dashboard e del tabellino del report partita
+      (richiesta dell'utente, 2026-10-23; prima la classifica ordinava per
+      Pos% = (# + +) / ricezioni, senza togliere errori e palle rimandate)
     - Prf% = # / ricezioni totali
     - Entra solo chi ha almeno `min_ricezioni` ricezioni
-    - Ordina per Pos%
+    - Ordina per Eff%
     """
     work = pos_rec[pos_rec['Totale'] >= min_ricezioni].copy()
-    work['Pos%_sort'] = ((work['#'] + work['+']) / work['Totale']) * 100
+    work['Eff%_sort'] = ((work['#'] + work['+'] - work['/'] - work['=']) / work['Totale']) * 100
     work['Prf%_sort'] = (work['#'] / work['Totale']) * 100
 
     result = work.sort_values(
-        by=['Pos%_sort', 'Totale', 'Prf%_sort'],
+        by=['Eff%_sort', 'Totale', 'Prf%_sort'],
         ascending=[False, False, False]
     ).reset_index()
     result['Pos'] = result.index + 1
     result['Ricezioni'] = result['Totale']
-    result['Pos%'] = result['Pos%_sort'].apply(format_percent)
+    result['Eff%'] = result['Eff%_sort'].apply(format_percent)
     result['Prf%'] = result['Prf%_sort'].apply(format_percent)
-    return result[['Pos', 'Giocatore', 'Pos%', 'Ricezioni', 'Prf%']]
+    return result[['Pos', 'Giocatore', 'Eff%', 'Ricezioni', 'Prf%']]
 
 
 def build_srv_shame(srv_scores):

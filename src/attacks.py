@@ -21,6 +21,7 @@ from src.efficiency import (
     separate_attacks_counterattacks,
     eff_from_calcola,
     compute_set_metrics,
+    error_mask,
 )
 
 
@@ -501,8 +502,7 @@ def plot_set_efficiency_groups(
             "Contrattacco%": (eff_scalar(calcola_efficienza(ctr_d, tipo="attacco", pos=list(pos_att), neg=list(neg_att), total_efficiency=True)) if not ctr_d.empty else float("nan")),
             "Muro%":         _eff_or_nan(df_sub, "muro",     pos_blk, neg_blk),
         }
-        err_mask = (df_sub[voto_col].astype(str).str.strip() == "=") & (df_sub[tipo_col].isin(["battuta","attacco","alzata"]))
-        tot_err = int(err_mask.sum())
+        tot_err = int(error_mask(df_sub, tipo_col, voto_col).sum())
 
         plot_pct.loc["Tot"] = [totals[k] if np.isfinite(totals[k]) else 0.0 for k in metrics_pct]
         plot_err.loc["Tot"] = tot_err
@@ -801,8 +801,7 @@ def plot_set_radar(
         vals = np.array([vals_map.get(m, np.nan) for m in metrics], dtype=float)
         vals = np.nan_to_num(vals, nan=0.0)
 
-        err_mask = (d[voto_col] == "=") & (d[tipo_col].isin(["battuta","attacco","alzata"]))
-        err_total = int(err_mask.sum())
+        err_total = int(error_mask(d, tipo_col, voto_col).sum())
         return vals, err_total, chosen_sets
 
     # --- aggregazioni ---

@@ -79,14 +79,26 @@ def calcola_efficienza(df, tipo, pos=('#', '+'), neg=('-', '='),
     return results_df
 
 
+def error_mask(df, tipo_col='Tipo', voto_col='Voto'):
+    """
+    Righe che sono un errore, unica definizione per tutto il progetto: Voto
+    '=' su battuta/attacco/alzata e Voto '/' sul muro (l'errore di muro non
+    usa '='). L'errore di muro va SEMPRE contato tra gli errori (indicazione
+    esplicita dell'utente, 2026-10-23): prima il conteggio per set e i radar
+    lo escludevano, il tabellino no.
+    """
+    tipo = df[tipo_col].astype(str).str.strip().str.lower()
+    voto = df[voto_col].astype(str).str.strip()
+    return ((tipo.isin(['battuta', 'attacco', 'alzata'])) & (voto == '=')) | ((tipo == 'muro') & (voto == '/'))
+
+
 def find_errors(df):
     """
-    Conta gli errori per giocatore su battuta/attacco/alzata (Voto == '=') e
-    sul muro (Voto == '/', l'errore di muro non usa '=').
+    Conta gli errori per giocatore (vedi error_mask): battuta/attacco/alzata
+    con Voto '=' e muro con Voto '/'.
     """
     error_types = ['battuta', 'attacco', 'muro', 'alzata']
-    errors_df = df[((df['Tipo'].isin(['battuta', 'attacco', 'alzata'])) & (df['Voto'] == '=')) |
-                   ((df['Tipo'] == 'muro') & (df['Voto'] == '/'))]
+    errors_df = df[error_mask(df)]
     error_counts = errors_df.groupby(['Giocatore', 'Tipo']).size().unstack(fill_value=0)
     for error_type in error_types:
         if error_type not in error_counts.columns:
@@ -317,8 +329,7 @@ def compute_set_metrics(
                                                        total_efficiency=True))
                        if not ctr_d.empty else float("nan"))
 
-        err_mask = (d[voto_col].astype(str).str.strip() == "=") & (d[tipo_col].isin(["battuta", "attacco", "alzata"]))
-        errors = int(err_mask.sum())
+        errors = int(error_mask(d, tipo_col, voto_col).sum())
 
         out_rows.append({
             set_col: s,

@@ -153,6 +153,8 @@ def parse_dvw(file_path):
       risulta completo=False)
     - actions: DataFrame, un evento per riga (azioni di entrambe le squadre,
       punti/errori generici, sostituzioni), vedi _parse_scout
+    - rallies: DataFrame [Rally, Numero Set, vincitore ('*'/'a'), Punti
+      Locali, Punti Ospiti (punteggio DOPO il punto)], uno per punto assegnato
     """
     sections = _read_sections(file_path)
     teams = {}
@@ -169,7 +171,7 @@ def parse_dvw(file_path):
         "teams": teams,
         "players": players,
         "sets": _parse_sets(sections.get("SET", [])),
-        "actions": _parse_scout(sections.get("SCOUT", []), players),
+        **dict(zip(("actions", "rallies"), _parse_scout(sections.get("SCOUT", []), players))),
     }
 
 
@@ -191,7 +193,8 @@ def _parse_scout(rows, players):
     Colonne: squadra ('*'/'a'), Tipo, Voto, Cognome, Numero, Posizione
     Giocatore (zona del giocatore nella rotazione della sua squadra, 'p1'..'p6';
     vuota per il libero, che non figura nella rotazione), Posizione
-    Palleggiatore (zona del palleggiatore della sua squadra), Numero Set,
+    Palleggiatore (zona del palleggiatore della sua squadra), Numero Set, Rally
+    (numero progressivo dello scambio, chiuso dalla riga di punto successiva),
     Punti Locali, Punti Ospiti, Video, Casa P1..P6 / Ospiti P1..P6 (numeri in
     campo per zona), Palleggiatore casa/ospite (numero in campo).
 
@@ -207,9 +210,10 @@ def _parse_scout(rows, players):
         for side in ("*", "a")
     }
 
-    out = []
+    out, rallies = [], []
     score = (0, 0)
     current_set = None
+    rally = 0
     for row in rows:
         f = row.split(";")
         code = f[0]
@@ -222,6 +226,11 @@ def _parse_scout(rows, players):
         point = _POINT_RE.match(code)
         if point:
             score = (int(point.group(1)), int(point.group(2)))
+            rallies.append({
+                "Rally": rally, "Numero Set": numero_set, "vincitore": code[0],
+                "Punti Locali": score[0], "Punti Ospiti": score[1],
+            })
+            rally += 1
             continue
 
         home = _zone_numbers(f, HOME_ZONE_FIELDS)
@@ -231,7 +240,7 @@ def _parse_scout(rows, players):
             "a": int(f[10]) if f[10].strip().isdigit() else None,
         }
         base = {
-            "Numero Set": numero_set, "Punti Locali": score[0], "Punti Ospiti": score[1],
+            "Numero Set": numero_set, "Rally": rally, "Punti Locali": score[0], "Punti Ospiti": score[1],
             "Video": f[7].strip() or None,
             **{f"Casa P{z}": n for z, n in enumerate(home, 1)},
             **{f"Ospiti P{z}": n for z, n in enumerate(away, 1)},
@@ -264,7 +273,7 @@ def _parse_scout(rows, players):
                 "Sostituzione": f"{sub.group(2)}:{sub.group(3)}" if sub else None,
                 **base,
             })
-    return pd.DataFrame(out)
+    return pd.DataFrame(out), pd.DataFrame(rallies)
 
 
 def _setter_on_court(lineup, setter_zone, setter_numbers):
