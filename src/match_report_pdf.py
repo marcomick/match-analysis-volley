@@ -426,6 +426,7 @@ def _grouped_table(pdf, groups, header, data, raw, widths, fills=None, size=TABL
     fills = fills or {}
     cell_fills = cell_fills or {}
     _ensure_space(pdf, _table_height(len(data), 2 if groups else 1))
+    y_top, x_left = pdf.get_y(), pdf.l_margin
     pdf.set_font("helvetica", size=size)
     pdf.set_draw_color(*_rgb(GRID))
     heading = FontFace(emphasis="BOLD", fill_color=HEADER_FILL, color=_rgb(INK))
@@ -455,6 +456,20 @@ def _grouped_table(pdf, groups, header, data, raw, widths, fills=None, size=TABL
                     color=_rgb(NAVY) if is_total else _rgb(INK),
                 )
                 row.cell(_t(text), style=style, align="LEFT" if j in left_cols else "CENTER")
+    if groups:
+        # linee verticali tra le sezioni (gruppi di colonne), dalla riga sotto
+        # i titoli di gruppo: sopra sarebbero blu su blu e sporgerebbero
+        y_bottom = pdf.get_y()
+        y_top += LINE_H + 2 * PAD
+        pdf.set_draw_color(*_rgb(NAVY))
+        pdf.set_line_width(0.35)
+        x, col = x_left, 0
+        for _, span in groups[:-1]:
+            col += span
+            x = x_left + sum(widths[:col])
+            pdf.line(x, y_top, x, y_bottom)
+        pdf.set_line_width(0.2)
+        pdf.set_draw_color(*_rgb(GRID))
     pdf.ln(2)
 
 
@@ -480,17 +495,26 @@ def _player_tables(pdf, table):
         data, raw, _widths(cols),
         fills={3: lambda v: _diverging_fill(v, scale=12), 7: _diverging_fill, 10: _diverging_fill},
     )
-    # 2) attacco, muro
-    cols = [("att_tot", _fmt_int), ("att_err", _fmt_int), ("att_mur", _fmt_int), ("att_pt", _fmt_int),
-            ("att_eff", _fmt_pct), ("so_eff", _fmt_pct), ("so_tot", _fmt_int),
-            ("contr_eff", _fmt_pct), ("contr_tot", _fmt_int), ("muro_pt", _fmt_int), ("muro_eff", _fmt_pct)]
+    # 2) attacco e muro
     rows = [r for r in rows if r["giocatore"] != "Generici"]
+    cols = [("att_tot", _fmt_int), ("att_err", _fmt_int), ("att_mur", _fmt_int), ("att_pt", _fmt_int),
+            ("att_eff", _fmt_pct), ("muro_pt", _fmt_int), ("muro_eff", _fmt_pct)]
     data = [[r["giocatore"]] + [f(r[c]) for c, f in cols] for r in rows]
     raw = [[None] + [r[c] for c, _ in cols] for r in rows]
     _grouped_table(
-        pdf, [("", 1), ("Attacco", 5), ("Side-out", 2), ("Contrattacco", 2), ("Muro", 2)],
-        ["", "tot", "err", "mur", "pt", "eff", "eff", "n", "eff", "n", "pt", "eff"],
-        data, raw, _widths(cols), fills={j: _diverging_fill for j in (5, 6, 8, 11)},
+        pdf, [("", 1), ("Attacco", 5), ("Muro", 2)],
+        ["", "tot", "err", "mur", "pt", "eff", "pt", "eff"],
+        data, raw, _widths(cols), fills={5: _diverging_fill, 7: _diverging_fill},
+    )
+    # 3) attacco per fase: side-out, contrattacco, di cui free ball
+    cols = [("so_eff", _fmt_pct), ("so_tot", _fmt_int), ("contr_eff", _fmt_pct), ("contr_tot", _fmt_int),
+            ("fb_eff", _fmt_pct), ("fb_tot", _fmt_int)]
+    data = [[r["giocatore"]] + [f(r[c]) for c, f in cols] for r in rows]
+    raw = [[None] + [r[c] for c, _ in cols] for r in rows]
+    _grouped_table(
+        pdf, [("", 1), ("Side-out", 2), ("Contrattacco", 2), ("di cui FB", 2)],
+        ["", "eff", "n", "eff", "n", "eff", "n"],
+        data, raw, _widths(cols), fills={1: _diverging_fill, 3: _diverging_fill, 5: _diverging_fill},
     )
     _note(pdf, (
         "**pt** punti fatti: attacchi, muri e ace punto.  "
@@ -499,7 +523,8 @@ def _player_tables(pdf, table):
         "**p-e** il saldo, punti fatti meno errori: sopra zero hai dato alla squadra più di quanto le hai tolto.  "
         "**eff** efficienza, sul totale delle azioni del fondamentale (come nella dashboard): battuta "
         "((# + + + /) - =); ricezione ((# + +) - (/ + =)); attacco (# - (= + /)); muro ((# + +) - (= + /)).  "
-        "**Side-out** attacco subito dopo la ricezione; **contrattacco** tutti gli altri, free ball comprese."
+        "**Side-out** attacco subito dopo la ricezione; **contrattacco** tutti gli altri; **free ball (FB)** attacco "
+        "dopo una difesa con voto ! (palla facile), una parte del contrattacco."
     ), markdown=True)
 
 

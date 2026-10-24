@@ -135,7 +135,8 @@ def player_table(source):
     - Battuta: tot, err, ace, eff; Ricezione: tot, err (ace subiti), eff
       ((# + '+') - ('/' + '=')) / tot;
     - Attacco: tot, err, mur, pt, eff; SO eff e tot (dopo ricezione);
-      Contrattacco eff e tot (free ball comprese); Muro pt, eff.
+      Contrattacco eff e tot (free ball comprese); di cui free ball eff e tot
+      (attacco dopo una difesa con voto '!'); Muro pt, eff.
     Valori None = fondamentale non giocato (mostrato come '.').
     """
     df = source["noi"]
@@ -145,11 +146,11 @@ def player_table(source):
 
     eff = _eff
 
-    def row_for(sub, so, contr):
+    def row_for(sub, so, contr, fb):
         bat, ric, att, muro = (sub[sub["Tipo"] == t] for t in ("battuta", "ricezione", "attacco", "muro"))
         pt = int(((sub["Voto"] == "#") & sub["Tipo"].isin(_WINNING_SKILL)).sum())
         err = int(error_mask(sub).sum())
-        so_att, contr_att = so[so["Tipo"] == "attacco"], contr[contr["Tipo"] == "attacco"]
+        so_att, contr_att, fb_att = (x[x["Tipo"] == "attacco"] for x in (so, contr, fb))
         return {
             "pt": pt, "err": err, "p-e": pt - err,
             "bat_tot": len(bat) or None, "bat_err": int((bat["Voto"] == "=").sum()) if len(bat) else None,
@@ -163,6 +164,7 @@ def player_table(source):
             "att_eff": eff(att, "attacco"),
             "so_eff": eff(so_att, "attacco"), "so_tot": len(so_att) or None,
             "contr_eff": eff(contr_att, "attacco"), "contr_tot": len(contr_att) or None,
+            "fb_eff": eff(fb_att, "attacco"), "fb_tot": len(fb_att) or None,
             "muro_pt": int((muro["Voto"] == "#").sum()) if len(muro) else None,
             "muro_eff": eff(muro, "muro"),
         }
@@ -173,7 +175,7 @@ def player_table(source):
         idx = sub.index
         rows.append({
             "giocatore": f"{int(numero)} {sub['Cognome'].iloc[0]}",
-            **row_for(sub, so_df[so_df.index.isin(idx)], contr_df[contr_df.index.isin(idx)]),
+            **row_for(sub, so_df[so_df.index.isin(idx)], contr_df[contr_df.index.isin(idx)], fb_df[fb_df.index.isin(idx)]),
         })
 
     sources = point_sources(source)
@@ -182,11 +184,107 @@ def player_table(source):
     generici["p-e"] = generici["pt"] - generici["err"]
     rows.append({"giocatore": "Generici", **generici})
 
-    total = row_for(actions, so_df, contr_df)
+    total = row_for(actions, so_df, contr_df, fb_df)
     total["pt"] += generici["pt"]
     total["err"] += generici["err"]
     total["p-e"] = total["pt"] - total["err"]
     rows.append({"giocatore": TOTAL_LABEL, **total})
+    return pd.DataFrame(rows)
+
+
+def point_sources_by_set(source):
+    """
+    Distribuzione dei punti per causa, set per set e sulla partita (vedi
+    classify_rallies): DataFrame [set ('1'..'5', 'Tot'), squadra ('noi'/
+    'loro'), causa, n], con tutte le cause (anche a 0) per ogni set e squadra.
+    """
+    rallies = classify_rallies(source["parsed"])
+    rows = []
+    sets = [str(int(x)) for x in sorted(rallies["Numero Set"].dropna().unique())]
+    for label in sets + [TOTAL_LABEL]:
+        sub = rallies if label == TOTAL_LABEL else rallies[rallies["Numero Set"] == int(label)]
+        for key, side in (("noi", source["side"]), ("loro", source["other"])):
+            counts = sub[sub["vincitore"] == side]["causa"].value_counts()
+            rows += [{"set": label, "squadra": key, "causa": c, "n": int(counts.get(c, 0))} for c in POINT_SOURCES]
+    return pd.DataFrame(rows)
+
+
+# KPI per set (squadra e singolo giocatore), con le definizioni dei KPI della
+# dashboard: efficienze (%) e conteggi.
+SET_KPI_PERCENT = ["Battuta%", "Ricezione%", "Attacco%", "Attacco SO%", "Contrattacco%", "Attacco FB%", "Muro%"]
+SET_KPI_COUNTS = ["Punti", "Errori", "p-e"]
+SET_KPI_VOLUME = {
+    "Battuta%": "Battute", "Ricezione%": "Ricezioni", "Attacco%": "Attacchi",
+    "Attacco SO%": "Attacchi SO", "Contrattacco%": "Contrattacchi", "Attacco FB%": "Attacchi FB", "Muro%": "Muri",
+}
+
+
+def set_kpis(team_df):
+    """
+    KPI per set e sulla partita per la squadra ('Squadra') e per ciascun
+    giocatore ('<numero> <cognome>') di `team_df` (azioni di UNA squadra, vedi
+    load_report_source). DataFrame tidy [entita, set ('1'..'5', 'Tot'), kpi,
+    value]: SET_KPI_PERCENT (None = fondamentale non giocato), SET_KPI_COUNTS
+    e i volumi SET_KPI_VOLUME (numero di azioni dietro ogni efficienza).
+
+    La divisione side-out/contrattacco va fatta sulla sequenza di TUTTA la
+    squadra (l'attacco segue una ricezione di un compagno): si divide sul
+    set intero e poi si assegna ogni attacco al suo giocatore.
+    """
+    actions = team_df[team_df["Numero"].notna()]
+    players = [
+        (f"{int(n)} {actions[actions['Numero'] == n]['Cognome'].iloc[0]}", n)
+        for n in sorted(actions["Numero"].unique())
+    ]
+    sets = [str(int(x)) for x in sorted(team_df["Numero Set"].dropna().unique())]
+    rows = []
+    for label in sets + [TOTAL_LABEL]:
+        d = team_df if label == TOTAL_LABEL else team_df[team_df["Numero Set"] == int(label)]
+        so, fb, rest = separate_attack_types(d)
+        contr = pd.concat([fb, rest])
+        for entity, numero in [("Squadra", None)] + players:
+            mask = d["Numero"].notna() if numero is None else d["Numero"] == numero
+            sub = d[mask]
+            sub_so, sub_contr, sub_fb = (x[x.index.isin(sub.index)] for x in (so, contr, fb))
+            pt = int(((sub["Voto"] == "#") & sub["Tipo"].isin(_WINNING_SKILL)).sum())
+            err = int(error_mask(sub).sum())
+            values = {
+                "Battuta%": _eff(sub, "battuta"), "Ricezione%": _eff(sub, "ricezione"),
+                "Attacco%": _eff(sub, "attacco"), "Attacco SO%": _eff(sub_so, "attacco"),
+                "Contrattacco%": _eff(sub_contr, "attacco"), "Attacco FB%": _eff(sub_fb, "attacco"),
+                "Muro%": _eff(sub, "muro"),
+                "Punti": pt, "Errori": err, "p-e": pt - err,
+                "Battute": int((sub["Tipo"] == "battuta").sum()), "Ricezioni": int((sub["Tipo"] == "ricezione").sum()),
+                "Attacchi": int((sub["Tipo"] == "attacco").sum()),
+                "Attacchi SO": int((sub_so["Tipo"] == "attacco").sum()),
+                "Contrattacchi": int((sub_contr["Tipo"] == "attacco").sum()),
+                "Attacchi FB": int((sub_fb["Tipo"] == "attacco").sum()),
+                "Muri": int((sub["Tipo"] == "muro").sum()),
+            }
+            rows += [{"entita": entity, "set": label, "kpi": k, "value": v} for k, v in values.items()]
+    return pd.DataFrame(rows)
+
+
+# Esiti di ricezione selezionabili per il primo attacco dopo ricezione (dopo
+# una ricezione '=' non c'è attacco: è l'ace subito).
+RECEPTION_GRADES = {"#": "perfetta (#)", "+": "positiva (+)", "!": "esclamativa (!)", "-": "negativa (-)",
+                    "/": "rigiocata di là (/)"}
+
+
+def side_out_by_reception(team_df, rec_vote):
+    """
+    Efficienza del primo attacco dopo una ricezione con voto in `rec_vote`,
+    set per set e sulla partita: DataFrame [set ('1'..'5', 'Tot'), eff, n].
+    Stessa divisione del KPI "Attacco SO" (separate_attack_types: attacco
+    subito dopo la ricezione, al più con un'alzata di mezzo).
+    """
+    sets = [str(int(x)) for x in sorted(team_df["Numero Set"].dropna().unique())]
+    rows = []
+    for label in sets + [TOTAL_LABEL]:
+        d = team_df if label == TOTAL_LABEL else team_df[team_df["Numero Set"] == int(label)]
+        so, _, _ = separate_attack_types(d, rec_vote=tuple(rec_vote))
+        att = so[so["Tipo"] == "attacco"]
+        rows.append({"set": label, "eff": _eff(att, "attacco"), "n": len(att)})
     return pd.DataFrame(rows)
 
 
