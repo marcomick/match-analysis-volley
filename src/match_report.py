@@ -19,7 +19,7 @@ gli stessi filtri delle altre classifiche.
 """
 import pandas as pd
 
-from src.dvw import decimo_side, load_team_actions
+from src.dvw import decimo_side, parse_dvw, side_actions, team_side
 from src.efficiency import compute_set_metrics, eff_from_calcola, error_mask, separate_attack_types
 from src.leg_comparison import TIPO_POS_NEG
 
@@ -39,21 +39,21 @@ def _lost_point(df):
     return (voto == "=") | ((df["Tipo"].isin(["attacco", "muro"])) & (voto == "/"))
 
 
-def load_report_source(file_path):
+def load_report_source(file_path, team=None):
     """
     Legge il .dvw della partita per il report. Ritorna un dict con:
     parsed (src.dvw.parse_dvw), noi/loro (azioni di ciascuna squadra, formato
-    degli Excel), nomi delle squadre, decimo_casa.
+    degli Excel), nomi delle squadre, decimo_casa. "noi" è il Decimo, o la
+    squadra di nome `team` (studio dell'avversario, src.dvw.team_side).
     """
     if not str(file_path).lower().endswith(".dvw"):
         raise ValueError("Il report partita richiede il file .dvw (azioni di entrambe le squadre).")
-    noi, decimo_casa, parsed = load_team_actions(file_path, "decimo")
-    loro, _, _ = load_team_actions(file_path, "avversario")
-    side = decimo_side(parsed)
+    parsed = parse_dvw(file_path)
+    side = decimo_side(parsed) if team is None else team_side(parsed, team)
     other = "a" if side == "*" else "*"
     return {
-        "parsed": parsed, "noi": noi, "loro": loro, "decimo_casa": decimo_casa,
-        "side": side, "other": other,
+        "parsed": parsed, "noi": side_actions(parsed, side), "loro": side_actions(parsed, other),
+        "decimo_casa": side == "*", "side": side, "other": other,
         "nome_noi": parsed["teams"][side], "nome_loro": parsed["teams"][other],
     }
 
@@ -139,7 +139,14 @@ def player_table(source):
       (attacco dopo una difesa con voto '!'); Muro pt, eff.
     Valori None = fondamentale non giocato (mostrato come '.').
     """
-    df = source["noi"]
+    sources = point_sources(source)
+    return player_table_from_df(source["noi"], sources["noi"]["Punti generici"], sources["loro"]["Punti generici"])
+
+
+def player_table_from_df(df, generici_pt, generici_err):
+    """Il tabellino di player_table dalle azioni di una squadra (anche più
+    partite insieme, vedi combine_matches) e dai punti generici fatti/
+    regalati."""
     actions = df[df["Numero"].notna()]
     so_df, fb_df, rest_df = separate_attack_types(df)
     contr_df = pd.concat([fb_df, rest_df])
@@ -178,9 +185,8 @@ def player_table(source):
             **row_for(sub, so_df[so_df.index.isin(idx)], contr_df[contr_df.index.isin(idx)], fb_df[fb_df.index.isin(idx)]),
         })
 
-    sources = point_sources(source)
     generici = {k: None for k in rows[0] if k != "giocatore"} if rows else {}
-    generici.update({"pt": sources["noi"]["Punti generici"], "err": sources["loro"]["Punti generici"]})
+    generici.update({"pt": generici_pt, "err": generici_err})
     generici["p-e"] = generici["pt"] - generici["err"]
     rows.append({"giocatore": "Generici", **generici})
 
@@ -320,6 +326,24 @@ def setter_table(source):
             rows.append(row)
         out[setter] = pd.DataFrame(rows)
     return out
+
+
+def combine_matches(dfs):
+    """
+    Azioni di una squadra in più partite (DataFrame di load_report_source)
+    in un solo DataFrame, per i totali su più partite (studio
+    dell'avversario): set e scambi rinumerati per partita (set 101, 102...
+    nella seconda, ecc.), così le funzioni che lavorano per set e per
+    sequenza di azioni non legano mai un attacco a una ricezione di
+    un'altra partita. Dei risultati per set conta solo la riga 'Tot'.
+    """
+    parts = []
+    for k, df in enumerate(dfs):
+        d = df.copy()
+        d["Numero Set"] = d["Numero Set"] + 100 * k
+        d["Rally"] = d["Rally"] + 100000 * k
+        parts.append(d)
+    return pd.concat(parts, ignore_index=True)
 
 
 def match_header(source, official_result):

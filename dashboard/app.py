@@ -77,9 +77,11 @@ attacchi della sidebar (i
 finding sono calcolati sulla serie completa, i grafici devono restare
 coerenti con quella stessa serie).
 """
+import glob
 import io
 import os
 import sys
+from collections import Counter
 
 import numpy as np
 import pandas as pd
@@ -108,7 +110,8 @@ from src.leg_comparison import (
     get_x_axis_order,
     load_all_matches,
 )
-from config.paths import ROOT, load_seasons
+from config.paths import ROOT, build_base_path, load_seasons
+from src.dvw import decimo_side, normalize_team_name, parse_dvw, read_dvw_header, team_side
 from src.efficiency import (
     TABELLINO_BOTTOM_SECTIONS,
     TABELLINO_TOP_SECTIONS,
@@ -122,9 +125,11 @@ from src.match_report import (
     SET_KPI_PERCENT,
     SET_KPI_VOLUME,
     TOTAL_LABEL,
+    combine_matches,
     load_report_source,
     match_header,
     player_table,
+    player_table_from_df,
     point_sources,
     point_sources_by_set,
     set_kpis,
@@ -144,6 +149,30 @@ from src.rankings import (
     calculate_player_scores_by_type,
 )
 from src.player_season_report import build_player_season_report
+from src.setter_distribution import (
+    ALL_GRADES,
+    ANTENNA_RED,
+    CELL_INK,
+    COURT_FLOOR,
+    COURT_FLOOR_DARK,
+    FREE_ZONE,
+    FREE_ZONE_DARK,
+    NET_COLOR,
+    NET_MESH,
+    DIRECTIONS,
+    MIN_PER_CATEGORY,
+    MIN_TOTAL,
+    NO_DEFENSE,
+    ZONE_GRID,
+    attack_rows,
+    direction_categories,
+    distributions_by_setter,
+    filter_rows,
+    share_color,
+    short_player,
+    test_all_directions,
+    zone_stats,
+)
 from src.setter_report import (
     ATTACCO_ALZATO_ESCL_KPI_LABELS,
     ATTACCO_ALZATO_FB_KPI_LABELS,
@@ -1372,7 +1401,6 @@ def build_points_by_set_chart(view, as_percent):
     grafico con 12 barre di fila si faceva fatica a leggerli (feedback
     dell'utente, 2026-10-24).
     """
-    colors = POINT_SOURCE_COLORS_DARK if (st.context.theme.type or "light") == "dark" else POINT_SOURCE_COLORS_LIGHT
     noi_color, loro_color = _team_colors()
     pts = view["points"]
     h = view["header"]
@@ -1396,8 +1424,21 @@ def build_points_by_set_chart(view, as_percent):
         + (f"   <i>(nello scout fino al {scouted[s_]})</i>" if s_ in scouted else "")
         for s_ in sets
     ]
-    fig = make_subplots(rows=len(sets), cols=1, shared_xaxes=True, vertical_spacing=0.045, subplot_titles=titles)
     teams = (("noi", view["nome_noi"], noi_color), ("loro", view["nome_loro"], loro_color))
+    return _points_panels_chart(pts, list(zip(sets, titles)), teams, as_percent)
+
+
+def _points_panels_chart(pts, panels, teams, as_percent, unit="set"):
+    """Il grafico di build_points_by_set_chart per riquadri qualsiasi:
+    `pts` [set, squadra, causa, n] con 'set' = etichetta del riquadro,
+    `panels` [(etichetta, titolo)], `teams` [(chiave, nome, colore)]."""
+    colors = POINT_SOURCE_COLORS_DARK if (st.context.theme.type or "light") == "dark" else POINT_SOURCE_COLORS_LIGHT
+    sets = [label for label, _ in panels]
+    titles = [title for _, title in panels]
+    height = 140 + 105 * len(sets)
+    # 34 px tra un riquadro e l'altro, per il titolo del successivo
+    spacing = min(34 / (height - 95 - 80), 0.9 / max(len(sets) - 1, 1))
+    fig = make_subplots(rows=len(sets), cols=1, shared_xaxes=True, vertical_spacing=spacing, subplot_titles=titles)
     y_text = [f"<span style='color:{color}'>■</span> <b>{name}</b>" for _, name, color in teams]
     shown = set()
     for row, label in enumerate(sets, 1):
@@ -1413,24 +1454,26 @@ def build_points_by_set_chart(view, as_percent):
                 marker_color=colors[causa], marker_line=dict(color=theme_colors()["surface"], width=1.5),
                 text=[str(v) if v else "" for v in n], textposition="inside", insidetextanchor="middle",
                 textfont=dict(color="#ffffff"), customdata=np.round(share, 0),
-                hovertemplate=causa + ": %{x} punti (%{customdata:.0f}% del set)<extra></extra>",
+                hovertemplate=causa + ": %{x} punti (%{customdata:.0f}% del " + unit + ")<extra></extra>",
             ), row=row, col=1)
             shown.add(causa)
         fig.update_yaxes(autorange="reversed", row=row, col=1, gridcolor=theme_colors()["grid"])
     # titoli dei riquadri allineati a sinistra, sopra le barre
     for ann in fig.layout.annotations:
         ann.update(x=0, xanchor="left", font=dict(size=14, color=theme_colors()["ink"]))
-    longest = max(len(view["nome_noi"]), len(view["nome_loro"])) + 3
+    longest = max(len(name) for _, name, _ in teams) + 3
     layout = base_layout("", "", "")
     layout.update(
         barmode="stack", barnorm="percent" if as_percent else None, hovermode="closest",
-        height=140 + 105 * len(sets), margin=dict(t=95, l=int(longest * 7.5) + 20),
-        legend=dict(orientation="h", yanchor="bottom", y=1.035, xanchor="left", x=0, traceorder="normal"),
+        height=height, margin=dict(t=95, b=80, l=int(longest * 7.5) + 20),
+        # legenda 40 px sopra l'area dei grafici, sopra il titolo del primo riquadro
+        legend=dict(orientation="h", yanchor="bottom", y=1 + 40 / (height - 95 - 80), xanchor="left", x=0,
+                    traceorder="normal"),
         bargap=0.25,
     )
     fig.update_layout(**layout)
     fig.update_xaxes(gridcolor=theme_colors()["grid"], ticksuffix="%" if as_percent else "")
-    fig.update_xaxes(title_text="% dei punti del set" if as_percent else "Punti", row=len(sets), col=1)
+    fig.update_xaxes(title_text=f"% dei punti del {unit}" if as_percent else "Punti", row=len(sets), col=1)
     return fig
 
 
@@ -1519,10 +1562,10 @@ def build_side_out_chart(view, rec_vote):
     return _set_trend_figure(view, series, True, f"Primo attacco dopo ricezione {grades}", "attacchi")
 
 
-def build_set_overview_chart(view, set_label):
+def build_set_overview_chart(view, set_label, colors=None):
     """Tutti i KPI di efficienza di un set (o della partita), noi e loro
-    affiancati."""
-    noi_color, loro_color = _team_colors()
+    affiancati (`colors`: (noi, loro), default blu/arancio)."""
+    noi_color, loro_color = colors or _team_colors()
     labels = [SET_KPI_LABELS[k] for k in SET_KPI_PERCENT]
     fig = go.Figure()
     for key, name, color in (("noi", view["nome_noi"], noi_color), ("loro", view["nome_loro"], loro_color)):
@@ -1708,7 +1751,12 @@ def render_match_section(matches, match_label_lookup, version):
 
     # 6) tabellino
     st.subheader("Tabellino giocatori")
-    tab = view["players"].rename(columns={
+    render_player_table(view["players"])
+
+
+def render_player_table(players):
+    """Il tabellino giocatori di src.match_report.player_table."""
+    tab = players.rename(columns={
         "giocatore": "Giocatore", "pt": "Punti", "err": "Errori", "bat_tot": "Battute", "bat_err": "Batt. err",
         "bat_ace": "Ace", "bat_eff": "Battuta eff", "ric_tot": "Ricezioni", "ric_err": "Ric. err",
         "ric_eff": "Ricezione eff", "att_tot": "Attacchi", "att_err": "Att. err", "att_mur": "Murati",
@@ -1757,6 +1805,7 @@ def render_match_report_section(matches, match_label_lookup):
                 header, comment, point_sources(source), team_comparison(source), player_table(source),
                 setter_table(source), build_rankings(season_df, ignore), source["nome_noi"], source["nome_loro"],
                 n_partite_stagione=sum(1 for m in matches if m["match_seq"] <= seq),
+                distributions=distributions_by_setter(attack_rows(source["parsed"], source["side"])),
             )
             name = f"Report {header['casa']} - {header['ospite']} {header['data'] or ''}".strip().replace("/", "-")
             st.session_state["report_pdf"] = (seq, name, pdf)
@@ -1881,6 +1930,432 @@ def render_tabellino_section(matches, selected_seqs, match_label_lookup):
         "⬇️ Scarica tabellino Excel", data=buffer.getvalue(), file_name=f"tabellino {name}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
+
+
+# ---------------------------------------------------------------------------
+# Distribuzione del palleggiatore (src.setter_distribution) e studio
+# dell'avversario
+# ---------------------------------------------------------------------------
+ROTATIONS = [f"P{i}" for i in range(1, 7)]
+BALL_TYPE_ORDER = ["Alta", "Super", "7", "Quick", "Mezza", "Fast", "Altro"]
+DEFENSE_GRADES = {"#": "perfetta (#)", "+": "positiva (+)", "!": "free ball (!)", "-": "negativa (-)",
+                  "/": "rigiocata di là (/)", "=": "errore (=)", NO_DEFENSE: "nessuna difesa prima"}
+COMPARE_OPTIONS = {"": "Nessun confronto", **DIRECTIONS}
+
+
+def _rounded_rect_path(x0, y0, x1, y1, r):
+    return (f"M {x0 + r},{y0} L {x1 - r},{y0} Q {x1},{y0} {x1},{y0 + r} L {x1},{y1 - r} Q {x1},{y1} {x1 - r},{y1} "
+            f"L {x0 + r},{y1} Q {x0},{y1} {x0},{y1 - r} L {x0},{y0 + r} Q {x0},{y0} {x0 + r},{y0} Z")
+
+
+def build_court_chart(stats, title="", compact=False):
+    """
+    Metà campo vista da chi attacca, rete in alto (banda scura con le
+    antenne), linea dei 3 metri, 9 zone (src.setter_distribution.ZONE_GRID).
+    In ogni zona: quota delle alzate (colore e numero grande), attacchi ed
+    efficienza, giocatori serviti; tutti i dettagli nel tooltip.
+    """
+    is_dark = (st.context.theme.type or "light") == "dark"
+    colors = theme_colors()
+    by_zone = stats.set_index("zona")
+    shapes = [dict(type="rect", x0=-0.35, y0=-0.35, x1=9.35, y1=9.1, fillcolor=FREE_ZONE_DARK if is_dark else FREE_ZONE,
+                   line=dict(width=0), layer="below"),
+              dict(type="rect", x0=0, y0=0, x1=9, y1=9, fillcolor=COURT_FLOOR_DARK if is_dark else COURT_FLOOR,
+                   line=dict(width=0), layer="below")]
+    annotations, hx, hy, htext = [], [], [], []
+    size_pct, size_detail, size_players = (19, 10, 9) if compact else (30, 12.5, 11.5)
+    for r, zone_row in enumerate(ZONE_GRID):
+        for c, z in enumerate(zone_row):
+            x0, y1 = 3 * c, 9 - 3 * r
+            x1, y0 = x0 + 3, y1 - 3
+            cx, cy = x0 + 1.5, y0 + 1.5
+            s = by_zone.loc[z]
+            ink = colors["ink"] if is_dark else CELL_INK
+            if s["n"]:
+                fill, white = share_color(s["pct"])
+                ink = "#ffffff" if white else CELL_INK
+                shapes.append(dict(type="path", path=_rounded_rect_path(x0 + 0.13, y0 + 0.13, x1 - 0.13, y1 - 0.13, 0.32),
+                                   fillcolor=fill, line=dict(width=0)))
+                eff = "-" if s["eff"] is None else f"{s['eff']:.0f}%"
+                players = " · ".join(f"{short_player(p)} {k}" for p, k, _ in s["giocatori"][:1 if compact else 2])
+                annotations += [
+                    dict(x=cx, y=cy + 0.5, text=f"<b>{s['pct']:.0f}%</b>", font=dict(size=size_pct, color=ink)),
+                    dict(x=cx, y=cy - 0.35, text=f"{int(s['n'])} att. · eff {eff}", font=dict(size=size_detail, color=ink)),
+                    dict(x=cx, y=cy - 0.9, text=players, font=dict(size=size_players, color=ink)),
+                ]
+                pt_pct = "-" if s["pt_pct"] is None else f"{s['pt_pct']:.0f}%"
+                lines = [f"<b>Zona {z}</b>: {int(s['n'])} attacchi, {s['pct']:.0f}% delle alzate",
+                         f"punti {s['pt']} ({pt_pct}) · errori {s['err']} · murati {s['mur']}",
+                         f"efficienza {eff}", ""]
+                lines += [f"{p}: {k} attacchi, {pt} punti" for p, k, pt in s["giocatori"]]
+                hx.append(cx)
+                hy.append(cy)
+                htext.append("<br>".join(lines))
+            else:
+                annotations.append(dict(x=cx, y=cy, text="–", font=dict(size=size_detail + 4, color=colors["ink"]), opacity=0.35))
+            annotations.append(dict(x=x0 + 0.3, y=y1 - 0.32, text=f"<b>{z}</b>", font=dict(size=size_detail, color=ink),
+                                    opacity=0.6))
+    # righe del campo sopra le celle: linee divisorie delle zone (tratteggiate,
+    # non sono linee vere), linea dei 3 metri e perimetro
+    for x in (3, 6):
+        shapes.append(dict(type="line", x0=x, y0=0, x1=x, y1=9, line=dict(color="#ffffff", width=1, dash="dot")))
+    shapes.append(dict(type="line", x0=0, y0=3, x1=9, y1=3, line=dict(color="#ffffff", width=1, dash="dot")))
+    shapes.append(dict(type="line", x0=0, y0=6, x1=9, y1=6, line=dict(color="#ffffff", width=3.5)))
+    shapes.append(dict(type="rect", x0=0, y0=0, x1=9, y1=9, line=dict(color="#ffffff", width=3.5)))
+    # rete: banda scura con le maglie, nastro bianco in alto, antenne a strisce
+    shapes.append(dict(type="rect", x0=-0.35, y0=9.1, x1=9.35, y1=9.75, fillcolor=NET_COLOR, line=dict(width=0)))
+    shapes += [dict(type="line", x0=x, y0=9.12, x1=x, y1=9.64, line=dict(color=NET_MESH, width=1))
+               for x in np.arange(-0.2, 9.3, 0.25)]
+    shapes.append(dict(type="rect", x0=-0.35, y0=9.64, x1=9.35, y1=9.78, fillcolor="#ffffff", line=dict(width=0)))
+    for xa in (0, 9):
+        shapes += [dict(type="rect", x0=xa - 0.06, x1=xa + 0.06, y0=8.95 + 0.22 * k, y1=8.95 + 0.22 * (k + 1),
+                        fillcolor=ANTENNA_RED if k % 2 else "#ffffff", line=dict(color=ANTENNA_RED, width=0.5))
+                   for k in range(7)]
+    annotations.append(dict(x=4.5, y=9.4, text="<b>R E T E</b>", font=dict(size=11 if compact else 13, color="#ffffff"),
+                            bgcolor=NET_COLOR, borderpad=2))
+    if not compact:
+        annotations.append(dict(x=9.4, y=6, text="3 m", xanchor="left", font=dict(size=10, color=colors["ink"]), opacity=0.6))
+    for a in annotations:
+        a.setdefault("showarrow", False)
+
+    fig = go.Figure(go.Scatter(
+        x=hx, y=hy, mode="markers", text=htext, hovertemplate="%{text}<extra></extra>",
+        marker=dict(symbol="square", size=70 if not compact else 42, color="rgba(0,0,0,0)"),
+    ))
+    fig.update_layout(
+        shapes=shapes, annotations=annotations, showlegend=False,
+        title=dict(text=f"<b>{title}</b>" if title else "", x=0, xanchor="left", font=dict(size=13 if compact else 15)),
+        xaxis=dict(visible=False, range=[-0.45, 9.75 if not compact else 9.45], fixedrange=True),
+        yaxis=dict(visible=False, range=[-0.25, 10.3], scaleanchor="x", fixedrange=True),
+        plot_bgcolor=colors["surface"], paper_bgcolor=colors["surface"],
+        font=dict(family="system-ui, -apple-system, 'Segoe UI', sans-serif", color=colors["ink"]),
+        height=430 if compact else 640, margin=dict(t=40 if title else 10, b=10, l=10, r=10),
+        hoverlabel=dict(align="left"),
+    )
+    return fig
+
+
+def _eff_text(sub):
+    n = len(sub)
+    if not n:
+        return "-"
+    return f"{100 * ((sub['voto'] == '#').sum() - sub['voto'].isin(['=', '/']).sum()) / n:.0f}%"
+
+
+def _attackers_table(rows):
+    """Chi riceve le alzate: attacchi, quota, zone, punti ed efficienza."""
+    out = []
+    for name, sub in rows.groupby("attaccante"):
+        zones = sub["zona"].value_counts()
+        out.append({
+            "Giocatore": name, "Attacchi": len(sub), "% alzate": f"{100 * len(sub) / len(rows):.0f}%",
+            "Zone": " · ".join(f"{int(z)}: {k}" for z, k in zones.items()),
+            "Punti": f"{100 * (sub['voto'] == '#').mean():.0f}%", "Eff": _eff_text(sub),
+        })
+    return pd.DataFrame(out).sort_values("Attacchi", ascending=False)
+
+
+def _category_label(direction, cat):
+    if direction == "ricezione":
+        return f"Ricezione {cat}"
+    return str(cat)
+
+
+def _deviation_text(direction, d):
+    where = {"rotazione": f"in {d['categoria']}", "ricezione": f"dopo una ricezione {d['categoria']}",
+             "situazione_punteggio": f"{str(d['categoria']).lower()}", "partita": f"in {d['categoria']}"}[direction]
+    verso = "più" if d["residuo"] > 0 else "meno"
+    return (f"{where}: **{verso}** palloni in **zona {d['zona']}**, {d['pct']:.0f}% delle alzate "
+            f"(contro il {d['pct_totale']:.0f}% sul totale)")
+
+
+def render_distribution(rows, key):
+    """Filtri, campo con la distribuzione, chi attacca, confronto lungo una
+    direzione e test di significatività. `rows`: src.setter_distribution.attack_rows."""
+    st.caption(
+        "Da dove attaccano i giocatori serviti dal palleggiatore, escluse le sue seconde intenzioni. Centrali sempre "
+        "da 3, schiacciatori in seconda linea da 8 (pipe), opposti in seconda linea da 9; schiacciatori e opposti in "
+        "prima linea dalla zona di partenza rilevata con la direzione d'attacco. Il contrattacco comprende la free ball."
+    )
+    if rows.empty:
+        st.info("Nessun attacco nelle partite selezionate.")
+        return
+    c1, c2, c3 = st.columns(3)
+    setters = sorted(rows["palleggiatore"].unique())
+    setters_sel = c1.multiselect("Palleggiatore in campo", setters, default=setters, key=f"{key}_setter")
+    rot_opts = [r for r in ROTATIONS if r in set(rows["rotazione"].dropna())]
+    rot_sel = c2.multiselect("Rotazione (zona del palleggiatore)", rot_opts, default=rot_opts, key=f"{key}_rot")
+    phase_sel = c3.multiselect("Fase", ["Side-out", "Contrattacco"], default=["Side-out", "Contrattacco"],
+                               key=f"{key}_phase")
+    c4, c5, c6, c7 = st.columns(4)
+    rec_opts = [g for g in ALL_GRADES if g in set(rows["ricezione"].dropna())]
+    rec_sel = c4.multiselect("Voto ricezione (side-out)", rec_opts, default=rec_opts, key=f"{key}_rec",
+                             format_func=lambda v: RECEPTION_GRADES.get(v, v))
+    difese = set(rows.loc[rows["fase"] == "Contrattacco", "difesa"].fillna(NO_DEFENSE))
+    def_opts = [g for g in DEFENSE_GRADES if g in difese]
+    def_sel = c5.multiselect("Voto difesa (contrattacco)", def_opts, default=def_opts, key=f"{key}_def",
+                             format_func=DEFENSE_GRADES.get)
+    balls = set(rows["tipo_alzata"].dropna())
+    ball_opts = [b for b in BALL_TYPE_ORDER if b in balls] + sorted(balls - set(BALL_TYPE_ORDER))
+    ball_sel = c6.multiselect("Tipo di alzata", ball_opts, default=ball_opts, key=f"{key}_ball")
+    hit_opts = sorted(rows["tipo_colpo"].dropna().unique())
+    hit_sel = c7.multiselect("Tipo di colpo", hit_opts, default=hit_opts, key=f"{key}_hit")
+    filtered = filter_rows(rows, setters_sel, rot_sel, phase_sel, rec_sel, def_sel, ball_sel, hit_sel)
+    if filtered.empty:
+        st.info("Nessun attacco con questi filtri.")
+        return
+
+    stats = zone_stats(filtered)
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Attacchi", len(filtered))
+    m2.metric("Efficienza", _eff_text(filtered))
+    m3.metric("Punti", f"{100 * (filtered['voto'] == '#').mean():.0f}%")
+    n_est = int(filtered["zona_stimata"].sum())
+    if n_est:
+        st.caption(f"⚠️ {n_est} attacchi di schiacciatori e opposti in prima linea senza direzione rilevata: zona "
+                   "stimata dal ruolo (schiacciatore 4, opposto 2), che non vede gli scambi di lato in P1.")
+    left, right = st.columns([3, 2])
+    with left:
+        st.plotly_chart(build_court_chart(stats), theme=None, key=f"{key}_court")
+    with right:
+        st.markdown("**Chi attacca**")
+        st.dataframe(_attackers_table(filtered), hide_index=True, width="stretch")
+        st.caption("Passa il mouse su una zona per punti, errori, murati e tutti i giocatori serviti.")
+
+    st.markdown("#### Confronto lungo una direzione")
+    directions = [d for d in DIRECTIONS if d != "partita" or filtered["partita"].nunique() > 1]
+    compare = st.radio("Confronta per", [""] + directions, horizontal=True, key=f"{key}_compare",
+                       format_func=COMPARE_OPTIONS.get)
+    if compare:
+        base = filtered[filtered["fase"] == "Side-out"] if compare == "ricezione" else filtered
+        cats = direction_categories(base, compare)
+        cols = st.columns(3)
+        for i, cat in enumerate(cats):
+            sub = base[base[compare] == cat]
+            with cols[i % 3]:
+                st.plotly_chart(
+                    build_court_chart(zone_stats(sub), f"{_category_label(compare, cat)} · {len(sub)} att. · eff {_eff_text(sub)}",
+                                      compact=True),
+                    theme=None, key=f"{key}_cmp_{compare}_{i}",
+                )
+
+    st.markdown("#### La distribuzione cambia in modo significativo?")
+    results = test_all_directions(filtered, directions)
+    for d in directions:
+        res = results[d]
+        if res is None:
+            st.markdown(f"**{DIRECTIONS[d]}** — dati insufficienti (servono almeno due categorie con "
+                        f"{MIN_PER_CATEGORY} attacchi e {MIN_TOTAL} attacchi in tutto).")
+        elif res["significativo"]:
+            st.markdown(f"**{DIRECTIONS[d]} — sì**, la distribuzione cambia (p = {res['p_holm']:.3f}, "
+                        f"intensità {res['cramer_v']:.2f} su 1).")
+            for dev in res["scostamenti"][:4]:
+                st.markdown(f"- {_deviation_text(d, dev)}")
+        else:
+            st.markdown(f"**{DIRECTIONS[d]} — no**, differenze compatibili con il caso (p = {res['p_holm']:.3f}).")
+    st.caption(
+        "Test chi quadro zona × categoria con p-value per permutazione (affidabile anche con pochi attacchi), corretto "
+        "per il numero di direzioni guardate insieme (Holm): significativo se p < 0.05 dopo la correzione. Categorie con "
+        f"meno di {MIN_PER_CATEGORY} attacchi escluse; scostamenti = zone con residuo standardizzato oltre ±2. "
+        "Qualità della ricezione: solo side-out. Rotazione: con il palleggiatore in prima linea (P2-P4) gli attaccanti "
+        "davanti sono due e l'opposto attacca da dietro, quindi una parte della differenza tra rotazioni è strutturale."
+    )
+
+
+def _mtime(path):
+    try:
+        return os.path.getmtime(path)
+    except OSError:
+        return None
+
+
+@st.cache_data(show_spinner="Lettura dello scout...")
+def load_attack_rows(file_path, team, label, mtime):
+    """attack_rows di una partita: del Decimo (team=None) o della squadra
+    `team`. `mtime` (data di modifica del file) solo come chiave di cache."""
+    parsed = parse_dvw(file_path)
+    side = decimo_side(parsed) if team is None else team_side(parsed, team)
+    return attack_rows(parsed, side, label)
+
+
+def render_distribution_section(matches, selected_seqs, match_label_lookup):
+    st.header("Distribuzione alzate")
+    dvw = [m for m in matches if m["match_seq"] in selected_seqs and str(m.get("file_path", "")).lower().endswith(".dvw")]
+    if not dvw:
+        st.info("Questa sezione richiede lo scout in formato .dvw: nessuna delle partite selezionate lo ha.")
+        return
+    rows = pd.concat([
+        load_attack_rows(m["file_path"], None, match_label_lookup[m["match_seq"]], _mtime(m["file_path"]))
+        for m in sorted(dvw, key=lambda m: m["match_seq"])
+    ], ignore_index=True)
+    st.caption(f"Decimo, {len(dvw)} partite (le partite selezionate nella barra laterale con lo scout .dvw).")
+    render_distribution(rows, key="dist_decimo")
+
+
+@st.cache_data(show_spinner="Ricerca degli scout .dvw della stagione...")
+def load_dvw_catalog(season, version):
+    """Tutti i .dvw nella cartella della stagione (sottocartelle comprese):
+    [{path, file, data, teams, sets}], letti solo nell'intestazione."""
+    out = []
+    for path in sorted(glob.glob(str(build_base_path(season) / "**" / "*.dvw"), recursive=True)):
+        try:
+            out.append({"path": path, "file": os.path.basename(path), **read_dvw_header(path)})
+        except Exception as e:  # file illeggibile: segnalato, non blocca gli altri
+            out.append({"path": path, "file": os.path.basename(path), "data": None, "teams": {}, "sets": [],
+                        "errore": str(e)})
+    return out
+
+
+def _date_key(data):
+    try:
+        d, m, y = (int(x) for x in str(data).split("/"))
+        return (y, m, d)
+    except ValueError:
+        return (9999, 0, 0)
+
+
+@st.cache_data(show_spinner="Analisi delle partite...")
+def load_team_match(file_path, team, mtime):
+    """Una partita della squadra `team` (nome nel .dvw) per lo studio
+    dell'avversario: azioni sue e dei suoi avversari, punti per causa, KPI,
+    risultato e attacchi per la distribuzione."""
+    source = load_report_source(file_path, team=team)
+    header = match_header(source, None)
+    pts = point_sources_by_set(source)
+    return {
+        "nome_noi": source["nome_noi"], "nome_loro": source["nome_loro"], "casa": source["side"] == "*",
+        "header": header, "noi": source["noi"], "loro": source["loro"],
+        "points": pts[pts["set"] == TOTAL_LABEL],
+        "kpi": {"noi": set_kpis(source["noi"]), "loro": set_kpis(source["loro"])},
+        "setters": setter_table(source),
+        "rows": attack_rows(source["parsed"], source["side"], f"{header['data'] or ''} vs {source['nome_loro']}"),
+    }
+
+
+def _team_score(m):
+    """Set e parziali dal punto di vista della squadra studiata."""
+    h = m["header"]
+    sets = (h["sets_casa"], h["sets_ospite"]) if m["casa"] else (h["sets_ospite"], h["sets_casa"])
+    parziali = [(a, b) if m["casa"] else (b, a) for a, b in h["parziali"]]
+    return sets, parziali
+
+
+def render_opponent_section(season, version):
+    st.header("Studio avversario")
+    catalog = load_dvw_catalog(season, version)
+    teams = {}
+    unnamed = [e["file"] for e in catalog if len([n for n in e["teams"].values() if n]) < 2 or e.get("errore")]
+    for e in catalog:
+        if e["file"] in unnamed:
+            continue
+        for side, name in e["teams"].items():
+            key = normalize_team_name(name) if name else ""
+            if not key or "decimo" in key:
+                continue
+            t = teams.setdefault(key, {"names": Counter(), "matches": []})
+            t["names"][name] += 1
+            t["matches"].append((e, name))
+    if not teams:
+        st.info(f"Nessuno scout .dvw di altre squadre nella cartella della stagione {season} "
+                f"({build_base_path(season)}, sottocartelle comprese).")
+        return
+    display = {k: v["names"].most_common(1)[0][0] for k, v in teams.items()}
+    c1, c2 = st.columns([1, 2])
+    with c1:
+        team_key = st.selectbox("Squadra", sorted(teams, key=lambda k: display[k].casefold()), key="opp_team",
+                                format_func=lambda k: f"{display[k]} ({len(teams[k]['matches'])} partite)")
+    entries = sorted(teams[team_key]["matches"], key=lambda en: _date_key(en[0]["data"]))
+    labels = {en[0]["path"]: f"{en[0]['data'] or '?'} · {en[0]['teams'].get('*', '?')} - {en[0]['teams'].get('a', '?')}"
+              for en in entries}
+    with c2:
+        chosen = st.multiselect("Partite da considerare", list(labels), default=list(labels), format_func=labels.get,
+                                key=f"opp_matches_{team_key}")
+    if unnamed:
+        st.caption("Scout senza il nome di una squadra (o illeggibili), non attribuibili: " + ", ".join(unnamed))
+    if not chosen:
+        st.info("Seleziona almeno una partita.")
+        return
+    name_by_path = {en[0]["path"]: en[1] for en in entries}
+    ms = [load_team_match(p, name_by_path[p], _mtime(p)) for p in chosen]
+    team_name = display[team_key]
+    team_color, others_color = theme_colors()["palette"][1], UNKNOWN_COLOR
+
+    # 1) partite
+    st.subheader("Partite")
+    rows = []
+    for m in ms:
+        (a, b), parziali = _team_score(m)
+        incompleti = [n for n, _, _, ok in m["header"]["set_scout"] if not ok]
+        rows.append({"Data": m["header"]["data"], "Avversario": m["nome_loro"],
+                     "Set": f"{a}-{b}" + ("*" if incompleti else ""),
+                     "Parziali": "  ".join(f"{x}-{y}" for x, y in parziali),
+                     "Scout": "completo" if not incompleti else f"parziale (set {', '.join(map(str, incompleti))})"})
+    st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+    if any("parziale" in r["Scout"] for r in rows):
+        st.caption("* Scout parziale: risultato e parziali fin dove arriva la rilevazione.")
+
+    # 2) KPI
+    st.subheader(f"{team_name} e i suoi avversari")
+    combined = {key: combine_matches([m[key] for m in ms]) for key in ("noi", "loro")}
+    view = {"nome_noi": team_name, "nome_loro": "Avversari affrontati",
+            "kpi": {key: set_kpis(df) for key, df in combined.items()}}
+    st.plotly_chart(build_set_overview_chart(view, TOTAL_LABEL, colors=(team_color, others_color)), theme=None,
+                    key="opp_overview")
+    table = []
+    for m in ms:
+        k = m["kpi"]["noi"]
+        table.append({"Partita": f"{m['header']['data']} vs {m['nome_loro']}",
+                      **{SET_KPI_LABELS[x]: _fmt_cell(_kpi_value(k, "Squadra", TOTAL_LABEL, x), x in SET_KPI_PERCENT)
+                         for x in SET_KPI_PERCENT + ["Errori", "Punti"]}})
+    k = view["kpi"]["noi"]
+    table.append({"Partita": "Totale", **{SET_KPI_LABELS[x]: _fmt_cell(_kpi_value(k, "Squadra", TOTAL_LABEL, x), x in SET_KPI_PERCENT)
+                                          for x in SET_KPI_PERCENT + ["Errori", "Punti"]}})
+    st.dataframe(pd.DataFrame(table), hide_index=True, width="stretch")
+
+    # 3) punti per causa
+    st.subheader("Da dove arrivano i punti")
+    pts = pd.concat([m["points"].assign(set=str(i)) for i, m in enumerate(ms)], ignore_index=True)
+    total = pts.groupby(["squadra", "causa"], as_index=False)["n"].sum().assign(set=TOTAL_LABEL)
+    pts = pd.concat([pts, total], ignore_index=True)
+    panels = []
+    for i, m in enumerate(ms):
+        (a, b), _ = _team_score(m)
+        panels.append((str(i), f"<b>{m['header']['data']} vs {m['nome_loro']}</b>   {a}-{b}"))
+    if len(ms) > 1:
+        panels.append((TOTAL_LABEL, "<b>Tutte le partite</b>"))
+    as_percent = st.radio("Lunghezza delle barre", ["Punti", "% della partita"], horizontal=True, key="opp_pts_mode") != "Punti"
+    st.plotly_chart(_points_panels_chart(pts, panels, (("noi", team_name, team_color), ("loro", "Avversari", others_color)),
+                                         as_percent, unit="partita"), theme=None, key="opp_points")
+
+    # 4) giocatori
+    st.subheader("Giocatori, tutte le partite selezionate")
+    gen = pts[(pts["set"] == TOTAL_LABEL) & (pts["causa"] == "Punti generici")].set_index("squadra")["n"]
+    render_player_table(player_table_from_df(combined["noi"], int(gen.get("noi", 0)), int(gen.get("loro", 0))))
+
+    # 5) palleggiatori
+    setters = sorted({s for m in ms for s in m["setters"]})
+    if setters:
+        st.subheader("Palleggiatori")
+        st.caption("Efficienza d'attacco della squadra con lui in campo (tra parentesi il numero di attacchi): "
+                   "da ricezione positiva (+ o #), da ricezione ! e da free ball.")
+        totals = setter_table({"noi": combined["noi"]})
+        cols = st.columns(min(len(setters), 3))
+        for i, s in enumerate(setters):
+            rows = []
+            for m in ms:
+                if s in m["setters"]:
+                    rows.append((f"{m['header']['data']} vs {m['nome_loro']}", m["setters"][s].iloc[-1]))
+            rows.append(("Totale", totals[s].iloc[-1]))
+            df = pd.DataFrame([{"Partita": label, **{SETTER_FAMILIES[f]: (f"{_pct_text(r[f'{f} eff'])} ({r[f'{f} n']})"
+                                                                          if r[f"{f} n"] else "-") for f in SETTER_FAMILIES}}
+                               for label, r in rows])
+            with cols[i % len(cols)]:
+                st.markdown(f"**{s}**")
+                st.dataframe(df, hide_index=True, width="stretch")
+
+    # 6) distribuzione
+    st.subheader("Distribuzione alzate")
+    render_distribution(pd.concat([m["rows"] for m in ms], ignore_index=True), key=f"opp_{team_key}")
 
 
 def _match_option_label(match_seq, match_label_lookup):
@@ -2015,24 +2490,29 @@ def main():
     selected_matches = [m for m in matches if m["match_seq"] in selected_seqs]
     season_df = pd.concat([m["df"] for m in selected_matches], ignore_index=True)
 
-    tab_names = ["Partita", "Report partita", "Classifiche", "Tabellino", "Andamento KPI"] + (["Pagella"] if show_pagella else [])
+    tab_names = (["Partita", "Report partita", "Distribuzione alzate", "Studio avversario", "Classifiche", "Tabellino",
+                  "Andamento KPI"] + (["Pagella"] if show_pagella else []))
     tabs = st.tabs(tab_names)
     with tabs[0]:
         render_match_section(matches, match_label_lookup_full, version)
     with tabs[1]:
         render_match_report_section(matches, match_label_lookup_full)
     with tabs[2]:
-        render_classifiche_section(season_df, len(selected_seqs))
+        render_distribution_section(matches, selected_seqs, match_label_lookup_full)
     with tabs[3]:
-        render_tabellino_section(matches, selected_seqs, match_label_lookup_full)
+        render_opponent_section(season, version)
     with tabs[4]:
+        render_classifiche_section(season_df, len(selected_seqs))
+    with tabs[5]:
+        render_tabellino_section(matches, selected_seqs, match_label_lookup_full)
+    with tabs[6]:
         render_kpi_section(team_df, player_df, x_axis_order, entity_options)
         st.divider()
         render_comparison_section(team_df, player_df, entity_options, match_axis, match_outcomes_df)
         st.divider()
         render_kpi_comparison_section(team_df, player_df, entity_options, match_axis, match_outcomes_df)
     if show_pagella:
-        with tabs[5]:
+        with tabs[7]:
             rec_vote_for_report = tuple(selected_rec_vote) if selected_rec_vote else DEFAULT_REC_VOTE
             player_report, player_report_missing = load_player_report(season, rec_vote_for_report, version)
             season_report = load_player_season_report(season, rec_vote_for_report, version)

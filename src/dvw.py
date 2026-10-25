@@ -29,9 +29,19 @@ Sezioni usate:
   giocatori di casa nelle zone 1..6, 20..25 = ospiti nelle zone 1..6.
   Codici:
   - azione: squadra ('*'/'a') + numero (2 cifre) + fondamentale
-    (DVW_SKILLS) + tipo (sempre 'H' in questo programma) + voto
-    (#,+,!,-,/,=); il resto del codice (combinazione d'attacco, zone) è
-    previsto dal formato ma non compilato da questo programma;
+    (DVW_SKILLS) + tipo di palla (5° carattere) + voto (#,+,!,-,/,=), poi
+    i campi estesi del formato DataVolley (confermati sul manuale e
+    sull'interprete R openvolley/datavolley): 7°-8° combinazione d'attacco
+    (sull'alzata: chiamata del palleggiatore, K1/K7...), 9° destinazione
+    dell'alzata, 10° zona di partenza, 11°-12° zona e sottozona di arrivo,
+    13° tipo di colpo. Volleyball Scout compila tipo di palla e tipo di
+    colpo solo se scelti nella rilevazione (altrimenti 'H', il default) e le
+    zone solo se si rileva la direzione d'attacco; combinazioni e chiamate
+    (la "base" del centrale) non le esporta mai — verificato il 2026-10-25
+    su Valsugana - Volley Prati, dove la base era stata rilevata: resta solo
+    nel file .vbsm del programma, cifrato. Tipo di palla sugli attacchi:
+    H alta, T super, N "7" (le sole tre scelte usate nella rilevazione,
+    indicazione dell'utente); tipo di colpo: H attacco, T pallonetto;
   - '*p21:25' punto, con il punteggio casa:ospite DOPO il punto;
   - '*c14:10' sostituzione (esce 14, entra 10);
   - '*z3' zona del palleggiatore (rotazione); '*P14>LUp' palleggiatore
@@ -68,6 +78,10 @@ SETTER_ROLE = 5
 _OPPONENT_GENERIC_TIPO = {"#": "punto generico avversario", "=": "errore generico avversario"}
 
 _ACTION_RE = re.compile(r"^([*a])(\d{2})([SRABDEF])(.)([#+!\-/=])")
+# Tipo di palla (5° carattere) e tipo di colpo (13°) degli attacchi, con le
+# diciture dell'app di rilevazione (P, "free-ball" nell'app, mai visto finora).
+BALL_TYPES = {"H": "Alta", "T": "Super", "N": "7", "Q": "Quick", "M": "Mezza", "U": "Super", "F": "Fast", "O": "Altro"}
+HIT_TYPES = {"H": "Attacco", "P": "Free-ball", "T": "Pallonetto"}
 _POINT_RE = re.compile(r"^[*a]p(\d+):(\d+)")
 _SUB_RE = re.compile(r"^([*a])c(\d+):(\d+)")
 _GENERIC_RE = re.compile(r"^([*a])\$\$&.([#=])")
@@ -175,6 +189,19 @@ def parse_dvw(file_path):
     }
 
 
+def read_dvw_header(file_path):
+    """Solo data, squadre e set di un .dvw (senza leggere lo scout): per
+    elencare le partite disponibili di una squadra."""
+    sections = _read_sections(file_path)
+    teams = {}
+    for row in sections.get("TEAMS", []):
+        f = row.split(";")
+        teams["*" if f[0].strip() == "1" else "a"] = f[1].strip()
+    match_rows = sections.get("MATCH", [])
+    data = match_rows[0].split(";")[0].strip() if match_rows else ""
+    return {"data": data or None, "teams": teams, "sets": _parse_sets(sections.get("SET", []))}
+
+
 def _cognome_by_number(players):
     """(squadra, numero) -> cognome. La rosa del programma può avere voci
     vecchie con lo stesso numero di un giocatore attuale (G1 San Paolo:
@@ -256,6 +283,7 @@ def _parse_scout(rows, players):
             lineup = home if side == "*" else away
             out.append({
                 "squadra": side, "Tipo": DVW_SKILLS[action.group(3)], "Voto": action.group(5),
+                **_code_details(code),
                 "Cognome": cognomi.get((side, numero)), "Numero": numero,
                 "Posizione Giocatore": f"p{lineup.index(numero) + 1}" if numero in lineup else None,
                 "Posizione Palleggiatore": f"p{setter_zone[side]}" if setter_zone[side] else None,
@@ -274,6 +302,24 @@ def _parse_scout(rows, players):
                 **base,
             })
     return pd.DataFrame(out), pd.DataFrame(rallies)
+
+
+def _code_char(code, i):
+    c = code[i] if len(code) > i else "~"
+    return None if c in ("~", " ") else c
+
+
+def _code_details(code):
+    """Campi estesi del codice di un'azione (vedi docstring di modulo): None
+    dove il programma non li ha compilati."""
+    start, end = _code_char(code, 9), _code_char(code, 10)
+    return {
+        "Codice": code,
+        "Tipo palla": _code_char(code, 4),
+        "Zona partenza": int(start) if start and start.isdigit() else None,
+        "Zona arrivo": int(end) if end and end.isdigit() else None,
+        "Tipo colpo": _code_char(code, 12),
+    }
 
 
 def _setter_on_court(lineup, setter_zone, setter_numbers):
@@ -301,10 +347,8 @@ def decimo_side(parsed):
 
 def load_team_actions(file_path, team="decimo"):
     """
-    Azioni di una squadra di un .dvw (team='decimo' o 'avversario'), nel
-    formato degli Excel 2025-2026 (vedi docstring di modulo), più le colonne
-    Video, Casa/Ospiti P1..P6 e 'Palleggiatore in campo' (cognome del
-    palleggiatore di quella squadra in campo).
+    Azioni del Decimo o del suo avversario (team='decimo' o 'avversario')
+    in un .dvw, vedi side_actions.
 
     Ritorna (df, decimo_locali, parsed): decimo_locali=True se il Decimo è la
     squadra di casa (= 'Punti Locali' è il punteggio del Decimo), parsed =
@@ -315,6 +359,36 @@ def load_team_actions(file_path, team="decimo"):
     parsed = parse_dvw(file_path)
     decimo = decimo_side(parsed)
     side = decimo if team == "decimo" else ("a" if decimo == "*" else "*")
+    return side_actions(parsed, side), decimo == "*", parsed
+
+
+def normalize_team_name(name):
+    """Nome di squadra per i confronti: senza maiuscole, spazi superflui e il
+    suffisso " D" (Serie D) che alcuni file aggiungono ('Appio D' = 'Appio',
+    visto negli scout 2025-2026)."""
+    words = str(name).casefold().split()
+    if len(words) > 1 and words[-1] == "d":
+        words = words[:-1]
+    return " ".join(words)
+
+
+def team_side(parsed, team_name):
+    """'*'/'a' della squadra con questo nome nel file (vedi
+    normalize_team_name). Fallisce se nel file non c'è."""
+    for side, name in parsed["teams"].items():
+        if normalize_team_name(name) == normalize_team_name(team_name):
+            return side
+    raise ValueError(f"Nessuna squadra '{team_name}' nel file: {parsed['teams']}")
+
+
+def side_actions(parsed, side):
+    """
+    Azioni della squadra `side` ('*'/'a') di un .dvw già letto, nel formato
+    degli Excel 2025-2026 (vedi docstring di modulo), più le colonne Video,
+    Casa/Ospiti P1..P6, i campi estesi del codice (_code_details) e
+    'Palleggiatore in campo' (cognome del palleggiatore di quella squadra in
+    campo).
+    """
     actions = parsed["actions"]
     # azioni e sostituzioni della squadra + punti/errori generici dell'altra
     # (vedi _OPPONENT_GENERIC_TIPO); i generici della squadra stessa sono il
@@ -330,8 +404,7 @@ def load_team_actions(file_path, team="decimo"):
     cognomi = {num: cog for (sq, num), cog in _cognome_by_number(parsed["players"]).items() if sq == side}
     setter_col = "Palleggiatore casa" if side == "*" else "Palleggiatore ospite"
     df["Palleggiatore in campo"] = df[setter_col].map(cognomi)
-    df = df.reset_index(drop=True)
-    return df, decimo == "*", parsed
+    return df.reset_index(drop=True)
 
 
 def dvw_official_result(parsed):
