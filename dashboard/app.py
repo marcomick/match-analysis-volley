@@ -159,19 +159,41 @@ from src.setter_distribution import (
     FREE_ZONE_DARK,
     NET_COLOR,
     NET_MESH,
+    COUNTER_MODES,
     DIRECTIONS,
     MIN_PER_CATEGORY,
     MIN_TOTAL,
-    NO_DEFENSE,
+    SIDE_OUT_DIRECTIONS,
+    SITUATIONS,
     ZONE_GRID,
     attack_rows,
+    counter_rows,
     direction_categories,
     distributions_by_setter,
     filter_rows,
     share_color,
     short_player,
+    side_out_rows,
     test_all_directions,
+    test_setter_situations,
     zone_stats,
+)
+from src.opponent_summary import (
+    CLUTCH_FROM,
+    CLUTCH_FROM_TIEBREAK,
+    CLUTCH_MAX_DIFF,
+    DANGEROUS_SERVE_SHARE,
+    MIN_RECEPTIONS,
+    MIN_SERVES,
+    SWING_CAUSES,
+    best_receiver,
+    clutch_target,
+    dangerous_server,
+    points_by_set_outcome,
+    serve_rows,
+    set_results,
+    swing_summary,
+    worst_receiver,
 )
 from src.setter_report import (
     ATTACCO_ALZATO_ESCL_KPI_LABELS,
@@ -1428,10 +1450,11 @@ def build_points_by_set_chart(view, as_percent):
     return _points_panels_chart(pts, list(zip(sets, titles)), teams, as_percent)
 
 
-def _points_panels_chart(pts, panels, teams, as_percent, unit="set"):
+def _points_panels_chart(pts, panels, teams, as_percent, unit="set", decimals=0):
     """Il grafico di build_points_by_set_chart per riquadri qualsiasi:
     `pts` [set, squadra, causa, n] con 'set' = etichetta del riquadro,
-    `panels` [(etichetta, titolo)], `teams` [(chiave, nome, colore)]."""
+    `panels` [(etichetta, titolo)], `teams` [(chiave, nome, colore)];
+    `decimals` > 0 per valori medi (punti per set)."""
     colors = POINT_SOURCE_COLORS_DARK if (st.context.theme.type or "light") == "dark" else POINT_SOURCE_COLORS_LIGHT
     sets = [label for label, _ in panels]
     titles = [title for _, title in panels]
@@ -1447,14 +1470,16 @@ def _points_panels_chart(pts, panels, teams, as_percent, unit="set"):
         for causa in POINT_SOURCES:
             if pts[pts["causa"] == causa]["n"].sum() == 0:
                 continue
-            n = [int(sub[(sub["squadra"] == key) & (sub["causa"] == causa)]["n"].sum()) for key, _, _ in teams]
+            n = [round(float(sub[(sub["squadra"] == key) & (sub["causa"] == causa)]["n"].sum()), decimals)
+                 for key, _, _ in teams]
             share = [100 * v / totals.get(key, 0) if totals.get(key, 0) else 0 for v, (key, _, _) in zip(n, teams)]
             fig.add_trace(go.Bar(
                 y=y_text, x=n, orientation="h", name=causa, legendgroup=causa, showlegend=causa not in shown,
                 marker_color=colors[causa], marker_line=dict(color=theme_colors()["surface"], width=1.5),
-                text=[str(v) if v else "" for v in n], textposition="inside", insidetextanchor="middle",
+                text=[f"{v:.{decimals}f}" if v else "" for v in n], textposition="inside", insidetextanchor="middle",
                 textfont=dict(color="#ffffff"), customdata=np.round(share, 0),
-                hovertemplate=causa + ": %{x} punti (%{customdata:.0f}% del " + unit + ")<extra></extra>",
+                hovertemplate=causa + ": %{x:." + str(decimals) + "f} punti (%{customdata:.0f}% del " + unit
+                + ")<extra></extra>",
             ), row=row, col=1)
             shown.add(causa)
         fig.update_yaxes(autorange="reversed", row=row, col=1, gridcolor=theme_colors()["grid"])
@@ -1937,9 +1962,7 @@ def render_tabellino_section(matches, selected_seqs, match_label_lookup):
 # dell'avversario
 # ---------------------------------------------------------------------------
 ROTATIONS = [f"P{i}" for i in range(1, 7)]
-BALL_TYPE_ORDER = ["Alta", "Super", "7", "Quick", "Mezza", "Fast", "Altro"]
-DEFENSE_GRADES = {"#": "perfetta (#)", "+": "positiva (+)", "!": "free ball (!)", "-": "negativa (-)",
-                  "/": "rigiocata di là (/)", "=": "errore (=)", NO_DEFENSE: "nessuna difesa prima"}
+BALL_TYPE_ORDER = ["Alta", "Super", "Quick", "7", "Mezza", "Fast", "Altro"]
 COMPARE_OPTIONS = {"": "Nessun confronto", **DIRECTIONS}
 
 
@@ -1948,7 +1971,7 @@ def _rounded_rect_path(x0, y0, x1, y1, r):
             f"L {x0 + r},{y1} Q {x0},{y1} {x0},{y1 - r} L {x0},{y0 + r} Q {x0},{y0} {x0 + r},{y0} Z")
 
 
-def build_court_chart(stats, title="", compact=False):
+def build_court_chart(stats, title="", compact=False, height=None):
     """
     Metà campo vista da chi attacca, rete in alto (banda scura con le
     antenne), linea dei 3 metri, 9 zone (src.setter_distribution.ZONE_GRID).
@@ -2029,7 +2052,7 @@ def build_court_chart(stats, title="", compact=False):
         yaxis=dict(visible=False, range=[-0.25, 10.3], scaleanchor="x", fixedrange=True),
         plot_bgcolor=colors["surface"], paper_bgcolor=colors["surface"],
         font=dict(family="system-ui, -apple-system, 'Segoe UI', sans-serif", color=colors["ink"]),
-        height=430 if compact else 640, margin=dict(t=40 if title else 10, b=10, l=10, r=10),
+        height=height or (430 if compact else 640), margin=dict(t=40 if title else 10, b=10, l=10, r=10),
         hoverlabel=dict(align="left"),
     )
     return fig
@@ -2056,26 +2079,95 @@ def _attackers_table(rows):
 
 
 def _category_label(direction, cat):
+    if direction == "tipo_ricevitore":
+        return f"Riceve: {str(cat).lower()}"
     if direction == "ricezione":
         return f"Ricezione {cat}"
+    if direction == "ricevitore":
+        return f"Riceve {short_player(cat)}"
     return str(cat)
 
 
 def _deviation_text(direction, d):
     where = {"rotazione": f"in {d['categoria']}", "ricezione": f"dopo una ricezione {d['categoria']}",
+             "ricevitore": f"quando riceve {d['categoria']}",
+             "tipo_ricevitore": f"quando riceve il {str(d['categoria']).lower()}",
              "situazione_punteggio": f"{str(d['categoria']).lower()}", "partita": f"in {d['categoria']}"}[direction]
     verso = "più" if d["residuo"] > 0 else "meno"
+    ref = "attesa a parità di ricezione" if direction in ("ricevitore", "tipo_ricevitore") else "sul totale"
     return (f"{where}: **{verso}** palloni in **zona {d['zona']}**, {d['pct']:.0f}% delle alzate "
-            f"(contro il {d['pct_totale']:.0f}% sul totale)")
+            f"(contro il {d['pct_totale']:.0f}% {ref})")
+
+
+def situation_deviation_text(setter, key, d):
+    verso = "più" if d["residuo"] > 0 else "meno"
+    where = {"R+#": "da R+ / R#", "R!": "da R!", "FB": "da free ball"}[key]
+    return (f"**{setter}** {where}: **{verso}** palloni in **zona {d['zona']}**, "
+            f"{d['pct']:.0f}% contro il {d['pct_totale']:.0f}% del resto dei suoi palloni")
+
+
+@st.cache_data(show_spinner="Test sul palleggiatore...")
+def cached_setter_tests(rows):
+    return test_setter_situations(rows)
+
+
+@st.cache_data(show_spinner="Test di significatività...")
+def cached_direction_tests(rows, directions):
+    return test_all_directions(rows, directions)
+
+
+def _court_block(sub, key, empty_text):
+    """Metriche, campo e tabella di chi attacca per un insieme di attacchi."""
+    if sub.empty:
+        st.info(empty_text)
+        return
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Attacchi", len(sub))
+    m2.metric("Efficienza", _eff_text(sub))
+    m3.metric("Punti", f"{100 * (sub['voto'] == '#').mean():.0f}%")
+    st.plotly_chart(build_court_chart(zone_stats(sub), height=520), theme=None, key=f"{key}_court")
+    with st.expander("Chi attacca"):
+        st.dataframe(_attackers_table(sub), hide_index=True, width="stretch")
+
+
+def render_setter_situation_tests(rows, key):
+    """Per palleggiatore: da R+/#, da R! e da free ball la distribuzione è
+    diversa dal resto dei suoi palloni? (src.setter_distribution.test_setter_situations)"""
+    results = cached_setter_tests(rows)
+    setters = sorted({s for s, _ in results})
+    if not setters:
+        st.markdown("Nessun palleggiatore identificato.")
+        return
+    for setter in setters:
+        lines = []
+        for k in SITUATIONS:
+            res = results[(setter, k)]
+            if res is None:
+                lines.append(f"- {SITUATIONS[k]}: dati insufficienti")
+            elif res["significativo"]:
+                devs = "; ".join(
+                    f"{'più' if d['residuo'] > 0 else 'meno'} in zona {d['zona']} ({d['pct']:.0f}% contro "
+                    f"{d['pct_totale']:.0f}%)" for d in res["scostamenti"][:3])
+                lines.append(f"- {SITUATIONS[k]} ({res['n_situazione']} att.): **sì**, p = {res['p_holm']:.3f} — {devs}")
+            else:
+                lines.append(f"- {SITUATIONS[k]} ({res['n_situazione']} att.): no, p = {res['p_holm']:.3f}")
+        st.markdown(f"**{setter}**\n" + "\n".join(lines))
+    st.caption(
+        "Per ogni palleggiatore e situazione: i palloni di quella situazione vanno in zone diverse dal resto dei suoi "
+        "palloni (con lui in campo)? Tra parentesi la quota nella situazione contro quella nel resto. Test chi quadro "
+        f"con p-value per permutazione, Holm su tutti i test insieme; servono almeno {MIN_PER_CATEGORY} attacchi nella "
+        f"situazione e {MIN_TOTAL} in tutto."
+    )
 
 
 def render_distribution(rows, key):
-    """Filtri, campo con la distribuzione, chi attacca, confronto lungo una
-    direzione e test di significatività. `rows`: src.setter_distribution.attack_rows."""
+    """Filtri, i due campi (side-out e contrattacco), chi attacca, confronto
+    lungo una direzione e test di significatività. `rows`:
+    src.setter_distribution.attack_rows."""
     st.caption(
         "Da dove attaccano i giocatori serviti dal palleggiatore, escluse le sue seconde intenzioni. Centrali sempre "
-        "da 3, schiacciatori in seconda linea da 8 (pipe), opposti in seconda linea da 9; schiacciatori e opposti in "
-        "prima linea dalla zona di partenza rilevata con la direzione d'attacco. Il contrattacco comprende la free ball."
+        "da 3 (e sempre con alzata veloce), schiacciatori in seconda linea da 8 (pipe), opposti in seconda linea da 9; "
+        "schiacciatori e opposti in prima linea dalla zona di partenza rilevata con la direzione d'attacco."
     )
     if rows.empty:
         st.info("Nessun attacco nelle partite selezionate.")
@@ -2085,53 +2177,48 @@ def render_distribution(rows, key):
     setters_sel = c1.multiselect("Palleggiatore in campo", setters, default=setters, key=f"{key}_setter")
     rot_opts = [r for r in ROTATIONS if r in set(rows["rotazione"].dropna())]
     rot_sel = c2.multiselect("Rotazione (zona del palleggiatore)", rot_opts, default=rot_opts, key=f"{key}_rot")
-    phase_sel = c3.multiselect("Fase", ["Side-out", "Contrattacco"], default=["Side-out", "Contrattacco"],
-                               key=f"{key}_phase")
-    c4, c5, c6, c7 = st.columns(4)
-    rec_opts = [g for g in ALL_GRADES if g in set(rows["ricezione"].dropna())]
-    rec_sel = c4.multiselect("Voto ricezione (side-out)", rec_opts, default=rec_opts, key=f"{key}_rec",
-                             format_func=lambda v: RECEPTION_GRADES.get(v, v))
-    difese = set(rows.loc[rows["fase"] == "Contrattacco", "difesa"].fillna(NO_DEFENSE))
-    def_opts = [g for g in DEFENSE_GRADES if g in difese]
-    def_sel = c5.multiselect("Voto difesa (contrattacco)", def_opts, default=def_opts, key=f"{key}_def",
-                             format_func=DEFENSE_GRADES.get)
     balls = set(rows["tipo_alzata"].dropna())
     ball_opts = [b for b in BALL_TYPE_ORDER if b in balls] + sorted(balls - set(BALL_TYPE_ORDER))
-    ball_sel = c6.multiselect("Tipo di alzata", ball_opts, default=ball_opts, key=f"{key}_ball")
-    hit_opts = sorted(rows["tipo_colpo"].dropna().unique())
-    hit_sel = c7.multiselect("Tipo di colpo", hit_opts, default=hit_opts, key=f"{key}_hit")
-    filtered = filter_rows(rows, setters_sel, rot_sel, phase_sel, rec_sel, def_sel, ball_sel, hit_sel)
-    if filtered.empty:
-        st.info("Nessun attacco con questi filtri.")
-        return
+    ball_sel = c3.multiselect("Tipo di alzata", ball_opts, default=ball_opts, key=f"{key}_ball")
+    base = filter_rows(rows, setters_sel, rot_sel, ball_sel)
 
-    stats = zone_stats(filtered)
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Attacchi", len(filtered))
-    m2.metric("Efficienza", _eff_text(filtered))
-    m3.metric("Punti", f"{100 * (filtered['voto'] == '#').mean():.0f}%")
-    n_est = int(filtered["zona_stimata"].sum())
+    left, right = st.columns(2, gap="large")
+    with left:
+        st.markdown("#### Side-out (dopo ricezione)")
+        rec_opts = [g for g in ALL_GRADES if g in set(rows["ricezione"].dropna())]
+        rec_sel = st.multiselect("Effetto della ricezione", rec_opts, default=rec_opts, key=f"{key}_rec",
+                                 format_func=lambda v: RECEPTION_GRADES.get(v, v))
+        so = side_out_rows(base, rec_sel)
+        _court_block(so, f"{key}_so", "Nessun attacco di side-out con questi filtri.")
+    with right:
+        st.markdown("#### Contrattacco (break-point)")
+        mode = st.radio("Attacchi", list(COUNTER_MODES), format_func=COUNTER_MODES.get, key=f"{key}_ca_mode")
+        ca = counter_rows(base, mode)
+        _court_block(ca, f"{key}_ca", "Nessun contrattacco con questi filtri.")
+    n_est = int(pd.concat([so, ca])["zona_stimata"].sum())
     if n_est:
         st.caption(f"⚠️ {n_est} attacchi di schiacciatori e opposti in prima linea senza direzione rilevata: zona "
                    "stimata dal ruolo (schiacciatore 4, opposto 2), che non vede gli scambi di lato in P1.")
-    left, right = st.columns([3, 2])
-    with left:
-        st.plotly_chart(build_court_chart(stats), theme=None, key=f"{key}_court")
-    with right:
-        st.markdown("**Chi attacca**")
-        st.dataframe(_attackers_table(filtered), hide_index=True, width="stretch")
-        st.caption("Passa il mouse su una zona per punti, errori, murati e tutti i giocatori serviti.")
+    st.caption("Passa il mouse su una zona per punti, errori, murati e tutti i giocatori serviti.")
 
+    st.markdown("#### Il palleggiatore alza in modo diverso da R+ / R#, da R! o da free ball?")
+    render_setter_situation_tests(base, key)
+
+    selected = pd.concat([so, ca])
     st.markdown("#### Confronto lungo una direzione")
-    directions = [d for d in DIRECTIONS if d != "partita" or filtered["partita"].nunique() > 1]
+    st.caption("Sugli attacchi dei due campi qui sopra, side-out e contrattacco insieme; qualità della ricezione e "
+               "chi riceve solo sul side-out.")
+    has_so = not so.empty
+    directions = [d for d in DIRECTIONS
+                  if (d != "partita" or selected["partita"].nunique() > 1) and (has_so or d not in SIDE_OUT_DIRECTIONS)]
     compare = st.radio("Confronta per", [""] + directions, horizontal=True, key=f"{key}_compare",
                        format_func=COMPARE_OPTIONS.get)
-    if compare:
-        base = filtered[filtered["fase"] == "Side-out"] if compare == "ricezione" else filtered
-        cats = direction_categories(base, compare)
+    if compare and not selected.empty:
+        cmp_rows = selected[selected["fase"] == "Side-out"] if compare in SIDE_OUT_DIRECTIONS else selected
+        cats = direction_categories(cmp_rows, compare)
         cols = st.columns(3)
         for i, cat in enumerate(cats):
-            sub = base[base[compare] == cat]
+            sub = cmp_rows[cmp_rows[compare] == cat]
             with cols[i % 3]:
                 st.plotly_chart(
                     build_court_chart(zone_stats(sub), f"{_category_label(compare, cat)} · {len(sub)} att. · eff {_eff_text(sub)}",
@@ -2140,7 +2227,10 @@ def render_distribution(rows, key):
                 )
 
     st.markdown("#### La distribuzione cambia in modo significativo?")
-    results = test_all_directions(filtered, directions)
+    if selected.empty:
+        st.info("Nessun attacco con questi filtri.")
+        return
+    results = cached_direction_tests(selected, tuple(directions))
     for d in directions:
         res = results[d]
         if res is None:
@@ -2157,8 +2247,11 @@ def render_distribution(rows, key):
         "Test chi quadro zona × categoria con p-value per permutazione (affidabile anche con pochi attacchi), corretto "
         "per il numero di direzioni guardate insieme (Holm): significativo se p < 0.05 dopo la correzione. Categorie con "
         f"meno di {MIN_PER_CATEGORY} attacchi escluse; scostamenti = zone con residuo standardizzato oltre ±2. "
-        "Qualità della ricezione: solo side-out. Rotazione: con il palleggiatore in prima linea (P2-P4) gli attaccanti "
-        "davanti sono due e l'opposto attacca da dietro, quindi una parte della differenza tra rotazioni è strutturale."
+        "Libero / martello davanti / martello dietro (opposti e centrali in ricezione esclusi) e chi riceve: confronto a "
+        "parità di effetto della ricezione (test stratificato sul voto, permutando i ricevitori "
+        "solo tra ricezioni con lo stesso voto), così chi riceve peggio non sembra cambiare la distribuzione solo perché "
+        "le sue ricezioni sono peggiori. Rotazione: con il palleggiatore in prima linea (P2-P4) gli attaccanti davanti "
+        "sono due e l'opposto attacca da dietro, quindi una parte della differenza tra rotazioni è strutturale."
     )
 
 
@@ -2225,11 +2318,120 @@ def load_team_match(file_path, team, mtime):
     return {
         "nome_noi": source["nome_noi"], "nome_loro": source["nome_loro"], "casa": source["side"] == "*",
         "header": header, "noi": source["noi"], "loro": source["loro"],
-        "points": pts[pts["set"] == TOTAL_LABEL],
+        "points": pts[pts["set"] == TOTAL_LABEL], "points_by_set": pts,
+        "set_results": set_results(source["parsed"], source["side"]),
+        "serves": serve_rows(source),
         "kpi": {"noi": set_kpis(source["noi"]), "loro": set_kpis(source["loro"])},
         "setters": setter_table(source),
         "rows": attack_rows(source["parsed"], source["side"], f"{header['data'] or ''} vs {source['nome_loro']}"),
     }
+
+
+def points_balance_table(by_outcome, n_sets, team_name):
+    """Per causa: media per set di squadra e avversari e saldo, nei set vinti
+    e persi, più la differenza di saldo tra set vinti e persi."""
+    v = by_outcome.pivot_table(index="causa", columns=["set", "squadra"], values="n", aggfunc="sum")
+    rows = []
+    for causa in [c for c in POINT_SOURCES if c in v.index]:
+        row, saldi = {"Causa": causa}, {}
+        for esito in ("vinti", "persi"):
+            if not n_sets[esito]:
+                continue
+            noi, loro = v.loc[causa, (esito, "noi")], v.loc[causa, (esito, "loro")]
+            saldi[esito] = noi - loro
+            row[f"{team_name} (set {esito})"] = f"{noi:.1f}"
+            row[f"Avversari (set {esito})"] = f"{loro:.1f}"
+            row[f"Saldo (set {esito})"] = f"{noi - loro:+.1f}"
+        if len(saldi) == 2:
+            row["Saldo vinti − persi"] = f"{saldi['vinti'] - saldi['persi']:+.1f}"
+        if all(v.loc[causa].fillna(0) == 0):
+            continue
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def _receiver_text(rec):
+    return (f"**{rec['giocatore']}**: efficienza {rec['eff']:.0f}% su {rec['n']} ricezioni "
+            f"({rec['perfette_pos']:.0f}% perfette o positive, {rec['errori']} ace subiti)")
+
+
+def render_opponent_summary(df, rows, serves):
+    """Riassunto iniziale dello studio dell'avversario (src.opponent_summary)."""
+    st.subheader("In breve")
+    c1, c2, c3 = st.columns(3)
+    worst, best = worst_receiver(df), best_receiver(df)
+    with c1:
+        st.markdown("**🎯 Peggior ricevitore**")
+        st.markdown(_receiver_text(worst) if worst else f"Nessuno con almeno {MIN_RECEPTIONS} ricezioni.")
+    with c2:
+        st.markdown("**🛡️ Miglior ricevitore**")
+        st.markdown(_receiver_text(best) if best and best != worst
+                    else f"Nessun altro con almeno {MIN_RECEPTIONS} ricezioni." if worst
+                    else f"Nessuno con almeno {MIN_RECEPTIONS} ricezioni.")
+    srv = dangerous_server(serves)
+    with c3:
+        st.markdown("**💥 Battitore più pericoloso**")
+        if srv:
+            st.markdown(f"**{srv['giocatore']}**: la squadra vince il {srv['break']:.0f}% degli scambi sulla sua "
+                        f"battuta (media della squadra {srv['break_squadra']:.0f}%), {srv['quota']:.0f}% di battute "
+                        f"#, + o / su {srv['n']} ({srv['ace']} ace, {srv['errori']} "
+                        f"{'errore' if srv['errori'] == 1 else 'errori'})")
+        else:
+            st.markdown(f"Nessuno con almeno {MIN_SERVES} battute e almeno il {DANGEROUS_SERVE_SHARE}% #, + o /.")
+        st.caption(f"Tra chi ha almeno {MIN_SERVES} battute e almeno il {DANGEROUS_SERVE_SHARE}% #, + o /, quello "
+                   "con cui la squadra fa più punti in battuta: è il punto fatto che sposta il set, più della sola "
+                   "quota di battute difficili (rischiare di più vuol dire anche sbagliare di più).")
+    c4, c5 = st.columns(2)
+    clutch = clutch_target(rows)
+    with c4:
+        st.markdown("**🔥 Più servito nei finali di set**")
+        if clutch:
+            st.markdown(f"**{clutch['giocatore']}**: {clutch['n']} attacchi su {clutch['totale']} "
+                        f"({clutch['quota']:.0f}%, contro il {clutch['quota_partita']:.0f}% sul totale degli attacchi "
+                        f"della squadra), {clutch['punti']} punti, efficienza {clutch['eff']:.0f}%")
+        else:
+            st.markdown("Nessun attacco nei finali di set.")
+        st.caption(f"Da {CLUTCH_FROM} punti di una delle due squadre ({CLUTCH_FROM_TIEBREAK} al quinto set), con "
+                   f"scarto di al più {CLUTCH_MAX_DIFF} punti.")
+    tests = cached_setter_tests(rows)
+    sig = [(setter, k, r) for (setter, k), r in tests.items() if r and r["significativo"] and r["scostamenti"]]
+    with c5:
+        st.markdown("**🧭 Tendenze del palleggiatore**")
+        if sig:
+            for setter, k, r in sig:
+                st.markdown(f"- {situation_deviation_text(setter, k, r['scostamenti'][0])}")
+        else:
+            st.markdown("Nessuna tendenza significativa da R+ / R#, da R! o da free ball.")
+    st.divider()
+
+
+def render_swing_summary(by_outcome, n_sets, team_name):
+    """Testo: dove la squadra va sotto nei set persi, dove guadagna nei set
+    vinti, cosa cambia di più tra gli uni e gli altri (src.opponent_summary.swing_summary)."""
+    sw = swing_summary(by_outcome, n_sets)
+
+    def items(pairs):
+        return ", ".join(f"**{SWING_CAUSES[c]}** ({x:+.1f})" for c, x in pairs)
+
+    lines = []
+    if n_sets["persi"]:
+        lines.append(f"- **Nei set persi** ({n_sets['persi']}) va sotto soprattutto in {items(sw['persi'])}."
+                     if sw["persi"] else f"- **Nei set persi** ({n_sets['persi']}) non va sotto in modo netto in "
+                                         "nessuna voce: perde di poco un po' ovunque.")
+    if n_sets["vinti"]:
+        lines.append(f"- **Nei set vinti** ({n_sets['vinti']}) guadagna soprattutto in {items(sw['vinti'])}."
+                     if sw["vinti"] else f"- **Nei set vinti** ({n_sets['vinti']}) non guadagna in modo netto in "
+                                         "nessuna voce: vince di poco un po' ovunque.")
+    if sw["differenza"]:
+        top = [t for t in sw["differenza"] if t[3] >= 0.3][:2]
+        if top:
+            parts = [f"**{SWING_CAUSES[c]}** (da {p:+.1f} nei set persi a {v:+.1f} in quelli vinti, {d:.1f} punti a set "
+                     "di differenza)" for c, v, p, d in top]
+            lines.append("- **Cosa sposta l'ago della bilancia**: " + " e ".join(parts) + ".")
+    if lines:
+        st.markdown(f"**{team_name}**, saldo per set rispetto agli avversari (punti fatti meno punti concessi per "
+                    "quella causa; per gli errori: punti regalati dagli avversari meno punti regalati da lei):\n"
+                    + "\n".join(lines))
 
 
 def _team_score(m):
@@ -2279,6 +2481,10 @@ def render_opponent_section(season, version):
     ms = [load_team_match(p, name_by_path[p], _mtime(p)) for p in chosen]
     team_name = display[team_key]
     team_color, others_color = theme_colors()["palette"][1], UNKNOWN_COLOR
+    combined = {key: combine_matches([m[key] for m in ms]) for key in ("noi", "loro")}
+    all_rows = pd.concat([m["rows"] for m in ms], ignore_index=True)
+
+    render_opponent_summary(combined["noi"], all_rows, pd.concat([m["serves"] for m in ms], ignore_index=True))
 
     # 1) partite
     st.subheader("Partite")
@@ -2296,7 +2502,6 @@ def render_opponent_section(season, version):
 
     # 2) KPI
     st.subheader(f"{team_name} e i suoi avversari")
-    combined = {key: combine_matches([m[key] for m in ms]) for key in ("noi", "loro")}
     view = {"nome_noi": team_name, "nome_loro": "Avversari affrontati",
             "kpi": {key: set_kpis(df) for key, df in combined.items()}}
     st.plotly_chart(build_set_overview_chart(view, TOTAL_LABEL, colors=(team_color, others_color)), theme=None,
@@ -2312,24 +2517,30 @@ def render_opponent_section(season, version):
                                           for x in SET_KPI_PERCENT + ["Errori", "Punti"]}})
     st.dataframe(pd.DataFrame(table), hide_index=True, width="stretch")
 
-    # 3) punti per causa
+    # 3) punti per causa, set vinti e set persi
     st.subheader("Da dove arrivano i punti")
-    pts = pd.concat([m["points"].assign(set=str(i)) for i, m in enumerate(ms)], ignore_index=True)
-    total = pts.groupby(["squadra", "causa"], as_index=False)["n"].sum().assign(set=TOTAL_LABEL)
-    pts = pd.concat([pts, total], ignore_index=True)
-    panels = []
-    for i, m in enumerate(ms):
-        (a, b), _ = _team_score(m)
-        panels.append((str(i), f"<b>{m['header']['data']} vs {m['nome_loro']}</b>   {a}-{b}"))
-    if len(ms) > 1:
-        panels.append((TOTAL_LABEL, "<b>Tutte le partite</b>"))
-    as_percent = st.radio("Lunghezza delle barre", ["Punti", "% della partita"], horizontal=True, key="opp_pts_mode") != "Punti"
-    st.plotly_chart(_points_panels_chart(pts, panels, (("noi", team_name, team_color), ("loro", "Avversari", others_color)),
-                                         as_percent, unit="partita"), theme=None, key="opp_points")
+    by_outcome, n_sets = points_by_set_outcome([(m["points_by_set"], m["set_results"]) for m in ms])
+    panels = [(k, f"<b>Set {k}</b>   {n_sets[k]} set · media per set") for k in ("vinti", "persi") if n_sets[k]]
+    if not panels:
+        st.info("Nessun set concluso nello scout delle partite selezionate.")
+    else:
+        st.caption(f"Punti per causa in media per set, nei set che {team_name} vince e in quelli che perde: per capire "
+                   "per cosa vince e per cosa perde. Ogni punto ha una sola causa (l'azione vincente di chi l'ha fatto, "
+                   "altrimenti l'errore di chi l'ha perso); solo i set conclusi nello scout.")
+        as_percent = st.radio("Lunghezza delle barre", ["Punti", "% del set"], horizontal=True,
+                              key="opp_pts_mode") != "Punti"
+        st.plotly_chart(_points_panels_chart(by_outcome, panels, (("noi", team_name, team_color),
+                                                                  ("loro", "Avversari", others_color)),
+                                             as_percent, unit="set", decimals=1), theme=None, key="opp_points")
+        render_swing_summary(by_outcome, n_sets, team_name)
+        st.dataframe(points_balance_table(by_outcome, n_sets, team_name), hide_index=True, width="stretch")
+        st.caption(f"Saldo = punti di {team_name} meno punti dei suoi avversari per quella causa, in media per set. "
+                   "\"Errori avversari\" = punti regalati dall'altra squadra.")
 
     # 4) giocatori
     st.subheader("Giocatori, tutte le partite selezionate")
-    gen = pts[(pts["set"] == TOTAL_LABEL) & (pts["causa"] == "Punti generici")].set_index("squadra")["n"]
+    pts = pd.concat([m["points"] for m in ms], ignore_index=True)
+    gen = pts[pts["causa"] == "Punti generici"].groupby("squadra")["n"].sum()
     render_player_table(player_table_from_df(combined["noi"], int(gen.get("noi", 0)), int(gen.get("loro", 0))))
 
     # 5) palleggiatori
@@ -2355,7 +2566,7 @@ def render_opponent_section(season, version):
 
     # 6) distribuzione
     st.subheader("Distribuzione alzate")
-    render_distribution(pd.concat([m["rows"] for m in ms], ignore_index=True), key=f"opp_{team_key}")
+    render_distribution(all_rows, key=f"opp_{team_key}")
 
 
 def _match_option_label(match_seq, match_label_lookup):

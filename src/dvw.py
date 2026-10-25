@@ -57,6 +57,7 @@ tabellino) lo usa senza modifiche, più le colonne aggiuntive del .dvw.
 """
 import re
 
+import numpy as np
 import pandas as pd
 
 TEAM = "Decimo"
@@ -69,6 +70,7 @@ DVW_SKILLS = {
 # Codici ruolo DataVolley, come impostati nel programma di rilevazione.
 DVW_ROLES = {1: "libero", 2: "schiacciatore", 3: "opposto", 4: "centrale", 5: "palleggiatore"}
 SETTER_ROLE = 5
+MIDDLE_ROLE = 4
 
 # Punto/errore generico dell'avversario ('a$$&H#'/'a$$&H='): voci che il
 # programma aggiunge in automatico come complemento di un'azione dell'altra
@@ -180,13 +182,32 @@ def parse_dvw(file_path):
     )
     match_rows = sections.get("MATCH", [])
     data = match_rows[0].split(";")[0].strip() if match_rows else ""
+    actions, rallies = _parse_scout(sections.get("SCOUT", []), players)
     return {
         "data": data or None,
         "teams": teams,
         "players": players,
         "sets": _parse_sets(sections.get("SET", [])),
-        **dict(zip(("actions", "rallies"), _parse_scout(sections.get("SCOUT", []), players))),
+        "actions": _middle_attacks_quick(actions, players),
+        "rallies": rallies,
     }
+
+
+def _middle_attacks_quick(actions, players):
+    """
+    Attacchi dei centrali sempre con alzata veloce ('Q', Quick): i centrali
+    non attaccano mai palla alta (indicazione dell'utente, 2026-10-25). Nella
+    rilevazione il tipo di palla si sceglie di rado e il programma scrive il
+    default 'H' (alta): su tutti i .dvw 2025-2026/2026-2027 gli attacchi dei
+    centrali risultavano 'H' (qualche '7' solo su Valsugana - Volley Prati).
+    Il codice originale resta nella colonna 'Codice'.
+    """
+    if actions.empty:
+        return actions
+    middles = {(p.squadra, p.numero) for p in players.itertuples() if p.ruolo == MIDDLE_ROLE}
+    is_middle = np.array([(s, n) in middles for s, n in zip(actions["squadra"], actions["Numero"])])
+    actions.loc[(actions["Tipo"] == "attacco") & is_middle, "Tipo palla"] = "Q"
+    return actions
 
 
 def read_dvw_header(file_path):

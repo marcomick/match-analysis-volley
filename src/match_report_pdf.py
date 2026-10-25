@@ -540,59 +540,54 @@ def _player_tables(pdf, table):
     ), markdown=True)
 
 
-COURT_W = 84  # mm, lato della metà campo della distribuzione
-NET_H = 4.2
-COURT_BLOCK_H = 3 + NET_H + 0.6 + COURT_W + 3.5
+COURT_GAP = 4  # mm tra le tre griglie di un palleggiatore
+COURT_W = (CONTENT_W - 5 - 2 * COURT_GAP) / 3  # mm, lato di ogni metà campo
+NET_H = 2.4
+COURT_TITLE_H = 7.5
+COURT_BLOCK_H = COURT_TITLE_H + 1.8 + NET_H + 0.4 + COURT_W + 2.5
 
 
-def _court(pdf, stats):
+def _court(pdf, stats, x0, width):
     """
-    Distribuzione del palleggiatore (src.setter_distribution.zone_stats):
-    metà campo vista da chi attacca, rete in alto con le antenne, linea dei
-    3 metri, 9 zone colorate per quota delle alzate, con quota, attacchi,
-    efficienza e i due giocatori più serviti. Disegno vettoriale, come il
-    campo della dashboard (build_court_chart).
+    Distribuzione del palleggiatore (src.setter_distribution.zone_stats),
+    in piccolo (tre per palleggiatore, una per situazione): metà campo vista
+    da chi attacca, rete in alto con le antenne, linea dei 3 metri, 9 zone
+    colorate per quota delle alzate, con quota, attacchi ed efficienza e il
+    giocatore più servito. Disegno vettoriale, come il campo della
+    dashboard (build_court_chart). Parte dalla y corrente, in `x0`.
     """
     with pdf.local_context():
-        _draw_court(pdf, stats)
+        _draw_court(pdf, stats, x0, width)
     pdf.set_text_color(*_rgb(INK))
 
 
-def _draw_court(pdf, stats):
-    cell = COURT_W / 3
-    x0 = MARGIN + (CONTENT_W - COURT_W) / 2
-    top = pdf.get_y() + 3  # spazio per le antenne sopra la rete
-    y0 = top + NET_H + 0.6
+def _draw_court(pdf, stats, x0, width):
+    cell = width / 3
+    top = pdf.get_y() + 1.8  # spazio per le antenne sopra la rete
+    y0 = top + NET_H + 0.4
     pdf.set_fill_color(*_rgb(FREE_ZONE))
-    pdf.rect(x0 - 2.5, top + NET_H, COURT_W + 5, COURT_W + 0.6 + 2.5, style="F")
-    # rete: banda scura con le maglie, nastro bianco, scritta, antenne a strisce
+    pdf.rect(x0 - 1.2, top + NET_H, width + 2.4, width + 0.4 + 1.2, style="F")
+    # rete: banda scura con le maglie, nastro bianco, antenne a strisce
     pdf.set_fill_color(*_rgb(NET_COLOR))
-    pdf.rect(x0 - 2.5, top, COURT_W + 5, NET_H, style="F")
+    pdf.rect(x0 - 1.2, top, width + 2.4, NET_H, style="F")
     pdf.set_draw_color(*_rgb(NET_MESH))
-    pdf.set_line_width(0.15)
-    x = x0 - 2
-    while x < x0 + COURT_W + 2.4:
-        pdf.line(x, top + 0.8, x, top + NET_H - 0.2)
-        x += 1.1
-    pdf.set_fill_color(*WHITE)
-    pdf.rect(x0 - 2.5, top, COURT_W + 5, 0.8, style="F")
-    pdf.set_font("helvetica", "B", 6.5)
-    label_w = pdf.get_string_width("R E T E") + 5
-    pdf.set_fill_color(*_rgb(NET_COLOR))
-    pdf.rect(x0 + (COURT_W - label_w) / 2, top + 0.9, label_w, NET_H - 1.1, style="F")
-    pdf.set_text_color(*WHITE)
-    pdf.set_xy(x0, top + 0.8)
-    pdf.cell(COURT_W, NET_H - 0.8, "R E T E", align="C")
-    pdf.set_draw_color(*_rgb(ANTENNA_RED))
     pdf.set_line_width(0.1)
-    for xa in (x0, x0 + COURT_W):
-        for k in range(6):
+    x = x0 - 0.9
+    while x < x0 + width + 1.1:
+        pdf.line(x, top + 0.5, x, top + NET_H - 0.1)
+        x += 0.8
+    pdf.set_fill_color(*WHITE)
+    pdf.rect(x0 - 1.2, top, width + 2.4, 0.5, style="F")
+    pdf.set_draw_color(*_rgb(ANTENNA_RED))
+    pdf.set_line_width(0.08)
+    for xa in (x0, x0 + width):
+        for k in range(4):
             pdf.set_fill_color(*(_rgb(ANTENNA_RED) if k % 2 else WHITE))
-            pdf.rect(xa - 0.35, top - 3 + 1.4 * k, 0.7, 1.4, style="FD")
+            pdf.rect(xa - 0.25, top - 1.8 + 0.9 * k, 0.5, 0.9, style="FD")
 
     # pavimento e zone
     pdf.set_fill_color(*_rgb(COURT_FLOOR))
-    pdf.rect(x0, y0, COURT_W, COURT_W, style="F")
+    pdf.rect(x0, y0, width, width, style="F")
     by_zone = stats.set_index("zona")
     for r, zone_row in enumerate(ZONE_GRID):
         for c, z in enumerate(zone_row):
@@ -603,45 +598,40 @@ def _draw_court(pdf, stats):
                 fill, white = share_color(s["pct"])
                 ink = WHITE if white else _rgb(CELL_INK)
                 pdf.set_fill_color(*_rgb(fill))
-                pdf.rect(cx + 1.3, cy + 1.3, cell - 2.6, cell - 2.6, style="F", round_corners=True, corner_radius=2)
+                pdf.rect(cx + 0.6, cy + 0.6, cell - 1.2, cell - 1.2, style="F", round_corners=True, corner_radius=1)
                 pdf.set_text_color(*ink)
                 eff = "-" if s["eff"] is None else f"{s['eff']:.0f}%"
-                lines = [("B", 13, f"{s['pct']:.0f}%", 6.0), ("", 6.3, f"{int(s['n'])} att. \u00b7 eff {eff}", 4.0)]
-                lines += [("", 6, f"{short_player(p)} {k}", 3.0) for p, k, _ in s["giocatori"][:2]]
-                y = cy + 4.5
+                lines = [("B", 8.5, f"{s['pct']:.0f}%", 3.3), ("", 4.6, f"{int(s['n'])} att \u00b7 {eff}", 1.9)]
+                lines += [("", 4.4, f"{short_player(p)} {k}", 1.8) for p, k, _ in s["giocatori"][:1]]
+                y = cy + 1.9
                 for style, size, text, h in lines:
                     pdf.set_font("helvetica", style, size)
                     pdf.set_xy(cx, y)
                     pdf.cell(cell, h, _t(text), align="C")
-                    y += h + 0.6
+                    y += h + 0.25
             else:
                 pdf.set_text_color(*_rgb(MUTED))
-                pdf.set_font("helvetica", "", 9)
-                pdf.set_xy(cx, cy + cell / 2 - 2)
-                pdf.cell(cell, 4, "-", align="C")
+                pdf.set_font("helvetica", "", 7)
+                pdf.set_xy(cx, cy + cell / 2 - 1.5)
+                pdf.cell(cell, 3, "-", align="C")
             pdf.set_text_color(*ink)
-            pdf.set_font("helvetica", "B", 5.5)
-            pdf.set_xy(cx + 1.2, cy + 1.2)
-            pdf.cell(4, 2.6, str(z))
+            pdf.set_font("helvetica", "B", 3.8)
+            pdf.set_xy(cx + 0.5, cy + 0.6)
+            pdf.cell(2.5, 1.6, str(z))
     pdf.set_text_color(*_rgb(INK))
 
     # righe: divisori delle zone tratteggiati (non sono linee vere), linea
     # dei 3 metri e perimetro
     pdf.set_draw_color(*WHITE)
-    pdf.set_line_width(0.25)
-    pdf.set_dash_pattern(dash=0.8, gap=0.8)
+    pdf.set_line_width(0.15)
+    pdf.set_dash_pattern(dash=0.5, gap=0.5)
     for k in (1, 2):
-        pdf.line(x0 + k * cell, y0, x0 + k * cell, y0 + COURT_W)
-    pdf.line(x0, y0 + 2 * cell, x0 + COURT_W, y0 + 2 * cell)
+        pdf.line(x0 + k * cell, y0, x0 + k * cell, y0 + width)
+    pdf.line(x0, y0 + 2 * cell, x0 + width, y0 + 2 * cell)
     pdf.set_dash_pattern()
-    pdf.set_line_width(0.9)
-    pdf.line(x0, y0 + cell, x0 + COURT_W, y0 + cell)
-    pdf.rect(x0, y0, COURT_W, COURT_W, style="D")
-    pdf.set_font("helvetica", "", 5.5)
-    pdf.set_text_color(*_rgb(MUTED))
-    pdf.set_xy(x0 + COURT_W + 2.8, y0 + cell - 1.4)
-    pdf.cell(6, 2.8, "3 m")
-    pdf.set_y(y0 + COURT_W + 3.5)
+    pdf.set_line_width(0.5)
+    pdf.line(x0, y0 + cell, x0 + width, y0 + cell)
+    pdf.rect(x0, y0, width, width, style="D")
 
 
 def _setter_tables(pdf, setters, distributions=None):
@@ -654,9 +644,10 @@ def _setter_tables(pdf, setters, distributions=None):
                "(+ o #), da ricezione ! (niente primo tempo) e da free ball. Tra parentesi il numero di attacchi.",
           markdown=True)
     if distributions:
-        _note(pdf, "Sotto, la **distribuzione**: da quale zona attaccano i giocatori serviti con lui in campo (% "
-                   "delle alzate, attacchi, efficienza e chi attacca), escluse le sue seconde intenzioni. Centrali "
-                   "sempre da 3, schiacciatori da dietro da 8 (pipe), opposto da dietro da 9.", markdown=True)
+        _note(pdf, "Sotto, la **distribuzione** con lui in campo, da R+ / #, da R! e da free ball: da quale zona "
+                   "attaccano i giocatori serviti (% delle alzate, attacchi ed efficienza, il più servito), escluse le "
+                   "sue seconde intenzioni (per questo i totali possono differire di poco dalla tabella). Centrali sempre da 3, schiacciatori da dietro da 8 (pipe), opposto da "
+                   "dietro da 9.", markdown=True)
         if any(d["stimate"] for d in distributions.values()):
             _note(pdf, "Direzioni d'attacco non rilevate in questa partita: zone di prima linea di schiacciatori "
                        "e opposti stimate dal ruolo (schiacciatore 4, opposto 2).")
@@ -677,12 +668,37 @@ def _setter_tables(pdf, setters, distributions=None):
         _grouped_table(pdf, None, ["", "Da R+ / #", "Da R!", "Da free ball"], data, raw, [16, w, w, w],
                        fills={j: _diverging_fill for j in (1, 2, 3)})
         dist = distributions.get(name)
-        if dist and dist["n"]:
-            _ensure_space(pdf, 6 + COURT_BLOCK_H)
-            pdf.ln(1)
-            eff = "" if dist["eff"] is None else f", efficienza {dist['eff']:.0f}%"
-            _note(pdf, f"Distribuzione di {name}: {dist['n']} attacchi{eff}.")
-            _court(pdf, dist["stats"])
+        if dist and any(dist[k]["n"] for k in COURT_SITUATIONS):
+            _setter_courts(pdf, dist)
+
+
+COURT_SITUATIONS = {"R+#": "Da R+ / #", "R!": "Da R!", "FB": "Da free ball"}
+
+
+def _setter_courts(pdf, dist):
+    """Le tre griglie di un palleggiatore affiancate (src.setter_distribution.
+    distributions_by_setter), ciascuna col suo titolo e volume."""
+    _ensure_space(pdf, 1 + COURT_BLOCK_H)
+    pdf.ln(1)
+    y = pdf.get_y()
+    x_start = MARGIN + (CONTENT_W - 3 * COURT_W - 2 * COURT_GAP) / 2
+    for j, (key, title) in enumerate(COURT_SITUATIONS.items()):
+        d = dist[key]
+        x0 = x_start + j * (COURT_W + COURT_GAP)
+        pdf.set_xy(x0 - 1.2, y)
+        pdf.set_font("helvetica", "B", 7)
+        pdf.set_text_color(*_rgb(NAVY))
+        pdf.cell(COURT_W + 2.4, 3.6, _t(title), align="C")
+        pdf.set_xy(x0 - 1.2, y + 3.6)
+        pdf.set_font("helvetica", "", 5.6)
+        pdf.set_text_color(*_rgb(MUTED))
+        eff = "" if d["eff"] is None else f" \u00b7 eff {d['eff']:.0f}%"
+        pdf.cell(COURT_W + 2.4, 3, _t(f"{d['n']} attacchi{eff}" if d["n"] else "nessun attacco"), align="C")
+        pdf.set_text_color(*_rgb(INK))
+        if d["n"]:
+            pdf.set_y(y + COURT_TITLE_H)
+            _court(pdf, d["stats"], x0, COURT_W)
+    pdf.set_xy(MARGIN, y + COURT_BLOCK_H)
 
 
 RANKING_HEADERS = {"Pos": "", "Battute": "Batt.", "Attacchi": "Att.", "Ricezioni": "Ric."}

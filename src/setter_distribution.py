@@ -29,6 +29,24 @@ Fase: side-out = primo attacco dopo la ricezione, contrattacco = tutto il
 resto, free ball compresa (definizioni uniche del progetto, via
 src.efficiency.separate_attack_types); "free ball" = attacco dopo una difesa
 con voto '!'.
+
+Situazioni del palleggiatore (`situazione`, le stesse famiglie del suo
+"attacco alzato"): side-out da ricezione + o #, side-out da ricezione !,
+free ball; gli altri attacchi (side-out da ricezione - o /, contrattacco
+senza free ball) restano fuori da queste tre famiglie.
+
+Test di significatività (2026-10-25, richieste dell'utente):
+- lungo una direzione (rotazione, qualità della ricezione, tipo di
+  ricevitore — libero, martello in prima o in seconda linea —, ricevitore,
+  punteggio, partita): chi quadro zona x categoria con p-value per
+  permutazione e correzione di Holm sulle direzioni. Il ricevitore si guarda
+  "a parità di effetto della ricezione": test stratificato sul voto (chi
+  quadro sommato sui voti, permutazioni dentro ogni voto), così un
+  ricevitore che riceve peggio non sembra "cambiare" la distribuzione solo
+  perché riceve più palloni !;
+- per palleggiatore e situazione (test_setter_situations): da R+/#, da R! e
+  da free ball alza in modo diverso dal resto dei suoi palloni? Test zona x
+  (situazione / resto) su ogni palleggiatore, Holm su tutti i test insieme.
 """
 import numpy as np
 import pandas as pd
@@ -45,14 +63,43 @@ ALL_GRADES = ("#", "+", "!", "-", "/", "=")
 
 SCORE_SITUATIONS = ["Sotto di 3 o più", "Punteggio in equilibrio (±2)", "Sopra di 3 o più"]
 
+# Situazioni del palleggiatore (colonna `situazione`), vedi docstring di modulo.
+SITUATIONS = {"R+#": "Side-out da R+ / R#", "R!": "Side-out da R!", "FB": "Free ball"}
+# Contrattacco selezionabile nella vista: tutto, solo free ball, senza free ball.
+COUNTER_MODES = {"tutto": "Tutto il contrattacco (free ball comprese)", "fb": "Solo free ball (difesa !)",
+                 "no_fb": "Contrattacco senza free ball"}
+
 # Direzioni di analisi per il test di significatività: colonna di
-# attack_rows e titolo. La ricezione si guarda solo sugli attacchi di side-out.
+# attack_rows e titolo. Ricezione e ricevitore si guardano solo sugli
+# attacchi di side-out; il ricevitore a parità di voto di ricezione.
 DIRECTIONS = {
     "rotazione": "Rotazione",
     "ricezione": "Qualità della ricezione",
+    "tipo_ricevitore": "Libero o martello (davanti/dietro) in ricezione",
+    "ricevitore": "Chi riceve (a parità di ricezione)",
     "situazione_punteggio": "Punteggio",
     "partita": "Partita",
 }
+SIDE_OUT_DIRECTIONS = ("ricezione", "tipo_ricevitore", "ricevitore")
+STRATA = {"ricevitore": "ricezione", "tipo_ricevitore": "ricezione"}
+# Chi riceve per ruolo e linea (richiesta dell'utente, 2026-10-25): più dati
+# per categoria che per singolo giocatore, e risponde a domande come "quando
+# riceve il martello di prima linea il palleggiatore non lo serve mai?".
+# Opposti e centrali in ricezione (rari) restano fuori (None).
+RECEIVER_TYPES = ["Libero", "Martello in prima linea", "Martello in seconda linea"]
+ROLE_LIBERO = 1
+
+
+def receiver_type(role, front):
+    if role == ROLE_LIBERO:
+        return RECEIVER_TYPES[0]
+    if role == ROLE_OUTSIDE and front is not None:
+        return RECEIVER_TYPES[1] if front else RECEIVER_TYPES[2]
+    return None
+
+
+def _is_front(pos):
+    return None if pos is None or pd.isna(pos) else int(str(pos)[1:]) in (2, 3, 4)
 MIN_PER_CATEGORY = 8
 MIN_TOTAL = 30
 N_PERMUTATIONS = 2000
@@ -139,9 +186,12 @@ def attack_rows(parsed, side, match_label=""):
     Colonne: partita, set, palleggiatore, rotazione ('P1'..'P6', zona del
     palleggiatore), attaccante, ruolo, prima_linea, zona, zona_stimata,
     tipo_alzata, tipo_colpo, voto, fase ('Side-out'/'Contrattacco'),
-    free_ball, ricezione (voto della ricezione, side-out), difesa (voto
-    della difesa da cui parte il contrattacco, se c'è), diff_punteggio
-    (nostri - loro prima dell'attacco), situazione_punteggio.
+    free_ball, ricezione (voto della ricezione, side-out), ricevitore
+    ('<numero> <cognome>' di chi ha ricevuto, side-out), tipo_ricevitore
+    (RECEIVER_TYPES o None, side-out), difesa (voto
+    della difesa da cui parte il contrattacco, se c'è), situazione (chiave
+    di SITUATIONS o None), punti_noi/punti_loro e diff_punteggio (prima
+    dell'attacco), situazione_punteggio.
     """
     df = side_actions(parsed, side)
     roles = _roles(parsed, side)
@@ -149,12 +199,16 @@ def attack_rows(parsed, side, match_label=""):
     so_idx, fb_idx = set(so.index), set(fb.index)
     own_score, opp_score = ("Punti Locali", "Punti Ospiti") if side == "*" else ("Punti Ospiti", "Punti Locali")
 
-    last_touch = {}  # Rally -> (Tipo, Voto) dell'ultima ricezione/difesa vista
+    # Rally -> (Tipo, Voto, giocatore, tipo di ricevitore) dell'ultima ricezione/difesa vista
+    last_touch = {}
     rows = []
     for i, r in df.iterrows():
         tipo = r["Tipo"]
         if tipo in ("ricezione", "difesa", "free ball"):
-            last_touch[r["Rally"]] = (tipo, r["Voto"])
+            known = pd.notna(r["Numero"])
+            player = f"{int(r['Numero'])} {r['Cognome']}" if known else None
+            rtype = receiver_type(roles.get(int(r["Numero"])), _is_front(r["Posizione Giocatore"])) if known else None
+            last_touch[r["Rally"]] = (tipo, r["Voto"], player, rtype)
             continue
         if tipo != "attacco" or pd.isna(r["Numero"]):
             continue
@@ -162,13 +216,13 @@ def attack_rows(parsed, side, match_label=""):
         role = roles.get(numero)
         if role == SETTER_ROLE:
             continue
-        pos = r["Posizione Giocatore"]
-        front = None if pos is None or pd.isna(pos) else int(str(pos)[1:]) in (2, 3, 4)
+        front = _is_front(r["Posizione Giocatore"])
         recorded = r.get("Zona partenza")
         recorded = None if recorded is None or pd.isna(recorded) else int(recorded)
         zona, stimata = attack_zone(role, front, recorded)
         prev = last_touch.get(r["Rally"])
         is_so = i in so_idx
+        received = prev if is_so and prev and prev[0] == "ricezione" else None
         diff = int(r[own_score]) - int(r[opp_score])
         rows.append({
             "partita": match_label, "set": r["Numero Set"],
@@ -183,33 +237,48 @@ def attack_rows(parsed, side, match_label=""):
             "voto": r["Voto"],
             "fase": "Side-out" if is_so else "Contrattacco",
             "free_ball": i in fb_idx,
-            "ricezione": prev[1] if is_so and prev and prev[0] == "ricezione" else None,
+            "ricezione": received[1] if received else None,
+            "ricevitore": received[2] if received else None,
+            "tipo_ricevitore": received[3] if received else None,
             "difesa": prev[1] if not is_so and prev and prev[0] != "ricezione" else None,
+            "situazione": _situation(is_so, i in fb_idx, received[1] if received else None),
+            "punti_noi": int(r[own_score]), "punti_loro": int(r[opp_score]),
             "diff_punteggio": diff, "situazione_punteggio": score_situation(diff),
         })
     return pd.DataFrame(rows)
 
 
-NO_DEFENSE = "nessuna"  # contrattacco senza una difesa prima (es. dopo un muro o una copertura)
+def _situation(is_so, is_fb, rec):
+    if is_so:
+        return "R+#" if rec in ("#", "+") else "R!" if rec == "!" else None
+    return "FB" if is_fb else None
 
 
-def filter_rows(rows, setters=None, rotations=None, phases=None, rec_grades=None, def_grades=None,
-                ball_types=None, hit_types=None):
-    """Filtri della vista: None = nessun filtro. Il voto di ricezione filtra
-    solo gli attacchi di side-out, quello di difesa solo i contrattacchi
-    (NO_DEFENSE = contrattacchi senza difesa prima)."""
+def filter_rows(rows, setters=None, rotations=None, ball_types=None):
+    """Filtri comuni della vista: None = nessun filtro."""
     keep = pd.Series(True, index=rows.index)
-    for col, values in (("palleggiatore", setters), ("rotazione", rotations), ("fase", phases),
-                        ("tipo_alzata", ball_types), ("tipo_colpo", hit_types)):
+    for col, values in (("palleggiatore", setters), ("rotazione", rotations), ("tipo_alzata", ball_types)):
         if values is not None:
             keep &= rows[col].isin(values)
-    so = rows["fase"] == "Side-out"
-    if rec_grades is not None:
-        keep &= ~so | rows["ricezione"].isin(rec_grades)
-    if def_grades is not None:
-        difesa = rows["difesa"].fillna(NO_DEFENSE)
-        keep &= so | difesa.isin(def_grades)
     return rows[keep]
+
+
+def side_out_rows(rows, rec_grades=None):
+    """Attacchi di side-out dopo una ricezione con voto in `rec_grades`
+    (None = tutti)."""
+    so = rows[rows["fase"] == "Side-out"]
+    return so if rec_grades is None else so[so["ricezione"].isin(rec_grades)]
+
+
+def counter_rows(rows, mode="tutto"):
+    """Attacchi di contrattacco: tutti, solo free ball o senza free ball
+    (chiavi di COUNTER_MODES)."""
+    ca = rows[rows["fase"] == "Contrattacco"]
+    if mode == "fb":
+        return ca[ca["free_ball"]]
+    if mode == "no_fb":
+        return ca[~ca["free_ball"]]
+    return ca
 
 
 def _eff(sub):
@@ -251,13 +320,16 @@ def zone_stats(rows):
 
 
 def distributions_by_setter(rows):
-    """{palleggiatore: {stats (zone_stats), n, stimate, eff}} sugli attacchi
-    con lui in campo, per la griglia del report partita."""
+    """{palleggiatore: {situazione: {stats (zone_stats), n, eff}, ...,
+    'stimate': n}} sugli attacchi con lui in campo, una griglia per
+    situazione (SITUATIONS) per il report partita; 'stimate' = attacchi
+    delle tre situazioni con zona stimata."""
     out = {}
     for setter in sorted(s for s in rows["palleggiatore"].unique() if s != "n/d") if not rows.empty else []:
         sub = rows[rows["palleggiatore"] == setter]
-        out[setter] = {"stats": zone_stats(sub), "n": len(sub), "stimate": int(sub["zona_stimata"].sum()),
-                       "eff": _eff(sub)}
+        out[setter] = {key: {"stats": zone_stats(part), "n": len(part), "eff": _eff(part)}
+                       for key, part in ((k, sub[sub["situazione"] == k]) for k in SITUATIONS)}
+        out[setter]["stimate"] = int(sub[sub["situazione"].isin(list(SITUATIONS))]["zona_stimata"].sum())
     return out
 
 
@@ -268,16 +340,87 @@ def _chi2(zones, cats, n_z, n_c):
         return np.nansum((table - expected) ** 2 / expected), table, expected
 
 
+def _stratified_chi2(zones, cats, strata, n_z, n_c):
+    """Chi quadro sommato sugli strati (None = uno solo), tabella e attesi
+    sommati sugli strati."""
+    if strata is None:
+        return _chi2(zones, cats, n_z, n_c)
+    stat, table, expected = 0.0, np.zeros((n_z, n_c)), np.zeros((n_z, n_c))
+    for s_ in np.unique(strata):
+        m = strata == s_
+        st_, tb, ex = _chi2(zones[m], cats[m], n_z, n_c)
+        stat, table, expected = stat + st_, table + tb, expected + ex
+    return stat, table, expected
+
+
+def _permute(cats, strata, rng):
+    if strata is None:
+        return rng.permutation(cats)
+    out = cats.copy()
+    for s_ in np.unique(strata):
+        idx = np.flatnonzero(strata == s_)
+        out[idx] = cats[rng.permutation(idx)]
+    return out
+
+
 def direction_categories(rows, direction):
     """Le categorie della direzione presenti nei dati, nell'ordine naturale."""
+    if direction in SIDE_OUT_DIRECTIONS:
+        rows = rows[rows["fase"] == "Side-out"]
     if direction == "ricezione":
-        vals = rows.loc[rows["fase"] == "Side-out", "ricezione"].dropna().unique()
+        vals = rows["ricezione"].dropna().unique()
         return [g for g in ALL_GRADES if g in vals]
     if direction == "situazione_punteggio":
         return [s for s in SCORE_SITUATIONS if s in set(rows[direction])]
     if direction == "partita":
         return list(dict.fromkeys(rows["partita"]))
+    if direction == "ricevitore":
+        return list(rows["ricevitore"].value_counts().index)
+    if direction == "tipo_ricevitore":
+        return [t for t in RECEIVER_TYPES if t in set(rows[direction])]
     return sorted(rows[direction].dropna().unique())
+
+
+def _independence_test(sub, col, cats, strata_col=None, n_perm=N_PERMUTATIONS, seed=0):
+    """
+    Chi quadro zona x `col` (categorie `cats`, già filtrate) con p-value per
+    permutazione; con `strata_col` stratificato (permutazioni dentro ogni
+    strato, attesi = somma degli attesi per strato). Scostamenti = celle con
+    residuo standardizzato |r| >= 2. None se mancano i dati.
+    """
+    zones_present = [z for z in ZONES if (sub["zona"] == z).any()]
+    if len(zones_present) < 2 or len(cats) < 2:
+        return None
+    z_codes = sub["zona"].map({z: i for i, z in enumerate(zones_present)}).to_numpy()
+    c_codes = sub[col].map({c: i for i, c in enumerate(cats)}).to_numpy()
+    strata = None if strata_col is None else sub[strata_col].astype(str).to_numpy()
+    n_z, n_c = len(zones_present), len(cats)
+    stat, table, expected = _stratified_chi2(z_codes, c_codes, strata, n_z, n_c)
+    rng = np.random.default_rng(seed)
+    perm = np.array([_stratified_chi2(z_codes, _permute(c_codes, strata, rng), strata, n_z, n_c)[0]
+                     for _ in range(n_perm)])
+    p = (1 + (perm >= stat - 1e-9).sum()) / (n_perm + 1)
+    n = table.sum()
+    v = float(np.sqrt(stat / (n * (min(n_z, n_c) - 1))))
+    row_share, col_share = table.sum(1) / n, table.sum(0) / n
+    with np.errstate(divide="ignore", invalid="ignore"):
+        if strata is None:
+            resid = (table - expected) / np.sqrt(expected * np.outer(1 - row_share, 1 - col_share))
+        else:  # residuo di Pearson sugli attesi stratificati
+            resid = (table - expected) / np.sqrt(expected)
+    deviations = []
+    for zi, z in enumerate(zones_present):
+        for ci, c in enumerate(cats):
+            if np.isfinite(resid[zi, ci]) and abs(resid[zi, ci]) >= 2:
+                col_n = table[:, ci].sum()
+                deviations.append({
+                    "categoria": c, "zona": z, "pct": 100 * table[zi, ci] / col_n,
+                    # riferimento: quota sul totale, o quella attesa a parità di strato
+                    "pct_totale": 100 * (row_share[zi] if strata is None else expected[zi, ci] / col_n),
+                    "residuo": float(resid[zi, ci]),
+                })
+    deviations.sort(key=lambda d: -abs(d["residuo"]))
+    return {"n": int(n), "chi2": float(stat), "p": float(p), "cramer_v": v, "scostamenti": deviations}
 
 
 def test_direction(rows, direction, n_perm=N_PERMUTATIONS, seed=0):
@@ -285,49 +428,47 @@ def test_direction(rows, direction, n_perm=N_PERMUTATIONS, seed=0):
     La distribuzione per zona cambia lungo `direction` (vedi DIRECTIONS)?
     Test chi quadro di indipendenza zona x categoria con p-value per
     permutazione (corretto anche con poche osservazioni per cella), sulle
-    categorie con almeno MIN_PER_CATEGORY attacchi. Ritorna None se i dati
+    categorie con almeno MIN_PER_CATEGORY attacchi; il ricevitore
+    stratificato sul voto di ricezione (STRATA). Ritorna None se i dati
     non bastano (meno di 2 categorie o di MIN_TOTAL attacchi), altrimenti
     {direzione, categorie [(nome, n)], n, chi2, p, cramer_v, scostamenti}
     con gli scostamenti = celle con residuo standardizzato |r| >= 2:
-    {categoria, zona, pct (nella categoria), pct_totale, residuo}.
+    {categoria, zona, pct (nella categoria), pct_totale (quota di
+    riferimento: sul totale o, con lo strato, attesa a parità di strato),
+    residuo}.
     """
     sub = rows[rows["zona"].notna()]
-    if direction == "ricezione":
+    if direction in SIDE_OUT_DIRECTIONS:
         sub = sub[sub["fase"] == "Side-out"]
     sub = sub[sub[direction].notna()]
     counts = sub[direction].value_counts()
     cats = [c for c in direction_categories(sub, direction) if counts.get(c, 0) >= MIN_PER_CATEGORY]
     sub = sub[sub[direction].isin(cats)]
+    strata_col = STRATA.get(direction)
+    if strata_col:
+        # strati in cui c'è almeno un confronto possibile (due categorie)
+        ok = sub.groupby(strata_col)[direction].transform("nunique") > 1
+        sub = sub[ok]
+        cats = [c for c in cats if (sub[direction] == c).any()]
     if len(cats) < 2 or len(sub) < MIN_TOTAL:
         return None
-    zones_present = [z for z in ZONES if (sub["zona"] == z).any()]
-    if len(zones_present) < 2:
+    res = _independence_test(sub, direction, cats, strata_col, n_perm, seed)
+    if res is None:
         return None
-    z_codes = sub["zona"].map({z: i for i, z in enumerate(zones_present)}).to_numpy()
-    c_codes = sub[direction].map({c: i for i, c in enumerate(cats)}).to_numpy()
-    n_z, n_c = len(zones_present), len(cats)
-    stat, table, expected = _chi2(z_codes, c_codes, n_z, n_c)
-    rng = np.random.default_rng(seed)
-    perm = np.array([_chi2(z_codes, rng.permutation(c_codes), n_z, n_c)[0] for _ in range(n_perm)])
-    p = (1 + (perm >= stat - 1e-9).sum()) / (n_perm + 1)
-    n = table.sum()
-    v = float(np.sqrt(stat / (n * (min(n_z, n_c) - 1))))
-    row_share, col_share = table.sum(1) / n, table.sum(0) / n
-    with np.errstate(divide="ignore", invalid="ignore"):
-        resid = (table - expected) / np.sqrt(expected * np.outer(1 - row_share, 1 - col_share))
-    deviations = []
-    for zi, z in enumerate(zones_present):
-        for ci, c in enumerate(cats):
-            if np.isfinite(resid[zi, ci]) and abs(resid[zi, ci]) >= 2:
-                deviations.append({
-                    "categoria": c, "zona": z, "pct": 100 * table[zi, ci] / table[:, ci].sum(),
-                    "pct_totale": 100 * row_share[zi], "residuo": float(resid[zi, ci]),
-                })
-    deviations.sort(key=lambda d: -abs(d["residuo"]))
-    return {
-        "direzione": direction, "categorie": [(c, int(counts[c])) for c in cats], "n": int(n),
-        "chi2": float(stat), "p": float(p), "cramer_v": v, "scostamenti": deviations,
-    }
+    sub_counts = sub[direction].value_counts()
+    return {"direzione": direction, "categorie": [(c, int(sub_counts[c])) for c in cats], **res}
+
+
+def _holm(results):
+    """Correzione di Holm sui risultati non None di un dict: aggiunge p_holm
+    e significativo (p_holm < ALPHA)."""
+    valid = sorted((r["p"], k) for k, r in results.items() if r)
+    m, running = len(valid), 0.0
+    for k, (p, key) in enumerate(valid):
+        running = max(running, min(1.0, (m - k) * p))
+        results[key]["p_holm"] = running
+        results[key]["significativo"] = running < ALPHA
+    return results
 
 
 def test_all_directions(rows, directions=tuple(DIRECTIONS)):
@@ -335,11 +476,42 @@ def test_all_directions(rows, directions=tuple(DIRECTIONS)):
     (più direzioni guardate insieme = più occasioni di un falso allarme):
     ogni risultato ha in più p_holm e significativo (p_holm < ALPHA).
     Direzioni senza dati sufficienti: risultato None."""
-    results = {d: test_direction(rows, d) for d in directions}
-    valid = sorted((r["p"], d) for d, r in results.items() if r)
-    m, running = len(valid), 0.0
-    for k, (p, d) in enumerate(valid):
-        running = max(running, min(1.0, (m - k) * p))
-        results[d]["p_holm"] = running
-        results[d]["significativo"] = running < ALPHA
-    return results
+    return _holm({d: test_direction(rows, d) for d in directions})
+
+
+def test_setter_situations(rows, n_perm=N_PERMUTATIONS):
+    """
+    Per ogni palleggiatore e ogni situazione (SITUATIONS): i palloni di
+    quella situazione vanno in zone diverse dal resto dei suoi palloni?
+    Test zona x (situazione / resto) sugli attacchi con lui in campo, senza
+    guardare altre direzioni. {(palleggiatore, situazione): risultato o
+    None se i dati non bastano}, risultato = {n_situazione, n, chi2, p,
+    cramer_v, p_holm, significativo, scostamenti (solo della situazione:
+    pct nella situazione contro pct_totale = nel resto), quote (zona -> %
+    nella situazione)}. Holm su tutti i test insieme.
+    """
+    results = {}
+    known = rows[rows["zona"].notna() & (rows["palleggiatore"] != "n/d")]
+    for setter in sorted(known["palleggiatore"].unique()):
+        mine = known[known["palleggiatore"] == setter]
+        for key in SITUATIONS:
+            grp = np.where(mine["situazione"] == key, key, "resto")
+            sub = mine.assign(_gruppo=grp)
+            n_key = int((grp == key).sum())
+            if n_key < MIN_PER_CATEGORY or len(sub) - n_key < MIN_PER_CATEGORY or len(sub) < MIN_TOTAL:
+                results[(setter, key)] = None
+                continue
+            res = _independence_test(sub, "_gruppo", [key, "resto"], n_perm=n_perm)
+            if res is None:
+                results[(setter, key)] = None
+                continue
+            in_key = sub[sub["_gruppo"] == key]
+            rest = sub[sub["_gruppo"] == "resto"]
+            res["scostamenti"] = [
+                {**d, "pct_totale": 100 * (rest["zona"] == d["zona"]).mean()}
+                for d in res["scostamenti"] if d["categoria"] == key
+            ]
+            res["n_situazione"] = n_key
+            res["quote"] = (100 * in_key["zona"].value_counts(normalize=True)).to_dict()
+            results[(setter, key)] = res
+    return _holm(results)
