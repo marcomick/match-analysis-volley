@@ -183,3 +183,59 @@ def swing_summary(by_outcome, n_sets, min_gap=0.3):
         out["differenza"] = sorted(((c, saldo["vinti"][c], saldo["persi"][c], saldo["vinti"][c] - saldo["persi"][c])
                                     for c in saldo["vinti"]), key=lambda t: -t[3])
     return out
+
+
+SWING_INTRO = ("saldo per set rispetto agli avversari (punti fatti meno punti concessi per quella causa; per gli "
+               "errori: punti regalati dagli avversari meno punti regalati da lei)")
+
+
+def swing_sentences(by_outcome, n_sets):
+    """Le frasi (markdown con **grassetto**) del testo "cosa sposta l'ago
+    della bilancia", da swing_summary: per la dashboard e per il PDF."""
+    sw = swing_summary(by_outcome, n_sets)
+
+    def items(pairs):
+        return ", ".join(f"**{SWING_CAUSES[c]}** ({x:+.1f})" for c, x in pairs)
+
+    lines = []
+    if n_sets["persi"]:
+        lines.append(f"**Nei set persi** ({n_sets['persi']}) va sotto soprattutto in {items(sw['persi'])}."
+                     if sw["persi"] else f"**Nei set persi** ({n_sets['persi']}) non va sotto in modo netto in "
+                                         "nessuna voce: perde di poco un po' ovunque.")
+    if n_sets["vinti"]:
+        lines.append(f"**Nei set vinti** ({n_sets['vinti']}) guadagna soprattutto in {items(sw['vinti'])}."
+                     if sw["vinti"] else f"**Nei set vinti** ({n_sets['vinti']}) non guadagna in modo netto in "
+                                         "nessuna voce: vince di poco un po' ovunque.")
+    top = [t for t in sw["differenza"] if t[3] >= 0.3][:2]
+    if top:
+        parts = [f"**{SWING_CAUSES[c]}** (da {p:+.1f} nei set persi a {v:+.1f} in quelli vinti, {d:.1f} punti a set "
+                 "di differenza)" for c, v, p, d in top]
+        lines.append("**Cosa sposta l'ago della bilancia**: " + " e ".join(parts) + ".")
+    return lines
+
+
+def balance_rows(by_outcome, n_sets):
+    """Per causa (POINT_SOURCES con almeno un punto): {causa, vinti: (noi,
+    loro, saldo) o None, persi: idem}, medie per set."""
+    v = by_outcome.pivot_table(index="causa", columns=["set", "squadra"], values="n", aggfunc="sum")
+    out = []
+    for causa in [c for c in POINT_SOURCES if c in v.index]:
+        if all(v.loc[causa].fillna(0) == 0):
+            continue
+        row = {"causa": causa}
+        for esito in ("vinti", "persi"):
+            if n_sets[esito]:
+                noi, loro = v.loc[causa, (esito, "noi")], v.loc[causa, (esito, "loro")]
+                row[esito] = (noi, loro, noi - loro)
+            else:
+                row[esito] = None
+        out.append(row)
+    return out
+
+
+def situation_text(setter, key, d):
+    """Frase (markdown) di uno scostamento di test_setter_situations."""
+    verso = "più" if d["residuo"] > 0 else "meno"
+    where = {"R+#": "da R+ / R#", "R!": "da R!", "FB": "da free ball"}[key]
+    return (f"**{setter}** {where}: **{verso}** palloni in **zona {d['zona']}**, "
+            f"{d['pct']:.0f}% contro il {d['pct_totale']:.0f}% del resto dei suoi palloni")

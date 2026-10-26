@@ -492,7 +492,19 @@ def _widths(cols):
     return [CONTENT_W - sum(widths)] + widths
 
 
-def _player_tables(pdf, table):
+PLAYER_TABLE_LEGEND = (
+    "**pt** punti fatti: attacchi, muri e ace punto.  "
+    "**err** errori: battute, attacchi e alzate sbagliate, errori di muro (gli attacchi murati sono in "
+    "**mur**, gli ace subiti sono gli **err** di ricezione).  "
+    "**p-e** il saldo, punti fatti meno errori: sopra zero hai dato alla squadra più di quanto le hai tolto.  "
+    "**eff** efficienza, sul totale delle azioni del fondamentale (come nella dashboard): battuta "
+    "((# + + + /) - =); ricezione ((# + +) - (/ + =)); attacco (# - (= + /)); muro ((# + +) - (= + /)).  "
+    "**Side-out** attacco subito dopo la ricezione; **contrattacco** tutti gli altri; **free ball (FB)** attacco "
+    "dopo una difesa con voto ! (palla facile), una parte del contrattacco."
+)
+
+
+def _player_tables(pdf, table, legend=PLAYER_TABLE_LEGEND):
     rows = table.to_dict("records")
     # 1) punti, battuta, ricezione
     cols = [("pt", _fmt_int), ("err", _fmt_int), ("p-e", _fmt_int),
@@ -528,16 +540,7 @@ def _player_tables(pdf, table):
         ["", "eff", "n", "eff", "n", "eff", "n"],
         data, raw, _widths(cols), fills={1: _diverging_fill, 3: _diverging_fill, 5: _diverging_fill},
     )
-    _note(pdf, (
-        "**pt** punti fatti: attacchi, muri e ace punto.  "
-        "**err** errori: battute, attacchi e alzate sbagliate, errori di muro (gli attacchi murati sono in "
-        "**mur**, gli ace subiti sono gli **err** di ricezione).  "
-        "**p-e** il saldo, punti fatti meno errori: sopra zero hai dato alla squadra più di quanto le hai tolto.  "
-        "**eff** efficienza, sul totale delle azioni del fondamentale (come nella dashboard): battuta "
-        "((# + + + /) - =); ricezione ((# + +) - (/ + =)); attacco (# - (= + /)); muro ((# + +) - (= + /)).  "
-        "**Side-out** attacco subito dopo la ricezione; **contrattacco** tutti gli altri; **free ball (FB)** attacco "
-        "dopo una difesa con voto ! (palla facile), una parte del contrattacco."
-    ), markdown=True)
+    _note(pdf, legend, markdown=True)
 
 
 COURT_GAP = 4  # mm tra le tre griglie di un palleggiatore
@@ -675,14 +678,15 @@ def _setter_tables(pdf, setters, distributions=None):
 COURT_SITUATIONS = {"R+#": "Da R+ / #", "R!": "Da R!", "FB": "Da free ball"}
 
 
-def _setter_courts(pdf, dist):
+def _setter_courts(pdf, dist, titles=None):
     """Le tre griglie di un palleggiatore affiancate (src.setter_distribution.
-    distributions_by_setter), ciascuna col suo titolo e volume."""
+    distributions_by_setter), ciascuna col suo titolo e volume; `titles`
+    {chiave di dist: titolo} per altre terne di griglie con la stessa forma."""
     _ensure_space(pdf, 1 + COURT_BLOCK_H)
     pdf.ln(1)
     y = pdf.get_y()
     x_start = MARGIN + (CONTENT_W - 3 * COURT_W - 2 * COURT_GAP) / 2
-    for j, (key, title) in enumerate(COURT_SITUATIONS.items()):
+    for j, (key, title) in enumerate((titles or COURT_SITUATIONS).items()):
         d = dist[key]
         x0 = x_start + j * (COURT_W + COURT_GAP)
         pdf.set_xy(x0 - 1.2, y)

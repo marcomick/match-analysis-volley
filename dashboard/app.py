@@ -138,6 +138,7 @@ from src.match_report import (
     team_comparison,
 )
 from src.match_report_pdf import build_match_report_pdf
+from src.opponent_report_pdf import build_opponent_report_pdf
 from src.player_report import build_player_report_base
 from src.rankings import (
     build_ace_man,
@@ -159,6 +160,7 @@ from src.setter_distribution import (
     FREE_ZONE_DARK,
     NET_COLOR,
     NET_MESH,
+    ALPHA,
     COUNTER_MODES,
     DIRECTIONS,
     MIN_PER_CATEGORY,
@@ -175,6 +177,7 @@ from src.setter_distribution import (
     short_player,
     side_out_rows,
     test_all_directions,
+    positive_reception_by_receiver,
     test_setter_situations,
     zone_stats,
 )
@@ -185,14 +188,16 @@ from src.opponent_summary import (
     DANGEROUS_SERVE_SHARE,
     MIN_RECEPTIONS,
     MIN_SERVES,
-    SWING_CAUSES,
+    SWING_INTRO,
+    balance_rows,
     best_receiver,
     clutch_target,
     dangerous_server,
     points_by_set_outcome,
     serve_rows,
     set_results,
-    swing_summary,
+    situation_text,
+    swing_sentences,
     worst_receiver,
 )
 from src.setter_report import (
@@ -2099,13 +2104,6 @@ def _deviation_text(direction, d):
             f"(contro il {d['pct_totale']:.0f}% {ref})")
 
 
-def situation_deviation_text(setter, key, d):
-    verso = "più" if d["residuo"] > 0 else "meno"
-    where = {"R+#": "da R+ / R#", "R!": "da R!", "FB": "da free ball"}[key]
-    return (f"**{setter}** {where}: **{verso}** palloni in **zona {d['zona']}**, "
-            f"{d['pct']:.0f}% contro il {d['pct_totale']:.0f}% del resto dei suoi palloni")
-
-
 @st.cache_data(show_spinner="Test sul palleggiatore...")
 def cached_setter_tests(rows):
     return test_setter_situations(rows)
@@ -2160,6 +2158,58 @@ def render_setter_situation_tests(rows, key):
     )
 
 
+@st.cache_data(show_spinner="Analisi per ricevitore...")
+def cached_positive_by_receiver(rows):
+    return positive_reception_by_receiver(rows)
+
+
+def render_positive_reception_by_receiver(rows, key):
+    """Solo side-out da ricezione + o # (insieme): un campo per libero,
+    martello in prima linea e martello in seconda linea, test e quanto si
+    serve il martello di prima linea quando riceve lui
+    (src.setter_distribution.positive_reception_by_receiver)."""
+    res = cached_positive_by_receiver(rows)
+    cols = st.columns(3)
+    for i, (tipo, d) in enumerate(res["per_tipo"].items()):
+        with cols[i]:
+            if d["n"]:
+                eff = "-" if d["eff"] is None else f"{d['eff']:.0f}%"
+                st.plotly_chart(build_court_chart(d["stats"], f"Riceve: {tipo.lower()} · {d['n']} att. · eff {eff}",
+                                                  compact=True), theme=None, key=f"{key}_pos_rec_{i}")
+            else:
+                st.markdown(f"**Riceve: {tipo.lower()}** — nessun attacco.")
+    test = res["test"]
+    if test is None:
+        st.markdown(f"**Test** — dati insufficienti (servono almeno due ricevitori con {MIN_PER_CATEGORY} attacchi e "
+                    f"{MIN_TOTAL} attacchi in tutto).")
+    elif test["p"] < ALPHA:
+        st.markdown(f"**Sì, la distribuzione cambia a seconda di chi riceve** (p = {test['p']:.3f}, intensità "
+                    f"{test['cramer_v']:.2f} su 1).")
+        for dev in test["scostamenti"][:4]:
+            st.markdown(f"- {_deviation_text('tipo_ricevitore', dev).replace('attesa a parità di ricezione', 'sul totale')}")
+    else:
+        st.markdown(f"**No, la distribuzione non cambia in modo significativo a seconda di chi riceve** "
+                    f"(p = {test['p']:.3f}).")
+    front = res["martello_davanti"]
+    if front:
+        (a_self, n_self), (a_other, n_other) = front["riceve_lui"], front["riceve_altro"]
+        verdict = "differenza significativa" if front["p"] < ALPHA else "differenza compatibile con il caso"
+        st.markdown(f"**Il martello di prima linea quando riceve lui** attacca {a_self} palloni su {n_self} "
+                    f"(**{100 * a_self / n_self:.0f}%**); quando riceve un altro (libero o martello di seconda linea) "
+                    f"{a_other} su {n_other} (**{100 * a_other / n_other:.0f}%**): {verdict} (p = {front['p']:.3f}).")
+    else:
+        st.markdown(f"**Il martello di prima linea quando riceve lui** — dati insufficienti (servono almeno "
+                    f"{MIN_PER_CATEGORY} attacchi sia quando riceve lui sia quando riceve un altro).")
+    st.caption(
+        "Solo il primo attacco dopo una ricezione + o # (insieme), con i filtri in alto (palleggiatore, rotazione, "
+        "tipo di alzata). Chi riceve: ruolo registrato nello scout e linea dalla posizione di rotazione al momento della "
+        "ricezione; opposti e centrali in ricezione esclusi. Test chi quadro zona × ricevitore con p-value per "
+        "permutazione, su questa sola domanda (nessuna correzione per confronti multipli). Martello di prima linea: lo "
+        "schiacciatore in prima linea al momento della ricezione; il confronto è tra gli scambi in cui riceve lui e "
+        "quelli in cui riceve un altro, con lui comunque in prima linea."
+    )
+
+
 def render_distribution(rows, key):
     """Filtri, i due campi (side-out e contrattacco), chi attacca, confronto
     lungo una direzione e test di significatività. `rows`:
@@ -2200,6 +2250,9 @@ def render_distribution(rows, key):
         st.caption(f"⚠️ {n_est} attacchi di schiacciatori e opposti in prima linea senza direzione rilevata: zona "
                    "stimata dal ruolo (schiacciatore 4, opposto 2), che non vede gli scambi di lato in P1.")
     st.caption("Passa il mouse su una zona per punti, errori, murati e tutti i giocatori serviti.")
+
+    st.markdown("#### Da R+ / R#: la distribuzione cambia a seconda di chi riceve?")
+    render_positive_reception_by_receiver(base, key)
 
     st.markdown("#### Il palleggiatore alza in modo diverso da R+ / R#, da R! o da free ball?")
     render_setter_situation_tests(base, key)
@@ -2330,22 +2383,17 @@ def load_team_match(file_path, team, mtime):
 def points_balance_table(by_outcome, n_sets, team_name):
     """Per causa: media per set di squadra e avversari e saldo, nei set vinti
     e persi, più la differenza di saldo tra set vinti e persi."""
-    v = by_outcome.pivot_table(index="causa", columns=["set", "squadra"], values="n", aggfunc="sum")
     rows = []
-    for causa in [c for c in POINT_SOURCES if c in v.index]:
-        row, saldi = {"Causa": causa}, {}
+    for r in balance_rows(by_outcome, n_sets):
+        row = {"Causa": r["causa"]}
         for esito in ("vinti", "persi"):
-            if not n_sets[esito]:
-                continue
-            noi, loro = v.loc[causa, (esito, "noi")], v.loc[causa, (esito, "loro")]
-            saldi[esito] = noi - loro
-            row[f"{team_name} (set {esito})"] = f"{noi:.1f}"
-            row[f"Avversari (set {esito})"] = f"{loro:.1f}"
-            row[f"Saldo (set {esito})"] = f"{noi - loro:+.1f}"
-        if len(saldi) == 2:
-            row["Saldo vinti − persi"] = f"{saldi['vinti'] - saldi['persi']:+.1f}"
-        if all(v.loc[causa].fillna(0) == 0):
-            continue
+            if r[esito]:
+                noi, loro, saldo = r[esito]
+                row[f"{team_name} (set {esito})"] = f"{noi:.1f}"
+                row[f"Avversari (set {esito})"] = f"{loro:.1f}"
+                row[f"Saldo (set {esito})"] = f"{saldo:+.1f}"
+        if r["vinti"] and r["persi"]:
+            row["Saldo vinti − persi"] = f"{r['vinti'][2] - r['persi'][2]:+.1f}"
         rows.append(row)
     return pd.DataFrame(rows)
 
@@ -2399,7 +2447,7 @@ def render_opponent_summary(df, rows, serves):
         st.markdown("**🧭 Tendenze del palleggiatore**")
         if sig:
             for setter, k, r in sig:
-                st.markdown(f"- {situation_deviation_text(setter, k, r['scostamenti'][0])}")
+                st.markdown(f"- {situation_text(setter, k, r['scostamenti'][0])}")
         else:
             st.markdown("Nessuna tendenza significativa da R+ / R#, da R! o da free ball.")
     st.divider()
@@ -2407,31 +2455,72 @@ def render_opponent_summary(df, rows, serves):
 
 def render_swing_summary(by_outcome, n_sets, team_name):
     """Testo: dove la squadra va sotto nei set persi, dove guadagna nei set
-    vinti, cosa cambia di più tra gli uni e gli altri (src.opponent_summary.swing_summary)."""
-    sw = swing_summary(by_outcome, n_sets)
-
-    def items(pairs):
-        return ", ".join(f"**{SWING_CAUSES[c]}** ({x:+.1f})" for c, x in pairs)
-
-    lines = []
-    if n_sets["persi"]:
-        lines.append(f"- **Nei set persi** ({n_sets['persi']}) va sotto soprattutto in {items(sw['persi'])}."
-                     if sw["persi"] else f"- **Nei set persi** ({n_sets['persi']}) non va sotto in modo netto in "
-                                         "nessuna voce: perde di poco un po' ovunque.")
-    if n_sets["vinti"]:
-        lines.append(f"- **Nei set vinti** ({n_sets['vinti']}) guadagna soprattutto in {items(sw['vinti'])}."
-                     if sw["vinti"] else f"- **Nei set vinti** ({n_sets['vinti']}) non guadagna in modo netto in "
-                                         "nessuna voce: vince di poco un po' ovunque.")
-    if sw["differenza"]:
-        top = [t for t in sw["differenza"] if t[3] >= 0.3][:2]
-        if top:
-            parts = [f"**{SWING_CAUSES[c]}** (da {p:+.1f} nei set persi a {v:+.1f} in quelli vinti, {d:.1f} punti a set "
-                     "di differenza)" for c, v, p, d in top]
-            lines.append("- **Cosa sposta l'ago della bilancia**: " + " e ".join(parts) + ".")
+    vinti, cosa cambia di più tra gli uni e gli altri (src.opponent_summary.swing_sentences)."""
+    lines = swing_sentences(by_outcome, n_sets)
     if lines:
-        st.markdown(f"**{team_name}**, saldo per set rispetto agli avversari (punti fatti meno punti concessi per "
-                    "quella causa; per gli errori: punti regalati dagli avversari meno punti regalati da lei):\n"
-                    + "\n".join(lines))
+        st.markdown(f"**{team_name}**, {SWING_INTRO}:\n" + "\n".join(f"- {line}" for line in lines))
+
+
+def build_opponent_report_data(team_name, ms, combined, all_rows, serves, note):
+    """I dati del report PDF sull'avversario (src.opponent_report_pdf), dalle
+    stesse funzioni della tab."""
+    partite = []
+    for m in ms:
+        (a, b), parziali = _team_score(m)
+        incompleti = any(not ok for _, _, _, ok in m["header"]["set_scout"])
+        partite.append({"data": m["header"]["data"], "avversario": m["nome_loro"], "set": f"{a}-{b}" + ("*" if incompleti else ""),
+                        "parziali": "  ".join(f"{x}-{y}" for x, y in parziali), "vinta": a > b, "parziale": incompleti})
+    tests = cached_setter_tests(all_rows)
+    by_outcome, n_sets = points_by_set_outcome([(m["points_by_set"], m["set_results"]) for m in ms])
+    kpi_team, kpi_opp = set_kpis(combined["noi"]), set_kpis(combined["loro"])
+    kpi = []
+    for x in SET_KPI_PERCENT + ["Errori", "Punti"]:
+        va, vb = _kpi_value(kpi_team, "Squadra", TOTAL_LABEL, x), _kpi_value(kpi_opp, "Squadra", TOTAL_LABEL, x)
+        pct = x in SET_KPI_PERCENT
+        kpi.append((SET_KPI_LABELS[x], _fmt_cell(va, pct), _fmt_cell(vb, pct), (va, vb) if pct else (None, None)))
+    totals = setter_table({"noi": combined["noi"]})
+    setters = {}
+    for s_ in sorted({s_ for m in ms for s_ in m["setters"]}):
+        rows = [(f"{m['header']['data']} vs {m['nome_loro']}", m["setters"][s_].iloc[-1]) for m in ms if s_ in m["setters"]]
+        setters[s_] = rows + [("Totale", totals[s_].iloc[-1])]
+    pts = pd.concat([m["points"] for m in ms], ignore_index=True)
+    gen = pts[pts["causa"] == "Punti generici"].groupby("squadra")["n"].sum()
+    return {
+        "squadra": team_name, "generato": pd.Timestamp.now().strftime("%d/%m/%Y"), "note": note,
+        "partite": partite,
+        "riassunto": {
+            "peggior": worst_receiver(combined["noi"]), "miglior": best_receiver(combined["noi"]),
+            "battitore": dangerous_server(serves), "finali": clutch_target(all_rows),
+            "palleggiatore": [(s_, k, r["scostamenti"][0]) for (s_, k), r in tests.items()
+                              if r and r["significativo"] and r["scostamenti"]],
+        },
+        "bilancia": {"frasi": swing_sentences(by_outcome, n_sets), "righe": balance_rows(by_outcome, n_sets),
+                     "n_sets": n_sets},
+        "kpi": kpi, "palleggiatori": setters, "distribuzioni": distributions_by_setter(all_rows),
+        "test_palleggiatori": tests, "ricevitori": cached_positive_by_receiver(all_rows),
+        "giocatori": player_table_from_df(combined["noi"], int(gen.get("noi", 0)), int(gen.get("loro", 0))),
+    }
+
+
+def render_opponent_report_button(team_key, team_name, ms, combined, all_rows, serves):
+    """Note facoltative, generazione e download del report PDF sull'avversario."""
+    with st.expander("📄 Report da stampare prima della partita"):
+        st.caption("PDF con il riassunto, cosa sposta l'ago della bilancia, i palleggiatori (con le tre griglie e le "
+                   "tendenze), chi riceve da R+ / R#, la squadra per fondamentale, le partite e il tabellino, sulle "
+                   "partite selezionate qui sopra. Pagine strette: si leggono sul telefono e si stampano su A4 "
+                   "adattate alla pagina.")
+        note = st.text_area("Note (in apertura del report)", key=f"opp_report_note_{team_key}", height=110,
+                            placeholder="Come vogliamo battere, chi mettere sotto pressione, cosa aspettarsi...")
+        if st.button("Genera PDF", key=f"opp_report_btn_{team_key}"):
+            with st.spinner("Generazione del report..."):
+                pdf = build_opponent_report_pdf(build_opponent_report_data(team_name, ms, combined, all_rows, serves, note))
+            st.session_state["opp_report_pdf"] = (team_key, tuple(m["header"]["data"] for m in ms), pdf)
+        stored = st.session_state.get("opp_report_pdf")
+        if stored and stored[0] == team_key and stored[1] == tuple(m["header"]["data"] for m in ms):
+            st.download_button("⬇️ Scarica PDF", data=stored[2], mime="application/pdf",
+                               file_name=f"Report avversario {team_name} {pd.Timestamp.now():%d-%m-%Y}.pdf",
+                               key=f"opp_report_dl_{team_key}")
+            st.caption("Se cambi le note o le partite, premi di nuovo \"Genera PDF\" prima di scaricarlo.")
 
 
 def _team_score(m):
@@ -2465,7 +2554,8 @@ def render_opponent_section(season, version):
     c1, c2 = st.columns([1, 2])
     with c1:
         team_key = st.selectbox("Squadra", sorted(teams, key=lambda k: display[k].casefold()), key="opp_team",
-                                format_func=lambda k: f"{display[k]} ({len(teams[k]['matches'])} partite)")
+                                format_func=lambda k: f"{display[k]} ({len(teams[k]['matches'])} "
+                                                      f"{'partita' if len(teams[k]['matches']) == 1 else 'partite'})")
     entries = sorted(teams[team_key]["matches"], key=lambda en: _date_key(en[0]["data"]))
     labels = {en[0]["path"]: f"{en[0]['data'] or '?'} · {en[0]['teams'].get('*', '?')} - {en[0]['teams'].get('a', '?')}"
               for en in entries}
@@ -2484,7 +2574,9 @@ def render_opponent_section(season, version):
     combined = {key: combine_matches([m[key] for m in ms]) for key in ("noi", "loro")}
     all_rows = pd.concat([m["rows"] for m in ms], ignore_index=True)
 
-    render_opponent_summary(combined["noi"], all_rows, pd.concat([m["serves"] for m in ms], ignore_index=True))
+    serves = pd.concat([m["serves"] for m in ms], ignore_index=True)
+    render_opponent_summary(combined["noi"], all_rows, serves)
+    render_opponent_report_button(team_key, team_name, ms, combined, all_rows, serves)
 
     # 1) partite
     st.subheader("Partite")

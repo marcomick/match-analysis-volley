@@ -51,7 +51,7 @@ Test di significatività (2026-10-25, richieste dell'utente):
 import numpy as np
 import pandas as pd
 
-from src.dvw import BALL_TYPES, HIT_TYPES, SETTER_ROLE, side_actions
+from src.dvw import BALL_TYPES, HIT_TYPES, SETTER_ROLE, _cognome_by_number, side_actions
 from src.efficiency import separate_attack_types
 
 # Griglia delle zone dalla rete verso il fondo, da sinistra a destra per chi attacca.
@@ -188,18 +188,27 @@ def attack_rows(parsed, side, match_label=""):
     tipo_alzata, tipo_colpo, voto, fase ('Side-out'/'Contrattacco'),
     free_ball, ricezione (voto della ricezione, side-out), ricevitore
     ('<numero> <cognome>' di chi ha ricevuto, side-out), tipo_ricevitore
-    (RECEIVER_TYPES o None, side-out), difesa (voto
+    (RECEIVER_TYPES o None, side-out), martello_davanti ('<numero>
+    <cognome>' dello schiacciatore in prima linea al momento della
+    ricezione, se ce n'è esattamente uno; side-out), difesa (voto
     della difesa da cui parte il contrattacco, se c'è), situazione (chiave
     di SITUATIONS o None), punti_noi/punti_loro e diff_punteggio (prima
     dell'attacco), situazione_punteggio.
     """
     df = side_actions(parsed, side)
     roles = _roles(parsed, side)
+    names = {n: c for (sq, n), c in _cognome_by_number(parsed["players"]).items() if sq == side}
+    lineup_cols = [f"{'Casa' if side == '*' else 'Ospiti'} P{z}" for z in (2, 3, 4)]
     so, fb, _ = separate_attack_types(df, rec_vote=ALL_GRADES)
     so_idx, fb_idx = set(so.index), set(fb.index)
     own_score, opp_score = ("Punti Locali", "Punti Ospiti") if side == "*" else ("Punti Ospiti", "Punti Locali")
 
-    # Rally -> (Tipo, Voto, giocatore, tipo di ricevitore) dell'ultima ricezione/difesa vista
+    def front_outside(r):
+        outs = [int(n) for n in (r[c] for c in lineup_cols) if pd.notna(n) and roles.get(int(n)) == ROLE_OUTSIDE]
+        return f"{outs[0]} {names.get(outs[0])}" if len(outs) == 1 else None
+
+    # Rally -> (Tipo, Voto, giocatore, tipo di ricevitore, martello in prima
+    # linea) dell'ultima ricezione/difesa vista
     last_touch = {}
     rows = []
     for i, r in df.iterrows():
@@ -208,7 +217,7 @@ def attack_rows(parsed, side, match_label=""):
             known = pd.notna(r["Numero"])
             player = f"{int(r['Numero'])} {r['Cognome']}" if known else None
             rtype = receiver_type(roles.get(int(r["Numero"])), _is_front(r["Posizione Giocatore"])) if known else None
-            last_touch[r["Rally"]] = (tipo, r["Voto"], player, rtype)
+            last_touch[r["Rally"]] = (tipo, r["Voto"], player, rtype, front_outside(r))
             continue
         if tipo != "attacco" or pd.isna(r["Numero"]):
             continue
@@ -240,6 +249,7 @@ def attack_rows(parsed, side, match_label=""):
             "ricezione": received[1] if received else None,
             "ricevitore": received[2] if received else None,
             "tipo_ricevitore": received[3] if received else None,
+            "martello_davanti": received[4] if received else None,
             "difesa": prev[1] if not is_so and prev and prev[0] != "ricezione" else None,
             "situazione": _situation(is_so, i in fb_idx, received[1] if received else None),
             "punti_noi": int(r[own_score]), "punti_loro": int(r[opp_score]),
@@ -515,3 +525,52 @@ def test_setter_situations(rows, n_perm=N_PERMUTATIONS):
             res["quote"] = (100 * in_key["zona"].value_counts(normalize=True)).to_dict()
             results[(setter, key)] = res
     return _holm(results)
+
+
+# Domanda dell'utente (2026-10-25): solo sulle ricezioni positive (R+ e R#
+# insieme), la distribuzione cambia a seconda di chi riceve tra libero,
+# martello in prima linea e martello in seconda linea? E il palleggiatore
+# serve il martello di prima linea quando è lui a ricevere?
+POSITIVE_GRADES = ("#", "+")
+
+
+def positive_reception_by_receiver(rows, n_perm=N_PERMUTATIONS, seed=0):
+    """
+    Side-out dopo ricezione + o # (insieme), per tipo di ricevitore
+    (RECEIVER_TYPES). Ritorna {
+      'per_tipo': {tipo: {stats (zone_stats), n, eff}},
+      'test': chi quadro zona x tipo di ricevitore con p-value per
+        permutazione (_independence_test, categorie con almeno
+        MIN_PER_CATEGORY attacchi; None se i dati non bastano), una sola
+        domanda decisa prima di guardare i dati: niente correzione per
+        confronti multipli,
+      'martello_davanti': quanto attacca lo schiacciatore di prima linea
+        quando riceve lui e quando riceve un altro (libero o martello di
+        seconda linea): {riceve_lui: (attacchi suoi, totale), riceve_altro:
+        (attacchi suoi, totale), p} con p = permutazione sulla tabella 2x2
+        (None se uno dei due gruppi ha meno di MIN_PER_CATEGORY attacchi)}.
+    """
+    pos = rows[(rows["fase"] == "Side-out") & rows["ricezione"].isin(POSITIVE_GRADES) & rows["tipo_ricevitore"].notna()]
+    per_tipo = {t: {"stats": zone_stats(sub), "n": len(sub), "eff": _eff(sub)}
+                for t, sub in ((t, pos[pos["tipo_ricevitore"] == t]) for t in RECEIVER_TYPES)}
+    known = pos[pos["zona"].notna()]
+    counts = known["tipo_ricevitore"].value_counts()
+    cats = [t for t in RECEIVER_TYPES if counts.get(t, 0) >= MIN_PER_CATEGORY]
+    sub = known[known["tipo_ricevitore"].isin(cats)]
+    test = _independence_test(sub, "tipo_ricevitore", cats, n_perm=n_perm, seed=seed) \
+        if len(cats) >= 2 and len(sub) >= MIN_TOTAL else None
+
+    fo = pos[pos["martello_davanti"].notna()]
+    received_self = (fo["ricevitore"] == fo["martello_davanti"]).to_numpy()
+    attacked = (fo["attaccante"] == fo["martello_davanti"]).to_numpy()
+    front = None
+    if received_self.sum() >= MIN_PER_CATEGORY and (~received_self).sum() >= MIN_PER_CATEGORY:
+        def gap(labels):
+            return attacked[labels].mean() - attacked[~labels].mean()
+        obs = gap(received_self)
+        rng = np.random.default_rng(seed)
+        perm = np.array([gap(rng.permutation(received_self)) for _ in range(n_perm)])
+        p = (1 + (np.abs(perm) >= abs(obs) - 1e-12).sum()) / (n_perm + 1)
+        front = {"riceve_lui": (int(attacked[received_self].sum()), int(received_self.sum())),
+                 "riceve_altro": (int(attacked[~received_self].sum()), int((~received_self).sum())), "p": float(p)}
+    return {"per_tipo": per_tipo, "test": test, "martello_davanti": front}
