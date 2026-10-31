@@ -6,8 +6,8 @@ Ogni azione vale in punti quanto sposta la probabilità di vincere lo scambio
 (tabella in config/mvp.json, calcolata su tutti i .dvw e arrotondata a 0,05):
 muro punto +0,65, ace +0,60, attacco punto +0,40 (+0,50 da free ball),
 ricezione # o + +0,15 (alla pari, spinta anche al libero), ...; invasione a
-muro -1,00, errore d'attacco su palla alta -0,75 (solo dove il tipo di
-alzata è rilevato), errore d'attacco -0,60, murato -0,50, ...; l'attacco
+muro -1,00, errore d'attacco su palla alta -0,75 (tipo di palla rilevato o
+stimato, vedi src.dvw._infer_ball_type), errore d'attacco -0,60, murato -0,50, ...; l'attacco
 difeso (-) e la battuta facile (-) valgono 0, così chi attacca tanto non
 viene penalizzato. Muro e difesa sono confrontati con "attacco avversario in
 gioco": un muro o una difesa non segnati valgono 0.
@@ -36,6 +36,9 @@ from src.efficiency import separate_attack_types
 from src.set_analysis import BALL_FAST, BALL_HIGH, entity_key
 
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "mvp.json"
+# Sotto questo numero di azioni niente percentuali nei testi (un'efficienza
+# su pochi attacchi non dice niente).
+MIN_EVENTS_FOR_PERCENT = 10
 FUNDAMENTALS = ["battuta", "ricezione", "attacco", "muro", "difesa", "alzata"]
 FUNDAMENTAL_LABELS = {"battuta": "Battuta", "ricezione": "Ricezione", "attacco": "Attacco", "muro": "Muro",
                       "difesa": "Difesa", "alzata": "Alzata"}
@@ -45,13 +48,6 @@ SETTER_SITUATION_GRADES = ["#", "+", "!"]  # ricezioni da cui conta l'attacco al
 def load_mvp_config(path=CONFIG_PATH):
     with open(path, encoding="utf-8") as f:
         return json.load(f)
-
-
-def _ball_type_recorded(attacks):
-    """Il tipo di alzata è stato rilevato nella partita? (Nei .dvw senza
-    rilevazione tutti gli attacchi risultano palla alta, tranne quelli dei
-    centrali, quick d'ufficio.)"""
-    return attacks["Tipo palla"].isin([b for b in BALL_FAST if b != "Q"]).any()
 
 
 def _sets_played(source):
@@ -87,10 +83,10 @@ def match_mvp(source, config=None):
     so, fb, _ = separate_attack_types(source["noi"], rec_vote=SETTER_SITUATION_GRADES)
     fb_points = fb[(fb["Tipo"] == "attacco") & (fb["Voto"] == "#")].index.intersection(df.index)
     df.loc[fb_points, "valore"] = cfg["attacco_punto_free_ball"]
+    # tipo di palla rilevato o, dove manca, stimato in lettura (src.dvw._infer_ball_type)
     attacks = df[df["Tipo"] == "attacco"]
-    if _ball_type_recorded(attacks):
-        high_err = attacks[(attacks["Voto"] == "=") & attacks["Tipo palla"].isin(BALL_HIGH)].index
-        df.loc[high_err, "valore"] = cfg["errore_attacco_palla_alta"]
+    high_err = attacks[(attacks["Voto"] == "=") & attacks["Tipo palla"].isin(BALL_HIGH)].index
+    df.loc[high_err, "valore"] = cfg["errore_attacco_palla_alta"]
 
     df["numero"] = df["Numero"].astype(int)
     contrib = df.pivot_table(index="numero", columns="Tipo", values="valore", aggfunc="sum", fill_value=0.0)
@@ -154,15 +150,23 @@ def fundamental_text(row, fundamental):
     tot = sum(c(v) for v in ("#", "+", "!", "-", "/", "="))
     if fundamental == "attacco":
         pt, err, mur = c("#"), c("="), c("/")
-        eff = 100 * (pt - err - mur) / tot if tot else 0
-        return (f"{_n(pt, 'punto', 'punti')} su {_n(tot, 'attacco', 'attacchi')}, {_n(err, 'errore', 'errori')}, "
-                f"{_n(mur, 'murata', 'murate')}, efficienza {eff:.0f}%")
+        text = (f"{_n(pt, 'punto', 'punti')} su {_n(tot, 'attacco', 'attacchi')}, {_n(err, 'errore', 'errori')}, "
+                f"{_n(mur, 'murata', 'murate')}")
+        if tot >= MIN_EVENTS_FOR_PERCENT:
+            text += f", efficienza {100 * (pt - err - mur) / tot:.0f}%"
+        return text
     if fundamental == "battuta":
-        return f"{c('#')} ace su {_n(tot, 'battuta', 'battute')}, {_n(c('='), 'errore', 'errori')}"
+        pressure = c("+") + c("!") + c("/")
+        return (f"{c('#')} ace su {_n(tot, 'battuta', 'battute')}"
+                + (f", {_n(pressure, 'che mette', 'che mettono')} in difficoltà" if pressure else "")
+                + f", {_n(c('='), 'errore', 'errori')}")
     if fundamental == "ricezione":
-        eff = 100 * (c("#") + c("+") - c("/") - c("=")) / tot if tot else 0
-        return (f"{_n(tot, 'ricezione', 'ricezioni')}, {_n(c('#'), 'perfetta', 'perfette')}, "
-                f"{_n(c('='), 'ace subito', 'ace subiti')}, efficienza {eff:.0f}%")
+        # solo i conteggi, mai l'efficienza (indicazione dell'utente: "eff 100% su una ricezione è ridicolo")
+        parts = [(c("#"), "perfetta", "perfette"), (c("+"), "positiva", "positive"), (c("="), "ace subito", "ace subiti")]
+        detail = ", ".join(_n(k, one, many) for k, one, many in parts if k)
+        if tot == 1:
+            return f"1 ricezione {detail.split(' ', 1)[1]}" if detail else "1 ricezione"
+        return f"{_n(tot, 'ricezione', 'ricezioni')}" + (f": {detail}" if detail else "")
     if fundamental == "muro":
         parts = [_n(c("#"), "muro punto", "muri punto")]
         if c("+") + c("!"):
@@ -185,12 +189,15 @@ def fundamental_text(row, fundamental):
     return ""
 
 
-def mvp_highlights(row, n=3):
+def mvp_highlights(row, n=3, min_contribution=0.2):
     """I fondamentali che hanno pesato di più nel punteggio del giocatore:
-    [(etichetta, contributo, testo)], prima i contributi positivi."""
+    [(etichetta, contributo, testo)], prima i contributi positivi; quelli
+    sotto `min_contribution` solo se non c'è altro da dire."""
     contrib = sorted(((f, row[f]) for f in FUNDAMENTALS if abs(row[f]) >= 0.05), key=lambda x: -x[1])
     positive = [x for x in contrib if x[1] > 0]
     chosen = (positive or contrib)[:n]
+    relevant = [x for x in chosen if abs(x[1]) >= min_contribution]
+    chosen = relevant or chosen[:1]
     return [(FUNDAMENTAL_LABELS[f], v, fundamental_text(row, f)) for f, v in chosen]
 
 
@@ -287,8 +294,7 @@ def scoring_rules(config=None):
             if desc:
                 items.append((value, desc, FUNDAMENTAL_LABELS[fund]))
     items.append((cfg["attacco_punto_free_ball"], "Attacco punto dopo una free ball (A# da free ball)", "Attacco"))
-    items.append((cfg["errore_attacco_palla_alta"], "Errore in attacco su palla alta (A= su palla alta, "
-                  "solo dove il tipo di alzata è rilevato)", "Attacco"))
+    items.append((cfg["errore_attacco_palla_alta"], "Errore in attacco su palla alta (A= su palla alta)", "Attacco"))
     setter = cfg["palleggiatore"]
     by_fund = [(FUNDAMENTAL_LABELS[f], sorted([(v, d) for v, d, lab in items if lab == FUNDAMENTAL_LABELS[f]],
                                               key=lambda x: -x[0]))

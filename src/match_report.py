@@ -392,3 +392,174 @@ def match_header(source, official_result):
         "parziali": parziali, "data": parsed["data"], "risultato_completo": completo,
         "set_scout": [(s["numero_set"], s["punti_casa"], s["punti_ospiti"], s["completo"]) for s in parsed["sets"]],
     }
+
+
+# ---------------------------------------------------------------------------
+# Side-out per rotazione: come finiscono gli scambi iniziati con la battuta
+# avversaria (richiesta dell'utente, 2026-10-31: "la ricezione da sola non
+# sposta il punteggio, contano i punti fatti e persi"). Prima versione, da
+# rivedere con l'utente.
+# ---------------------------------------------------------------------------
+SIDE_OUT_OUTCOMES = [
+    # (chiave, etichetta, vinto)
+    ("primo_punto", "Punto in attacco dopo ricezione", True),
+    ("vinto_dopo", "Attacco dopo ricezione difeso, poi vinto", True),
+    ("err_battuta", "Errore in battuta loro", True),
+    ("vinto_altro", "Nessun attacco dopo ricezione, vinto", True),
+    ("ace", "Ace subito", False),
+    ("primo_errore", "Attacco dopo ricezione sbagliato o murato", False),
+    ("perso_dopo", "Attacco dopo ricezione difeso, poi perso", False),
+    ("perso_altro", "Nessun attacco dopo ricezione, perso", False),
+]
+SIDE_OUT_LABELS = {k: label for k, label, _ in SIDE_OUT_OUTCOMES}
+
+
+def _setter_rotation(row, prefix, setter_col):
+    """'P1'..'P6': la zona in cui sta il palleggiatore all'inizio dello scambio."""
+    for z in range(1, 7):
+        if pd.notna(row[setter_col]) and row[f"{prefix} P{z}"] == row[setter_col]:
+            return f"P{z}"
+    return None
+
+
+def side_out_rallies(source):
+    """
+    Uno per riga gli scambi in cui la squadra "noi" di `source` riceve (battuta
+    avversaria): set, rotazione (zona del palleggiatore a inizio scambio),
+    vinto, esito (chiave di SIDE_OUT_OUTCOMES), battitore avversario, voto
+    della ricezione, attacco dopo ricezione (attaccante, voto, tipo di palla)
+    e punteggio prima dello scambio e l'ultima azione dello scambio.
+    L'attacco dopo ricezione è la nostra prima occasione di attaccare (indicazione
+    dell'utente, 2026-10-31): l'azione subito dopo la nostra ricezione, con al
+    più una nostra alzata in mezzo. Qualunque altra azione prima (un tocco
+    avversario, la palla rimandata di là con la ricezione /) e l'attacco non
+    c'è: lo scambio finisce tra "nessun attacco dopo ricezione".
+    """
+    parsed, side, other = source["parsed"], source["side"], source["other"]
+    actions = parsed["actions"]
+    actions = actions[~actions["Tipo"].isin(["cambio configurazione"])]
+    prefix = "Casa" if side == "*" else "Ospiti"
+    setter_col = f"Palleggiatore {'casa' if side == '*' else 'ospite'}"
+    start = parsed["actions"].groupby("Rally").first()
+    rows = []
+    for r in parsed["rallies"].to_dict("records"):
+        a = actions[actions["Rally"] == r["Rally"]].reset_index(drop=True)
+        serve = a[a["Tipo"] == "battuta"]
+        if serve.empty or serve.iloc[0]["squadra"] != other:
+            continue
+        serve = serve.iloc[0]
+        won = r["vincitore"] == side
+        rec = a[(a["squadra"] == side) & (a["Tipo"] == "ricezione")]
+        first = None
+        if len(rec) and rec.iloc[0]["Voto"] != "/":  # dopo una ricezione / la palla va di là
+            k = rec.index[0] + 1
+            while k < len(a) and a.at[k, "squadra"] == side and a.at[k, "Tipo"] == "alzata":
+                k += 1
+            if k < len(a) and a.at[k, "squadra"] == side and a.at[k, "Tipo"] == "attacco":
+                first = a.loc[k]
+        if serve["Voto"] == "=":
+            outcome = "err_battuta"
+        elif len(rec) and rec.iloc[0]["Voto"] == "=":
+            outcome = "ace"
+        elif first is not None and first["Voto"] == "#":
+            outcome = "primo_punto"
+        elif first is not None and first["Voto"] in ("=", "/"):
+            outcome = "primo_errore"
+        elif first is not None:
+            outcome = "vinto_dopo" if won else "perso_dopo"
+        else:
+            outcome = "vinto_altro" if won else "perso_altro"
+        played = a[a["Tipo"] != "generico"]
+        last = (played if len(played) else a).iloc[-1]
+        noi_casa = side == "*"
+        rows.append({
+            "set": r["Numero Set"], "rally": r["Rally"],
+            "rotazione": _setter_rotation(start.loc[r["Rally"]], prefix, setter_col),
+            "vinto": won, "esito": outcome, "battitore": serve["Cognome"],
+            "ricezione": rec.iloc[0]["Voto"] if len(rec) else None,
+            "ricevitore": rec.iloc[0]["Cognome"] if len(rec) else None,
+            "attaccante": first["Cognome"] if first is not None else None,
+            "attacco": first["Voto"] if first is not None else None,
+            "palla": first["Tipo palla"] if first is not None else None,
+            "punti_noi": serve["Punti Locali"] if noi_casa else serve["Punti Ospiti"],
+            "punti_loro": serve["Punti Ospiti"] if noi_casa else serve["Punti Locali"],
+            "ultima": f"{'noi' if last['squadra'] == side else 'loro'}: {last['Tipo']} {last['Voto']}",
+        })
+    return pd.DataFrame(rows)
+
+
+def rotation_difference_test(rallies, n_perm=2000, seed=0):
+    """p-value per permutazione: la percentuale di cambi palla cambia tra le
+    rotazioni più di quanto farebbe il caso? (chi quadro rotazione x vinto,
+    rotazioni rimescolate). None con meno di 30 scambi o una sola rotazione."""
+    import numpy as np
+    d = rallies.dropna(subset=["rotazione"])
+    if len(d) < 30 or d["rotazione"].nunique() < 2:
+        return None
+    rot = pd.Categorical(d["rotazione"]).codes
+    won = d["vinto"].to_numpy().astype(int)
+    k = rot.max() + 1
+    n_rot = np.bincount(rot, minlength=k)
+    p_all = won.mean()
+    expected = n_rot * p_all
+
+    def stat(r):
+        w = np.bincount(r, weights=won, minlength=k)
+        return (((w - expected) ** 2) / (expected * (1 - p_all) + 1e-12)).sum()
+
+    observed = stat(rot)
+    rng = np.random.default_rng(seed)
+    hits = sum(stat(rng.permutation(rot)) >= observed - 1e-12 for _ in range(n_perm))
+    return (hits + 1) / (n_perm + 1)
+
+
+def _rec_eff(grades):
+    g = grades.dropna()
+    return 100 * (g.isin(["#", "+"]).sum() - g.isin(["/", "="]).sum()) / len(g) if len(g) else None
+
+
+def _attack_eff(votes):
+    v = votes.dropna()
+    return 100 * ((v == "#").sum() - v.isin(["=", "/"]).sum()) / len(v) if len(v) else None
+
+
+def side_out_breakdown(rallies, reference=None):
+    """
+    Per rotazione (righe di side_out_rallies): scambi, cambi palla vinti,
+    ricezioni per cambio palla, efficienza di ricezione e dell'attacco dopo
+    ricezione, e lo scarto della percentuale di cambi palla dalla media di
+    `reference` (default: gli stessi scambi) diviso in due parti che sommate
+    lo danno esattamente (decomposizione per voto di ricezione):
+    - parte_ricezione = somma_v (quota del voto v nella rotazione - quota
+      nella media) x cambi palla medi dopo il voto v: quanto pesa ricevere
+      peggio (ace compresi);
+    - parte_dopo = somma_v quota del voto v nella rotazione x (cambi palla
+      della rotazione dopo v - medi dopo v): quanto pesa, a parità di
+      ricezione, quello che facciamo dopo (attacco dopo ricezione e seguito).
+    Gli scambi senza nostra ricezione (errore in battuta loro) sono un voto a
+    sé. Valori in punti percentuali.
+    """
+    ref = rallies if reference is None else reference
+    grade = lambda d: d["ricezione"].fillna("nessuna")
+    ref_share = grade(ref).value_counts(normalize=True)
+    ref_win = ref.groupby(grade(ref))["vinto"].mean()
+    base = ref["vinto"].mean()
+    rows = []
+    for rot, d in rallies.groupby("rotazione"):
+        share = grade(d).value_counts(normalize=True)
+        win = d.groupby(grade(d))["vinto"].mean()
+        grades = ref_share.index.union(share.index)
+        s_r, s_ref = share.reindex(grades, fill_value=0), ref_share.reindex(grades, fill_value=0)
+        w_ref = ref_win.reindex(grades).fillna(base)
+        w_r = win.reindex(grades).fillna(w_ref)
+        won = int(d["vinto"].sum())
+        rows.append({
+            "rotazione": rot, "scambi": len(d), "vinti": won, "perc": 100 * d["vinto"].mean(),
+            "ricezioni_per_cambio": len(d) / won if won else None,
+            "ric_eff": _rec_eff(d["ricezione"]), "att_eff": _attack_eff(d["attacco"]),
+            "att_n": int(d["attacco"].notna().sum()),
+            "scarto": 100 * (d["vinto"].mean() - base),
+            "parte_ricezione": 100 * float(((s_r - s_ref) * w_ref).sum()),
+            "parte_dopo": 100 * float((s_r * (w_r - w_ref)).sum()),
+        })
+    return pd.DataFrame(rows).set_index("rotazione")

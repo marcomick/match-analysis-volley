@@ -188,7 +188,7 @@ def parse_dvw(file_path):
         "teams": teams,
         "players": players,
         "sets": _parse_sets(sections.get("SET", [])),
-        "actions": _middle_attacks_quick(actions, players),
+        "actions": _infer_ball_type(_middle_attacks_quick(actions, players)),
         "rallies": rallies,
     }
 
@@ -207,6 +207,59 @@ def _middle_attacks_quick(actions, players):
     middles = {k for k, p in roster_by_number(players).items() if p.ruolo == MIDDLE_ROLE}
     is_middle = np.array([(s, n) in middles for s, n in zip(actions["squadra"], actions["Numero"])])
     actions.loc[(actions["Tipo"] == "attacco") & is_middle, "Tipo palla"] = "Q"
+    return actions
+
+
+# Prima azione utile prima di un attacco (saltando solo le alzate della stessa
+# squadra): da quale ricezione/free ball nasce, per stimare il tipo di palla.
+INFERRED_FAST = "T"  # super: palla veloce alla banda
+INFERRED_HIGH = "H"
+
+
+def previous_touch(actions, i):
+    """Indice dell'azione che precede l'attacco all'indice `i` nello stesso
+    scambio, saltando solo le alzate della stessa squadra; None se non c'è."""
+    team, rally = actions.at[i, "squadra"], actions.at[i, "Rally"]
+    pos = actions.index.get_loc(i) - 1
+    while pos >= 0:
+        j = actions.index[pos]
+        if actions.at[j, "Rally"] != rally:
+            return None
+        tipo = actions.at[j, "Tipo"]
+        if tipo == "cambio configurazione" or (tipo == "alzata" and actions.at[j, "squadra"] == team):
+            pos -= 1
+            continue
+        return j
+    return None
+
+
+def _infer_ball_type(actions):
+    """
+    Tipo di palla stimato dove la squadra non l'ha rilevato (indicazione
+    dell'utente, 2026-10-31): se nessun attacco della squadra ha un tipo
+    diverso da alta (H) o primo tempo (Q, i centrali, vedi sopra), gli
+    attacchi non dei centrali diventano super ('T') se nascono da una
+    ricezione #, + o ! o da una free ball (difesa !), alta ('H') se nascono
+    da una ricezione -; gli altri (contrattacco) restano alta. Colonna 'Tipo
+    palla stimato' = True su tutti gli attacchi di quella squadra.
+    """
+    if actions.empty:
+        return actions
+    actions["Tipo palla stimato"] = False
+    for team in actions["squadra"].dropna().unique():
+        att = actions[(actions["squadra"] == team) & (actions["Tipo"] == "attacco")]
+        if att.empty or att["Tipo palla"].isin(["T", "U", "N", "F", "M", "O"]).any():
+            continue
+        actions.loc[att.index, "Tipo palla stimato"] = True
+        for i in att.index[att["Tipo palla"] != "Q"]:
+            j = previous_touch(actions, i)
+            if j is None or actions.at[j, "squadra"] != team:
+                continue
+            tipo, voto = actions.at[j, "Tipo"], actions.at[j, "Voto"]
+            if (tipo == "ricezione" and voto in ("#", "+", "!")) or (tipo == "difesa" and voto == "!"):
+                actions.at[i, "Tipo palla"] = INFERRED_FAST
+            elif tipo == "ricezione" and voto == "-":
+                actions.at[i, "Tipo palla"] = INFERRED_HIGH
     return actions
 
 

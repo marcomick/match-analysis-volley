@@ -262,13 +262,33 @@ def _header(pdf, header, nome_noi, nome_loro):
     pdf.set_xy(MARGIN, band_h + 3)
 
 
+COMMENT_LINE_H = 4.6
+COMMENT_BULLET_INDENT = 4.0
+
+
+def _comment_lines(comment):
+    """Le righe del commento come si scrivono nella casella: [(elenco, testo)],
+    con **testo** in grassetto e le righe che iniziano con "- " o "* " come
+    elenco puntato. Il trattino doppio diventerebbe sottolineato (markdown di
+    fpdf2): si riduce a uno."""
+    out = []
+    for line in comment.strip().splitlines():
+        stripped = line.strip()
+        bullet = stripped.startswith(("- ", "* "))
+        text = stripped[2:] if bullet else stripped
+        out.append((bullet, _t(text.replace("--", "-"))))
+    return out
+
+
 def _comment(pdf, comment):
     if not comment or not comment.strip():
         return
     pdf.set_font("helvetica", size=9)
-    text = _t(comment.strip())
-    lines = len(pdf.multi_cell(CONTENT_W - 7, 4.6, text, dry_run=True, output="LINES"))
-    h = lines * 4.6 + 5
+    width = CONTENT_W - 7
+    lines = _comment_lines(comment)
+    counts = [max(1, len(pdf.multi_cell(width - (COMMENT_BULLET_INDENT if b else 0), COMMENT_LINE_H, t or " ",
+                                        dry_run=True, output="LINES", markdown=True))) for b, t in lines]
+    h = sum(counts) * COMMENT_LINE_H + 5
     _section_title(pdf, "Il commento", keep_with=min(h, 40))
     pdf.set_font("helvetica", size=9)
     _ensure_space(pdf, h)
@@ -277,8 +297,17 @@ def _comment(pdf, comment):
     pdf.rect(MARGIN, y, CONTENT_W, h, style="F", round_corners=True, corner_radius=1.5)
     pdf.set_fill_color(*_rgb(NOI_COLOR))
     pdf.rect(MARGIN, y, 1.4, h, style="F")
-    pdf.set_xy(MARGIN + 4, y + 2.5)
-    pdf.multi_cell(CONTENT_W - 7, 4.6, text, new_x="LMARGIN", new_y="NEXT")
+    pdf.set_y(y + 2.5)
+    for bullet, text in lines:
+        x = MARGIN + 4 + (COMMENT_BULLET_INDENT if bullet else 0)
+        if bullet:
+            pdf.set_fill_color(*_rgb(INK))
+            pdf.ellipse(MARGIN + 4.6, pdf.get_y() + COMMENT_LINE_H / 2 - 0.55, 1.1, 1.1, style="F")
+        pdf.set_x(x)
+        pdf.set_left_margin(x)
+        pdf.multi_cell(width - (x - MARGIN - 4), COMMENT_LINE_H, text or " ", new_x="LMARGIN", new_y="NEXT",
+                       markdown=True)
+        pdf.set_left_margin(MARGIN)
     pdf.set_y(y + h + 1)
 
 
@@ -1154,4 +1183,113 @@ def build_match_report_pdf(header, comment, sources, points_by_set, comparison, 
     _rankings(pdf, rankings, n_partite_stagione, ranking_mins)
     if mvp:
         _mvp_appendix(pdf, scoring_rules())
+    return bytes(pdf.output())
+
+
+# ---------------------------------------------------------------------------
+# Le regole del punteggio MVP in una pagina sola, da mandare al gruppo
+# (richiesta dell'utente, 2026-10-31): stesse regole dell'appendice, su due
+# colonne in A5 verticale.
+# ---------------------------------------------------------------------------
+SHEET_W, SHEET_H, SHEET_M = 148, 210, 7
+SHEET_ROW_H, SHEET_FONT, SHEET_PILL_W = 4.3, 7.4, 11.5
+
+
+def _sheet_heading(pdf, x, w, title):
+    pdf.set_xy(x, pdf.get_y() + 1.2)
+    pdf.set_font("helvetica", "B", 8.6)
+    pdf.set_text_color(*_rgb(NAVY))
+    pdf.cell(w, 4.8, _t(title))
+    y = pdf.get_y() + 4.8
+    pdf.set_draw_color(*_rgb(GRID))
+    pdf.line(x, y, x + w, y)
+    pdf.set_y(y + 0.6)
+
+
+def _sheet_rules(pdf, x, w, title, rows):
+    _sheet_heading(pdf, x, w, title)
+    for value, desc in rows:
+        y = pdf.get_y()
+        _value_pill(pdf, x, y + 0.3, value, w=SHEET_PILL_W, h=3.7)
+        pdf.set_font("helvetica", size=SHEET_FONT)
+        pdf.set_text_color(*_rgb(INK if value else MUTED))
+        pdf.set_xy(x + SHEET_PILL_W + 2, y + 0.3)
+        pdf.set_left_margin(x + SHEET_PILL_W + 2)
+        pdf.multi_cell(w - SHEET_PILL_W - 2, 3.7, _t(desc), new_x="LMARGIN", new_y="NEXT", align="L")
+        pdf.set_left_margin(SHEET_M)
+        pdf.set_y(max(pdf.get_y() + 0.6, y + SHEET_ROW_H))
+    pdf.set_text_color(*_rgb(INK))
+
+
+def _sheet_text(pdf, x, w, title, paragraphs):
+    _sheet_heading(pdf, x, w, title)
+    pdf.set_left_margin(x)
+    for p in paragraphs:
+        pdf.set_x(x)
+        pdf.set_font("helvetica", size=SHEET_FONT)
+        pdf.multi_cell(w, 3.6, _t(p), new_x="LMARGIN", new_y="NEXT", markdown=True, align="L")
+        pdf.ln(0.8)
+    pdf.set_left_margin(SHEET_M)
+
+
+def build_mvp_rules_pdf(rules):
+    """Una pagina con le regole del punteggio MVP (src.mvp.scoring_rules)."""
+    pdf = FPDF(format=(SHEET_W, SHEET_H))
+    pdf.set_margins(SHEET_M, SHEET_M, SHEET_M)
+    pdf.set_auto_page_break(False)
+    pdf.add_page()
+    content_w = SHEET_W - 2 * SHEET_M
+    pdf.set_fill_color(*_rgb(NAVY))
+    pdf.rect(0, 0, SHEET_W, 15, style="F")
+    _trophy(pdf, SHEET_M, 3, 9)
+    pdf.set_xy(SHEET_M + 11, 3.5)
+    pdf.set_font("helvetica", "B", 13)
+    pdf.set_text_color(*WHITE)
+    pdf.cell(0, 8, _t("Come si calcola il punteggio MVP"))
+    pdf.set_text_color(*_rgb(MUTED))
+    pdf.set_xy(SHEET_M, 17.5)
+    pdf.set_font("helvetica", size=7.4)
+    pdf.multi_cell(content_w, 3.6, _t(
+        "Ogni azione vale quanto cambia la probabilità di vincere lo scambio (calcolata su tutte le partite "
+        "rilevate). Il punteggio è la somma delle azioni; l'MVP è chi ha il punteggio più alto."),
+        new_x="LMARGIN", new_y="NEXT", align="L")
+    y = pdf.get_y() + 1.2
+    x = SHEET_M
+    for value, label in ((0.4, "guadagna"), (-0.6, "perde"), (0, "non conta")):
+        _value_pill(pdf, x, y, value, w=SHEET_PILL_W, h=3.7)
+        pdf.set_xy(x + SHEET_PILL_W + 1.5, y)
+        pdf.set_font("helvetica", size=7.2)
+        pdf.set_text_color(*_rgb(MUTED))
+        pdf.cell(20, 3.7, label)
+        x += 34
+    pdf.set_text_color(*_rgb(INK))
+    top = y + 5.5
+
+    col_w = (content_w - 6) / 2
+    blocks = dict(rules["per_fondamentale"])
+    left, right = ["Battuta", "Ricezione", "Attacco"], ["Muro", "Difesa", "Alzata"]
+    pdf.set_y(top)
+    for title in left:
+        if title in blocks:
+            _sheet_rules(pdf, SHEET_M, col_w, title, blocks[title])
+    x_right = SHEET_M + col_w + 6
+    pdf.set_y(top)
+    for title in right:
+        if title in blocks:
+            _sheet_rules(pdf, x_right, col_w, title, blocks[title])
+
+    q, media, k = rules["quota"], rules["media"], rules["set_fittizi"]
+    n_ex, atteso = 40, rules["media"] * 40
+    _sheet_text(pdf, x_right, col_w, "Palleggiatore", [
+        f"Oltre alle sue azioni guadagna **{_num(q)}** per ogni punto e perde **{_num(q)}** per ogni errore o murata "
+        f"dei suoi attaccanti (dopo ricezione #, + o ! e free ball), ma solo **sopra o sotto il solito**: in media "
+        f"un attacco vale {_num(media)}.",
+        f"Esempio: {n_ex} palloni alzati, di solito +{_num(atteso, 1)}. Se i suoi attaccanti fanno +14 guadagna "
+        f"**+{_num((14 - atteso) * q)}**, se fanno +4 perde **{_num((atteso - 4) * q)}**.",
+    ])
+    _sheet_text(pdf, x_right, col_w, "Chi gioca meno set", [
+        f"Un punteggio positivo diventa **totale x (set della partita + {k}) / (set giocati + {k})**: "
+        "può vincere anche chi entra a partita in corso.",
+        f"Esempio: ultimi 2 set di 5 con +3,00 -> **+{_num(3.0 * (5 + k) / (2 + k))}**.",
+    ])
     return bytes(pdf.output())

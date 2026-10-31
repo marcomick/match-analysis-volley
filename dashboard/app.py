@@ -120,6 +120,11 @@ from src.efficiency import (
     export_set_tabellino_to_xlsx,
 )
 from src.match_report import (
+    SIDE_OUT_LABELS,
+    SIDE_OUT_OUTCOMES,
+    rotation_difference_test,
+    side_out_breakdown,
+    side_out_rallies,
     POINT_SOURCE_COLORS_DARK,
     POINT_SOURCE_COLORS_LIGHT,
     POINT_SOURCES,
@@ -140,7 +145,7 @@ from src.match_report import (
     side_out_by_reception,
     team_comparison,
 )
-from src.match_report_pdf import build_match_report_pdf
+from src.match_report_pdf import build_match_report_pdf, build_mvp_rules_pdf
 from src.mvp import (
     FUNDAMENTAL_LABELS, FUNDAMENTALS, match_mvp, mvp_by_match_long, mvp_highlights, scoring_rules, season_mvp,
 )
@@ -1377,6 +1382,7 @@ def load_match_view(file_path, official_result, version):
         "setters": setter_table(source),
         "players": player_table(source),
         "dfs": {"noi": source["noi"], "loro": source["loro"]},
+        "side_out": side_out_rallies(source),
     }
 
 
@@ -1782,7 +1788,201 @@ def render_match_mvp(match, version):
     st.dataframe(mvp_display_table(mvp), hide_index=True, width="stretch", height=35 * (len(mvp) + 1) + 3)
     with st.expander("Come si guadagnano e si perdono i punti MVP"):
         render_mvp_rules()
+        st.download_button("⬇️ Le regole in una pagina (PDF, da mandare al gruppo)",
+                           data=build_mvp_rules_pdf(scoring_rules()), file_name="Punteggio MVP.pdf",
+                           mime="application/pdf", key="mvp_rules_pdf")
 
+
+
+ROTATIONS = [f"P{z}" for z in range(1, 7)]
+
+
+def _pp(v):
+    """Punti percentuali con segno e colore: verde se aiuta, rosso se pesa."""
+    color = "#1a7f37" if v >= 3 else "#cf222e" if v <= -3 else "inherit"
+    return f"<b style='color:{color}'>{'0' if round(v) == 0 else f'{v:+.0f}'}</b>"
+
+
+def _side_out_tiles_html(rallies, scope="della partita nei set scelti"):
+    """Il bilancio di ogni rotazione: quante ricezioni servono per fare un
+    cambio palla (e quindi ruotare), i cambi palla vinti su scambi giocati e
+    lo scarto dalla media (`scope`: di cosa) diviso tra ricezione e quello
+    che facciamo dopo la ricezione (src.match_report.side_out_breakdown)."""
+    b = side_out_breakdown(rallies)
+    overall = rallies["vinto"].mean()
+    tiles = []
+    for rot in ROTATIONS:
+        if rot not in b.index:
+            tiles.append(f"<div class='so-tile'><div class='so-rot'>{rot}</div><div class='so-val'>-</div>"
+                         "<div class='so-sub'>nessuno scambio</div></div>")
+            continue
+        r = b.loc[rot]
+        per_so = f"{r['ricezioni_per_cambio']:.1f}".replace(".", ",") if r["vinti"] else "-"
+        diff = r["scarto"]
+        sign = "▲" if diff >= 5 else "▼" if diff <= -5 else "="
+        color = "#1a7f37" if diff >= 5 else "#cf222e" if diff <= -5 else "inherit"
+        rec_eff = "-" if pd.isna(r["ric_eff"]) else f"{r['ric_eff']:.0f}%"
+        att_eff = "-" if pd.isna(r["att_eff"]) else f"{r['att_eff']:.0f}%"
+        parts = {"la ricezione": r["parte_ricezione"], "il dopo ricezione": r["parte_dopo"]}
+        worst = min(parts, key=parts.get)
+        verdict = (f"pesa di più {worst}" if diff <= -5 and parts[worst] < 0 else
+                   f"aiuta di più {max(parts, key=parts.get)}" if diff >= 5 else "in media")
+        tiles.append(
+            f"<div class='so-tile'><div class='so-rot'>{rot}</div>"
+            f"<div class='so-val'>{per_so}<span class='so-of'> ricezioni per cambio palla</span></div>"
+            f"<div class='so-sub'>{int(r['vinti'])} cambi palla su {int(r['scambi'])} · {r['perc']:.0f}%</div>"
+            f"<div class='so-diff' style='color:{color}'>{sign} {diff:+.0f} punti % sulla media</div>"
+            f"<div class='so-split'>Ricezione {_pp(r['parte_ricezione'])} <span class='so-of'>(eff {rec_eff})</span><br>"
+            f"Dopo ricezione {_pp(r['parte_dopo'])} <span class='so-of'>(att {att_eff})</span></div>"
+            f"<div class='so-verdict'>{verdict}</div></div>"
+        )
+    return (
+        "<style>.so-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin:4px 0 4px}"
+        ".so-tile{border:1px solid rgba(128,128,128,.35);border-radius:8px;padding:8px 10px}"
+        ".so-rot{font-size:.8rem;opacity:.7;font-weight:600}.so-val{font-size:1.6rem;font-weight:700;line-height:1.2}"
+        ".so-of{font-size:.78rem;font-weight:400;opacity:.75}.so-sub{font-size:.8rem;opacity:.8}"
+        ".so-diff{font-size:.78rem;font-weight:600;margin-top:2px}"
+        ".so-split{font-size:.8rem;margin-top:6px;padding-top:5px;border-top:1px solid rgba(128,128,128,.25)}"
+        ".so-verdict{font-size:.75rem;font-style:italic;opacity:.8;margin-top:3px}</style>"
+        f"<div class='so-grid'>{''.join(tiles)}</div>"
+        f"<div style='font-size:.8rem;opacity:.7'>Media {scope}: {100 * overall:.0f}% "
+        f"({int(rallies['vinto'].sum())} cambi palla su {len(rallies)} ricezioni, "
+        + f"{len(rallies) / max(1, rallies['vinto'].sum()):.1f}".replace(".", ",")
+        + " ricezioni per cambio palla). Lo scarto di ogni rotazione dalla media è diviso in due parti che "
+        "sommate lo danno: <b>Ricezione</b> = quanto pesa ricevere peggio o meglio del solito (ace compresi), "
+        "<b>Dopo ricezione</b> = quanto pesa, a parità di voto di ricezione, vincere più o meno scambi del solito "
+        "(attacco dopo ricezione e seguito dello scambio). Tra parentesi l'efficienza di ricezione e quella "
+        "dell'attacco dopo ricezione.</div>"
+    )
+
+
+def _attack_eff_text(rallies):
+    v = rallies["attacco"].dropna()
+    return f"{100 * ((v == '#').sum() - v.isin(['=', '/']).sum()) / len(v):.0f}%" if len(v) else "-"
+
+
+def _side_out_detail_table(rallies):
+    """Rotazioni in riga, esiti in colonna (prima i vinti, poi i persi), con
+    il numero di scambi: fondo verde o rosso più intenso quanti più sono."""
+    won_keys = [k for k, _, w in SIDE_OUT_OUTCOMES if w]
+    lost_keys = [k for k, _, w in SIDE_OUT_OUTCOMES if not w]
+    counts = rallies.groupby(["rotazione", "esito"]).size().unstack(fill_value=0)
+    counts = counts.reindex(index=ROTATIONS, columns=won_keys + lost_keys, fill_value=0)
+    columns = pd.MultiIndex.from_tuples([("Vinti", SIDE_OUT_LABELS[k]) for k in won_keys]
+                                        + [("Persi", SIDE_OUT_LABELS[k]) for k in lost_keys])
+    shown = pd.DataFrame(counts.to_numpy(), index=ROTATIONS, columns=columns)
+    shown[("", "Saldo")] = counts[won_keys].sum(axis=1) - counts[lost_keys].sum(axis=1)
+    peak = max(1, int(counts.to_numpy().max()))
+
+    def style(_):
+        css = pd.DataFrame("", index=shown.index, columns=shown.columns)
+        for col in shown.columns:
+            group = col[0]
+            for rot in ROTATIONS:
+                v = shown.loc[rot, col]
+                if group == "Vinti" and v:
+                    css.loc[rot, col] = f"background-color: rgba(26,127,55,{0.12 + 0.55 * v / peak:.2f})"
+                elif group == "Persi" and v:
+                    css.loc[rot, col] = f"background-color: rgba(207,34,46,{0.12 + 0.55 * v / peak:.2f})"
+                elif group == "":
+                    css.loc[rot, col] = ("font-weight: bold; color: "
+                                         + ("#1a7f37" if v > 0 else "#cf222e" if v < 0 else "inherit"))
+        return css
+
+    formats = {c: (lambda v: f"{v:+d}" if v else "0") if c == ("", "Saldo") else (lambda v: str(v) if v else "")
+               for c in shown.columns}
+    return shown.style.apply(style, axis=None).format(formats)
+
+
+def render_side_out_rotations(view):
+    """Side-out per rotazione: come finiscono gli scambi iniziati con la
+    battuta avversaria (src.match_report.side_out_rallies)."""
+    st.subheader("Side-out per rotazione: come finiscono gli scambi in ricezione")
+    data = view["side_out"]
+    if data.empty:
+        st.info("Nessuno scambio in ricezione rilevato.")
+        return
+    sets = sorted(data["set"].unique())
+    chosen = st.multiselect("Set", sets, default=sets, key="partita_so_rot_sets", format_func=lambda s_: f"Set {s_}")
+    rallies = data[data["set"].isin(chosen)]
+    if rallies.empty:
+        st.info("Seleziona almeno un set.")
+        return
+    st.caption(
+        "Solo gli scambi iniziati con la battuta avversaria. Rotazione = zona del nostro palleggiatore a inizio "
+        "scambio; accanto, cambi palla vinti su scambi giocati. Attacco dopo ricezione = il nostro attacco subito "
+        "dopo la ricezione (al più con un'alzata in mezzo): dopo una ricezione / o un tocco avversario non c'è. "
+        "\"Difeso\" vuol dire che lo scambio è continuato. Pochi scambi per rotazione: indica dove guardare nel "
+        "video, non è una prova statistica."
+    )
+    st.html(_side_out_tiles_html(rallies))
+    st.markdown("**Come sono finiti gli scambi, rotazione per rotazione**")
+    st.dataframe(_side_out_detail_table(rallies), width="stretch")
+
+    c1, c2 = st.columns([3, 2])
+    with c1:
+        st.markdown("**Cambi palla per rotazione e set** (vinti su giocati · efficienza dell'attacco dopo ricezione)")
+        won = (data[data["vinto"]].groupby(["rotazione", "set"]).size().unstack(fill_value=0)
+               .reindex(index=ROTATIONS, columns=sets, fill_value=0))
+        played = data.groupby(["rotazione", "set"]).size().unstack(fill_value=0).reindex(index=ROTATIONS, columns=sets,
+                                                                                          fill_value=0)
+        won["Partita"], played["Partita"] = won.sum(axis=1), played.sum(axis=1)
+        cols = sets + ["Partita"]
+        names = {s_: f"Set {s_}" if s_ != "Partita" else s_ for s_ in cols}
+        att_eff = {s_: {rot: _attack_eff_text(data[(data["rotazione"] == rot)
+                                                   & ((data["set"] == s_) if s_ != "Partita" else True)])
+                        for rot in ROTATIONS} for s_ in cols}
+        shown = pd.DataFrame({names[s_]: [f"{int(w)}/{int(p)} · att {att_eff[s_][rot]}" if p else "-"
+                                          for rot, w, p in zip(ROTATIONS, won[s_], played[s_])] for s_ in cols},
+                             index=ROTATIONS)
+        average = data["vinto"].mean()
+
+        def style(_):
+            # rosso sotto la media della partita, verde sopra, più intenso quanto più si scosta
+            css = pd.DataFrame("", index=shown.index, columns=shown.columns)
+            for s_ in cols:
+                for r in ROTATIONS:
+                    p = played.loc[r, s_]
+                    if not p:
+                        continue
+                    diff = won.loc[r, s_] / p - average
+                    alpha = min(0.65, 0.1 + abs(diff) * 1.1)
+                    if abs(diff) >= 0.05:
+                        rgb = "26,127,55" if diff > 0 else "207,34,46"
+                        css.loc[r, names[s_]] = f"background-color: rgba({rgb},{alpha:.2f})"
+            css["Partita"] = css["Partita"] + "; font-weight: bold; border-left: 2px solid rgba(128,128,128,0.6)"
+            return css
+
+        st.dataframe(shown.style.apply(style, axis=None), width="stretch")
+        st.caption(f"Fondo verde sopra, rosso sotto la media dei cambi palla della partita ({100 * average:.0f}% su "
+                   "tutti i set). att = (punti - errori - murate) / attacchi dopo ricezione; - se non ce ne sono.")
+    with c2:
+        st.markdown("**I loro battitori** (set scelti)")
+        srv = rallies.groupby("battitore").agg(
+            scambi=("vinto", "size"), persi=("vinto", lambda v: int((~v).sum())),
+            ace=("esito", lambda e: int((e == "ace").sum())),
+        ).sort_values(["persi", "scambi"], ascending=False)
+        srv.columns = ["Scambi", "Persi da noi", "Ace"]
+        st.dataframe(srv, width="stretch")
+
+    with st.expander("Gli scambi uno per uno"):
+        rot = st.radio("Rotazione", ROTATIONS, horizontal=True, key="partita_so_rot_detail")
+        detail = rallies[rallies["rotazione"] == rot]
+        if detail.empty:
+            st.caption("Nessuno scambio in ricezione in questa rotazione nei set scelti.")
+        else:
+            st.dataframe(pd.DataFrame({
+                "Set": detail["set"], "Punteggio": [f"{a}-{b}" for a, b in zip(detail["punti_noi"], detail["punti_loro"])],
+                "Battuta": detail["battitore"],
+                "Ricezione": [f"{c or ''} {v or ''}".strip() or "-" for c, v in zip(detail["ricevitore"], detail["ricezione"])],
+                "Attacco dopo ricezione": [f"{a} {v} ({p})" if a else "-" for a, v, p in
+                                  zip(detail["attaccante"], detail["attacco"], detail["palla"])],
+                "Esito": [("✓ " if w else "✗ ") + SIDE_OUT_LABELS[e] for w, e in zip(detail["vinto"], detail["esito"])],
+                "Ultima azione": detail["ultima"],
+            }), hide_index=True, width="stretch")
+            st.caption("Punteggio nostro-loro prima dello scambio; tipo di palla: H alta, T super, Q primo tempo, "
+                       "N \"7\". Dove il tipo di alzata non è rilevato è stimato: super dopo ricezione #, + o ! e "
+                       "free ball, alta dopo ricezione -, primo tempo per i centrali.")
 
 
 def render_match_section(season, matches, match_label_lookup, version):
@@ -1829,6 +2029,9 @@ def render_match_section(season, matches, match_label_lookup, version):
 
     # 2a) i set rispetto alla nostra media
     render_sets_vs_baseline(season, matches, match, view, version)
+
+    # 2a-bis) side-out per rotazione
+    render_side_out_rotations(view)
 
     # 2b) primo attacco dopo ricezione, esiti a scelta
     st.subheader("Primo attacco dopo ricezione")
@@ -2109,8 +2312,9 @@ def render_match_report_section(season, matches, match_label_lookup, version):
         format_func=lambda ms: _match_option_label(ms, match_label_lookup), key="report_partita",
     )
     comment = st.text_area(
-        "Commento (in apertura del report)", key=f"report_commento_{seq}", height=130,
+        "Commento (dopo l'MVP e i punti per causa)", key=f"report_commento_{seq}", height=200,
         placeholder="Cosa è andato bene, cosa no, su cosa lavorare in settimana...",
+        help="Formattazione: **testo** in grassetto; le righe che iniziano con \"- \" diventano un elenco puntato.",
     )
     if st.button("📄 Genera PDF", key="report_genera"):
         match = by_seq[seq]
@@ -3240,14 +3444,16 @@ def render_ball_type_section(matches, selected_seqs, match_label_lookup):
     st.header("Palla alta e palla veloce")
     data = ball_type_pe_by_match([m for m in matches if m["match_seq"] in selected_seqs])
     if data.empty:
-        st.info("Serve lo scout .dvw (il tipo di alzata non c'è negli Excel 2025-2026): nessuna partita selezionata lo ha.")
+        st.info("Serve lo scout .dvw (il tipo di alzata non c'è negli Excel): nessuna partita selezionata lo ha.")
         return
     seqs = sorted(data["match_seq"].unique())
     volume = data.groupby("giocatore")["tot"].sum().sort_values(ascending=False)
     players = st.multiselect("Giocatori", list(volume.index), default=list(volume.index[:4]), key="ball_type_players")
     st.caption("p-e/m = punti − errori − murate negli attacchi del giocatore su quel tipo di alzata, partita per partita "
                "(passa il mouse per il numero di attacchi). Palla alta: alzata alta; palla veloce: super, quick (tutti "
-               "gli attacchi dei centrali) e \"7\". Mezza e altro fuori da entrambe.")
+               "gli attacchi dei centrali) e \"7\". Mezza e altro fuori da entrambe. Dove il tipo di alzata non è "
+               "rilevato (2025-2026, G1 San Paolo) è stimato: super dopo ricezione #, + o ! e free ball, alta dopo "
+               "ricezione - e in contrattacco.")
     if not players:
         return
     c1, c2 = st.columns(2)
@@ -3322,6 +3528,68 @@ def render_mvp_trend_section(matches, selected_seqs, match_label_lookup, version
     st.caption("Punteggio MVP di ogni partita (come si calcola: tab Partita) e la sua somma lungo la stagione, sulle "
                "partite selezionate con lo scout .dvw. Passa il mouse per i set giocati e il totale prima della "
                "correzione per i set.")
+
+
+@st.cache_data(show_spinner="Scambi in ricezione...")
+def load_side_out(file_path, version):
+    return side_out_rallies(load_report_source(file_path))
+
+
+def render_side_out_season(matches, selected_seqs, match_label_lookup, version):
+    """Side-out per rotazione sommato sulle partite scelte: dove siamo più
+    deboli in ricezione, accumulando i dati partita dopo partita."""
+    st.header("Side-out per rotazione, sulla stagione")
+    parts = []
+    for m in matches:
+        if m["match_seq"] in selected_seqs and str(m.get("file_path", "")).lower().endswith(".dvw"):
+            d = load_side_out(m["file_path"], version)
+            if not d.empty:
+                parts.append(d.assign(match_seq=m["match_seq"]))
+    if not parts:
+        st.info("Serve lo scout .dvw: nessuna delle partite selezionate lo ha.")
+        return
+    data = pd.concat(parts, ignore_index=True)
+    st.caption(
+        f"{len(parts)} partite con lo scout .dvw tra quelle selezionate, {len(data)} scambi iniziati con la battuta "
+        "avversaria. Rotazione = zona del nostro palleggiatore a inizio scambio. Ogni volta che facciamo il cambio "
+        "palla ruotiamo: conta quante ricezioni ci servono per uscire da una rotazione. Le definizioni degli esiti "
+        "sono quelle della tab Partita."
+    )
+    st.html(_side_out_tiles_html(data, scope="delle partite scelte"))
+    p = rotation_difference_test(data)
+    if p is not None:
+        st.caption(f"Le rotazioni sono davvero diverse tra loro? p = {p:.2f} (test per permutazione sulla percentuale "
+                   "di cambi palla): " + ("sotto 0,05, la differenza difficilmente è un caso." if p < 0.05 else
+                                           "sopra 0,05, con questi dati la differenza può ancora essere un caso."))
+    st.markdown("**Come sono finiti gli scambi, rotazione per rotazione**")
+    st.dataframe(_side_out_detail_table(data), width="stretch")
+
+    st.markdown("**Partita per partita** (cambi palla vinti su ricezioni)")
+    seqs = sorted(data["match_seq"].unique())
+    won = data[data["vinto"]].groupby(["rotazione", "match_seq"]).size().unstack(fill_value=0).reindex(
+        index=ROTATIONS, columns=seqs, fill_value=0)
+    played = data.groupby(["rotazione", "match_seq"]).size().unstack(fill_value=0).reindex(
+        index=ROTATIONS, columns=seqs, fill_value=0)
+    names = {ms: f"{ms + 1}. {match_label_lookup.get(ms, ms)}" for ms in seqs}
+    shown = pd.DataFrame({names[ms]: [f"{int(w)}/{int(n)}" if n else "-" for w, n in zip(won[ms], played[ms])]
+                          for ms in seqs}, index=ROTATIONS)
+    average = data["vinto"].mean()
+
+    def style(_):
+        css = pd.DataFrame("", index=shown.index, columns=shown.columns)
+        for ms in seqs:
+            for r in ROTATIONS:
+                n = played.loc[r, ms]
+                if n:
+                    diff = won.loc[r, ms] / n - average
+                    if abs(diff) >= 0.05:
+                        rgb = "26,127,55" if diff > 0 else "207,34,46"
+                        css.loc[r, names[ms]] = f"background-color: rgba({rgb},{min(0.65, 0.1 + abs(diff) * 1.1):.2f})"
+        return css
+
+    st.dataframe(shown.style.apply(style, axis=None), width="stretch")
+    st.caption(f"Verde sopra, rosso sotto la media delle partite scelte ({100 * average:.0f}%). Su una partita sola "
+               "i numeri sono piccoli: contano le rotazioni che restano rosse partita dopo partita.")
 
 
 def _match_option_label(match_seq, match_label_lookup):
@@ -3471,6 +3739,8 @@ def render_trend_tab(season, version, matches, team_df_fixed, player_df_fixed, m
     render_season_lines_section(team_df, player_df, entity_options, match_axis, match_outcomes_df)
     st.divider()
     render_kpi_section(team_df, player_df, x_axis_order, entity_options)
+    st.divider()
+    render_side_out_season(matches, selected_seqs, match_label_lookup, version)
     st.divider()
     render_mvp_trend_section(matches, selected_seqs, match_label_lookup, version)
     st.divider()
