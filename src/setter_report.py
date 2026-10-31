@@ -290,9 +290,13 @@ def _load_setter_player_labels(setter_names):
     stesso formato 'Giocatore' usato in tutta la pipeline esistente — vedi
     src.leg_comparison._normalize_and_filter_players) — necessario per far
     combaciare 'player' con le righe già prodotte da build_comparison_dataset
-    per Battuta/Ricezione/ecc. degli stessi due giocatori."""
+    per Battuta/Ricezione/ecc. degli stessi giocatori. Giocatori IGNORED o
+    non registrati: nessuna etichetta, quindi esclusi."""
     identities = pd.read_csv(ROOT / "config" / "player_identities.csv")
-    decimo = identities[identities["team"] == "Decimo"]
+    # i giocatori marcati IGNORED restano fuori come nel resto della pipeline
+    # (con i .dvw i palleggiatori arrivano dal file: es. Principato, IGNORED,
+    # palleggiatore in campo per pochi scambi nella 2025-2026)
+    decimo = identities[(identities["team"] == "Decimo") & (identities["player_id"] != "IGNORED")]
     out = {}
     for cognome in setter_names:
         match = decimo[decimo["cognome"] == cognome]

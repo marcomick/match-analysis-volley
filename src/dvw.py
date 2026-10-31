@@ -204,7 +204,7 @@ def _middle_attacks_quick(actions, players):
     """
     if actions.empty:
         return actions
-    middles = {(p.squadra, p.numero) for p in players.itertuples() if p.ruolo == MIDDLE_ROLE}
+    middles = {k for k, p in roster_by_number(players).items() if p.ruolo == MIDDLE_ROLE}
     is_middle = np.array([(s, n) in middles for s, n in zip(actions["squadra"], actions["Numero"])])
     actions.loc[(actions["Tipo"] == "attacco") & is_middle, "Tipo palla"] = "Q"
     return actions
@@ -223,15 +223,30 @@ def read_dvw_header(file_path):
     return {"data": data or None, "teams": teams, "sets": _parse_sets(sections.get("SET", []))}
 
 
-def _cognome_by_number(players):
-    """(squadra, numero) -> cognome. La rosa del programma può avere voci
-    vecchie con lo stesso numero di un giocatore attuale (G1 San Paolo:
-    Principato, rosa 2025-2026, e Racheli, entrambi col 10): vince chi ha un
-    ruolo impostato, le voci senza ruolo sono residui di stagioni precedenti."""
+def roster_by_number(players):
+    """
+    (squadra, numero) -> la voce della rosa per quel numero. La rosa del
+    programma può avere più voci con lo stesso numero: residui di stagioni
+    precedenti senza ruolo (G1 San Paolo: Principato, rosa 2025-2026, e
+    Racheli, entrambi col 10) o due giocatori con il ruolo impostato (Pqp -
+    Decimo 2025-2026: Licenziati e Amore col 27, l'Excel attribuisce le
+    azioni a Licenziati). Vince chi ha un ruolo, poi chi è titolare in almeno
+    un set, poi l'ultima voce.
+    """
+    def rank(p):
+        has_role = p.ruolo is not None and not pd.isna(p.ruolo)
+        starter = any(z for z in (p.zone_partenza or []))
+        return (has_role, starter)
+
     out = {}
-    for p in sorted(players.itertuples(), key=lambda p: p.ruolo is not None and not pd.isna(p.ruolo)):
-        out[(p.squadra, p.numero)] = p.cognome
+    for p in sorted(players.itertuples(), key=rank):
+        out[(p.squadra, p.numero)] = p
     return out
+
+
+def _cognome_by_number(players):
+    """(squadra, numero) -> cognome, vedi roster_by_number."""
+    return {k: p.cognome for k, p in roster_by_number(players).items()}
 
 
 def _parse_scout(rows, players):
