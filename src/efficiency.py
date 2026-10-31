@@ -12,6 +12,7 @@ Il tabellino "standard" (create_player_summary_df, sezione esclusa dal refactor)
 ancora localmente nel notebook la propria find_errors "senza muro" — la divergenza tra i due
 export resta quindi presente, non essendo questa sezione in scope.
 """
+import numpy as np
 import pandas as pd
 
 # Voti positivi/negativi di default per la battuta.
@@ -364,6 +365,163 @@ TABELLINO_BOTTOM_SECTIONS = [
     ("Muro", ['Eff', 'Tot'] + ['#', '+', '!', '/', '=']),
     ("Errori", ['Bat', 'Att', 'Muro', 'Alz']),
 ]
+
+
+SET_TABELLINO_TOTAL = "Totale"
+
+
+def compute_set_tabellino(df, group_col="Numero Set"):
+    """
+    Tabellino della dashboard set per set (richiesta dell'utente, 2026-10-30:
+    al posto delle colonne per voto, totale ed efficienza per set e sul
+    totale), con le stesse sezioni e definizioni di compute_tabellino:
+    ricezione, attacco dopo ricezione (tutte, # o +, !, -), contrattacco
+    (free ball comprese), attacco da free ball: Tot ed Eff (%); battuta: Tot,
+    Err, Ace (senza efficienza); muro: solo i muri punto (Pt); errori
+    (error_mask) per fondamentale: Bat, Att, Alz, Muro e Tot. `group_col`: colonna che definisce le colonne del
+    tabellino (il set; per più partite insieme, la partita).
+
+    Ritorna (players, groups, sections): players = giocatori (colonna
+    'Giocatore') in ordine alfabetico, groups = valori di group_col in
+    ordine, sections = [(titolo, DataFrame)] con indice players + 'Totale' e
+    colonne MultiIndex (gruppo o SET_TABELLINO_TOTAL, misura); NaN dove il
+    giocatore non ha azioni di quel tipo.
+    """
+    all_rec_attacks, counterattacks = separate_attacks_counterattacks(df)
+    att_pos, _ = separate_attacks_counterattacks(df, rec_vote=["#", "+"])
+    att_excl, _ = separate_attacks_counterattacks(df, rec_vote=["!"])
+    att_neg, _ = separate_attacks_counterattacks(df, rec_vote=["-"])
+    free_ball = separate_free_ball(df)
+
+    def only(frame, tipo):
+        return frame[frame["Tipo"] == tipo]
+
+    specs = [
+        ("Ricezione", "eff", only(df, "ricezione"), ["#", "+"], ["=", "/"]),
+        ("Attacco (R tot)", "eff", only(all_rec_attacks, "attacco"), ["#"], ["=", "/"]),
+        ("Attacco (R#+)", "eff", only(att_pos, "attacco"), ["#"], ["=", "/"]),
+        ("Attacco (R!)", "eff", only(att_excl, "attacco"), ["#"], ["=", "/"]),
+        ("Attacco (R-)", "eff", only(att_neg, "attacco"), ["#"], ["=", "/"]),
+        ("Contrattacco", "eff", only(counterattacks, "attacco"), ["#"], ["=", "/"]),
+        ("Attacco (Free Ball)", "eff", only(free_ball, "attacco"), ["#"], ["=", "/"]),
+        ("Battuta", "battuta", only(df, "battuta"), None, None),
+        ("Muro", "muro", only(df, "muro"), None, None),
+        ("Errori", "errori", df[error_mask(df)], None, None),
+    ]
+    players = sorted(p for p in df["Giocatore"].dropna().unique() if p != "Totale")
+    groups = list(dict.fromkeys(df[group_col].dropna()))
+    rows = players + ["Totale"]
+
+    def measures(frame, kind, pos, neg):
+        n = len(frame)
+        if kind == "eff":
+            if not n:
+                return {"Tot": np.nan, "Eff": np.nan}
+            return {"Tot": n, "Eff": 100 * (frame["Voto"].isin(pos).sum() - frame["Voto"].isin(neg).sum()) / n}
+        if kind == "battuta":
+            if not n:
+                return {"Tot": np.nan, "Err": np.nan, "Ace": np.nan}
+            return {"Tot": n, "Err": int((frame["Voto"] == "=").sum()), "Ace": int((frame["Voto"] == "#").sum())}
+        if kind == "muro":
+            return {"Pt": int((frame["Voto"] == "#").sum()) if n else np.nan}
+        if not n:
+            return {k: np.nan for k in ("Bat", "Att", "Alz", "Muro", "Tot")}
+        return {"Bat": int((frame["Tipo"] == "battuta").sum()), "Att": int((frame["Tipo"] == "attacco").sum()),
+                "Alz": int((frame["Tipo"] == "alzata").sum()), "Muro": int((frame["Tipo"] == "muro").sum()),
+                "Tot": n}
+
+    sections = []
+    for title, kind, frame, pos, neg in specs:
+        data = {}
+        for g in groups + [SET_TABELLINO_TOTAL]:
+            part = frame if g == SET_TABELLINO_TOTAL else frame[frame[group_col] == g]
+            for player in rows:
+                sub = part if player == "Totale" else part[part["Giocatore"] == player]
+                for m, v in measures(sub, kind, pos, neg).items():
+                    data.setdefault((g, m), {})[player] = v
+        table = pd.DataFrame(data, index=rows)
+        table.columns = pd.MultiIndex.from_tuples(table.columns)
+        sections.append((title, table))
+    return players, groups, sections
+
+
+def export_set_tabellino_to_xlsx(sections, output, sheet_name="Tabellino"):
+    """
+    Excel del tabellino set per set (compute_set_tabellino), con la stessa
+    struttura della dashboard (richiesta dell'utente, 2026-10-30: l'export
+    allineato al tabellino nuovo, al posto delle colonne per voto di
+    "[tabellino F]"): una sezione sotto l'altra, set (o partite) come gruppi
+    di colonne separati da una linea spessa, totale in grassetto, Eff
+    colorata con la scala rosso/bianco/verde dell'export storico. `output`:
+    percorso o buffer (BytesIO).
+    """
+    import xlsxwriter
+
+    wb = xlsxwriter.Workbook(output, {"in_memory": True})
+    ws = wb.add_worksheet(sheet_name)
+    title = wb.add_format({"bold": True, "font_size": 12})
+    sep = {"left": 5, "left_color": "#5b6b82"}
+    head = {"bold": True, "align": "center", "bg_color": "#eef1f5", "border": 1, "border_color": "#c8ccd2"}
+    cell = {"align": "center", "border": 1, "border_color": "#d9dce1"}
+    fmt_cache = {}
+
+    def fmt(base, *, bold=False, left=False, pct=False):
+        key = (id(base), bold, left, pct)
+        if key not in fmt_cache:
+            props = dict(base)
+            if bold:
+                props["bold"] = True
+            if left:
+                props.update(sep)
+            if pct:
+                props["num_format"] = '0"%"'
+            fmt_cache[key] = wb.add_format(props)
+        return fmt_cache[key]
+
+    row = 0
+    ws.set_column(0, 0, 22)
+    for name, table in sections:
+        ws.write(row, 0, name, title)
+        row += 1
+        cols = list(table.columns)
+        starts = {i for i, c in enumerate(cols) if i and c[0] != cols[i - 1][0]}
+        # intestazione: gruppo (set/partita/totale) su colonne unite, poi la misura
+        i = 0
+        while i < len(cols):
+            j = i
+            while j + 1 < len(cols) and cols[j + 1][0] == cols[i][0]:
+                j += 1
+            f = fmt(head, left=i in starts)
+            if j > i:
+                ws.merge_range(row, 1 + i, row, 1 + j, cols[i][0], f)
+            else:
+                ws.write(row, 1 + i, cols[i][0], f)
+            i = j + 1
+        ws.write(row + 1, 0, "", fmt(head))
+        for i, c in enumerate(cols):
+            ws.write(row + 1, 1 + i, c[1], fmt(head, left=i in starts))
+        row += 2
+        first = row
+        for player, values in table.iterrows():
+            total = player == "Totale"
+            ws.write(row, 0, player, fmt({"bold": True, "border": 1, "border_color": "#d9dce1"}, bold=total))
+            for i, c in enumerate(cols):
+                v = values[c]
+                f = fmt(cell, bold=total or c[0] == SET_TABELLINO_TOTAL, left=i in starts, pct=c[1] == "Eff")
+                if pd.isna(v):
+                    ws.write_blank(row, 1 + i, None, f)
+                else:
+                    ws.write_number(row, 1 + i, round(float(v)) if c[1] == "Eff" else int(v), f)
+            row += 1
+        for i, c in enumerate(cols):
+            if c[1] == "Eff":
+                ws.conditional_format(first, 1 + i, row - 1, 1 + i, {
+                    "type": "3_color_scale", "min_type": "num", "min_value": -100, "min_color": "#FF0000",
+                    "mid_type": "num", "mid_value": 0, "mid_color": "#FFFFFF",
+                    "max_type": "num", "max_value": 100, "max_color": "#00B050"})
+        row += 2
+    ws.freeze_panes(0, 1)
+    wb.close()
 
 
 def compute_tabellino(df):

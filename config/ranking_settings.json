@@ -1,0 +1,43 @@
+{
+  "2026-2027": {
+    "min_attacchi": 10,
+    "min_ricezioni": 10,
+    "ignore": {
+      "battuta": [
+        "Pedico"
+      ],
+      "attacco": [
+        "Pedico"
+      ],
+      "muro": [
+        "Pedico"
+      ],
+      "ricezione": [
+        "Caranzetti",
+        "D'arienzo",
+        "Pessei",
+        "Carrer",
+        "Racheli",
+        "Moscetta"
+      ]
+    }
+  },
+  "2025-2026": {
+    "min_attacchi": 50,
+    "min_ricezioni": 40,
+    "ignore": {
+      "battuta": [
+        "Pedico"
+      ],
+      "attacco": [
+        "Pedico"
+      ],
+      "muro": [
+        "Pedico"
+      ],
+      "ricezione": [
+        "Caranzetti"
+      ]
+    }
+  }
+}

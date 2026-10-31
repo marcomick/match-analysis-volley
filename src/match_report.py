@@ -24,7 +24,17 @@ from src.efficiency import compute_set_metrics, eff_from_calcola, error_mask, se
 from src.leg_comparison import TIPO_POS_NEG
 
 POINT_SOURCES = ["Attacco", "Muro", "Ace", "Errori avversari", "Punti generici", "Non rilevato"]
-SET_METRICS = ["Battuta%", "Ricezione%", "Attacco SO%", "Contrattacco%", "Muro%", "Errori"]
+# Colori delle cause dei punti (dashboard e PDF): tinte della palette diverse
+# dal blu/arancio delle squadre, validate con lo script della dataviz skill in
+# entrambi i temi; contrasto basso col fondo chiaro -> il numero è sempre
+# scritto dentro il segmento.
+POINT_SOURCE_COLORS_LIGHT = {"Attacco": "#1baf7a", "Muro": "#4a3aa7", "Ace": "#eda100",
+                             "Errori avversari": "#e87ba4", "Punti generici": "#898781", "Non rilevato": "#c3c2bb"}
+POINT_SOURCE_COLORS_DARK = {"Attacco": "#199e70", "Muro": "#9085e9", "Ace": "#c98500",
+                            "Errori avversari": "#d55181", "Punti generici": "#898781", "Non rilevato": "#55554f"}
+# Il muro nel report si misura sui muri punto, non sull'efficienza (richiesta
+# dell'utente, 2026-10-30).
+SET_METRICS = ["Battuta%", "Ricezione%", "Attacco SO%", "Contrattacco%", "Muro punti", "Errori"]
 TOTAL_LABEL = "Tot"
 
 _WINNING_SKILL = {"attacco": "Attacco", "muro": "Muro", "battuta": "Ace"}
@@ -103,13 +113,19 @@ def _metrics_with_total(df):
     per_set = compute_set_metrics(df)
     total = compute_set_metrics(df.assign(**{"Numero Set": TOTAL_LABEL}))
     per_set.index = [str(int(s)) for s in per_set.index]
-    return pd.concat([per_set, total])
+    out = pd.concat([per_set, total])
+    blocks = (df["Tipo"] == "muro") & (df["Voto"] == "#")
+    per_set_blocks = df[blocks].groupby("Numero Set").size()
+    out["Muro punti"] = [int(blocks.sum()) if label == TOTAL_LABEL else int(per_set_blocks.get(int(label), 0))
+                         for label in out.index]
+    return out
 
 
 def team_comparison(source):
     """{'noi': DataFrame, 'loro': DataFrame}: righe = set ('1'..'5') + 'Tot',
     colonne = SET_METRICS (efficienze come nel resto del progetto; contrattacco
-    con le free ball; errori con l'errore di muro)."""
+    con le free ball; muro come numero di muri punto; errori con l'errore di
+    muro)."""
     return {"noi": _metrics_with_total(source["noi"]), "loro": _metrics_with_total(source["loro"])}
 
 
@@ -131,12 +147,14 @@ def player_table(source):
     anche dove non coincidono con il tabellino dell'app di rilevazione) —
     efficienze da TIPO_POS_NEG di src.leg_comparison, errori da error_mask:
     - Punti: pt (attacco/muro/ace '#'), err (= KPI "Errori": battuta,
-      attacco, alzata '=' e muro '/'), p-e;
+      attacco, alzata '=' e muro '/'), p-e (p-e/m: punti - errori - attacchi
+      murati, definizione unica del progetto dal 2026-10-30);
     - Battuta: tot, err, ace, eff; Ricezione: tot, err (ace subiti), eff
       ((# + '+') - ('/' + '=')) / tot;
     - Attacco: tot, err, mur, pt, eff; SO eff e tot (dopo ricezione);
       Contrattacco eff e tot (free ball comprese); di cui free ball eff e tot
-      (attacco dopo una difesa con voto '!'); Muro pt, eff.
+      (attacco dopo una difesa con voto '!'); Muro pt (niente efficienza di
+      muro, indicazione dell'utente).
     Valori None = fondamentale non giocato (mostrato come '.').
     """
     sources = point_sources(source)
@@ -157,9 +175,10 @@ def player_table_from_df(df, generici_pt, generici_err):
         bat, ric, att, muro = (sub[sub["Tipo"] == t] for t in ("battuta", "ricezione", "attacco", "muro"))
         pt = int(((sub["Voto"] == "#") & sub["Tipo"].isin(_WINNING_SKILL)).sum())
         err = int(error_mask(sub).sum())
+        mur = int(((sub["Tipo"] == "attacco") & (sub["Voto"] == "/")).sum())
         so_att, contr_att, fb_att = (x[x["Tipo"] == "attacco"] for x in (so, contr, fb))
         return {
-            "pt": pt, "err": err, "p-e": pt - err,
+            "pt": pt, "err": err, "mur": mur, "p-e": pt - err - mur,
             "bat_tot": len(bat) or None, "bat_err": int((bat["Voto"] == "=").sum()) if len(bat) else None,
             "bat_ace": int((bat["Voto"] == "#").sum()) if len(bat) else None,
             "bat_eff": eff(bat, "battuta"),
@@ -173,7 +192,10 @@ def player_table_from_df(df, generici_pt, generici_err):
             "contr_eff": eff(contr_att, "attacco"), "contr_tot": len(contr_att) or None,
             "fb_eff": eff(fb_att, "attacco"), "fb_tot": len(fb_att) or None,
             "muro_pt": int((muro["Voto"] == "#").sum()) if len(muro) else None,
-            "muro_eff": eff(muro, "muro"),
+            # errori per fondamentale (le stesse voci di "err", error_mask)
+            "err_bat": int((bat["Voto"] == "=").sum()), "err_att": int((att["Voto"] == "=").sum()),
+            "err_alz": int(((sub["Tipo"] == "alzata") & (sub["Voto"] == "=")).sum()),
+            "err_muro": int((muro["Voto"] == "/").sum()),
         }
 
     rows = []
@@ -193,7 +215,7 @@ def player_table_from_df(df, generici_pt, generici_err):
     total = row_for(actions, so_df, contr_df, fb_df)
     total["pt"] += generici["pt"]
     total["err"] += generici["err"]
-    total["p-e"] = total["pt"] - total["err"]
+    total["p-e"] = total["pt"] - total["err"] - total["mur"]
     rows.append({"giocatore": TOTAL_LABEL, **total})
     return pd.DataFrame(rows)
 
@@ -217,8 +239,11 @@ def point_sources_by_set(source):
 
 # KPI per set (squadra e singolo giocatore), con le definizioni dei KPI della
 # dashboard: efficienze (%) e conteggi.
-SET_KPI_PERCENT = ["Battuta%", "Ricezione%", "Attacco%", "Attacco SO%", "Contrattacco%", "Attacco FB%", "Muro%"]
-SET_KPI_COUNTS = ["Punti", "Errori", "p-e"]
+# Niente efficienza di muro nei KPI per set (indicazione dell'utente,
+# 2026-10-30): il muro si misura sui muri punto. "p-e" = p-e/m (punti -
+# errori - attacchi murati).
+SET_KPI_PERCENT = ["Battuta%", "Ricezione%", "Attacco%", "Attacco SO%", "Contrattacco%", "Attacco FB%"]
+SET_KPI_COUNTS = ["Punti", "Errori", "p-e", "Muri punto"]
 SET_KPI_VOLUME = {
     "Battuta%": "Battute", "Ricezione%": "Ricezioni", "Attacco%": "Attacchi",
     "Attacco SO%": "Attacchi SO", "Contrattacco%": "Contrattacchi", "Attacco FB%": "Attacchi FB", "Muro%": "Muri",
@@ -254,18 +279,19 @@ def set_kpis(team_df):
             sub_so, sub_contr, sub_fb = (x[x.index.isin(sub.index)] for x in (so, contr, fb))
             pt = int(((sub["Voto"] == "#") & sub["Tipo"].isin(_WINNING_SKILL)).sum())
             err = int(error_mask(sub).sum())
+            mur = int(((sub["Tipo"] == "attacco") & (sub["Voto"] == "/")).sum())
             values = {
                 "Battuta%": _eff(sub, "battuta"), "Ricezione%": _eff(sub, "ricezione"),
                 "Attacco%": _eff(sub, "attacco"), "Attacco SO%": _eff(sub_so, "attacco"),
                 "Contrattacco%": _eff(sub_contr, "attacco"), "Attacco FB%": _eff(sub_fb, "attacco"),
-                "Muro%": _eff(sub, "muro"),
-                "Punti": pt, "Errori": err, "p-e": pt - err,
+                "Punti": pt, "Errori": err, "p-e": pt - err - mur,
                 "Battute": int((sub["Tipo"] == "battuta").sum()), "Ricezioni": int((sub["Tipo"] == "ricezione").sum()),
                 "Attacchi": int((sub["Tipo"] == "attacco").sum()),
                 "Attacchi SO": int((sub_so["Tipo"] == "attacco").sum()),
                 "Contrattacchi": int((sub_contr["Tipo"] == "attacco").sum()),
                 "Attacchi FB": int((sub_fb["Tipo"] == "attacco").sum()),
                 "Muri": int((sub["Tipo"] == "muro").sum()),
+                "Muri punto": int(((sub["Tipo"] == "muro") & (sub["Voto"] == "#")).sum()),
             }
             rows += [{"entita": entity, "set": label, "kpi": k, "value": v} for k, v in values.items()]
     return pd.DataFrame(rows)

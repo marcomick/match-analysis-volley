@@ -52,14 +52,16 @@ def format_percent(value):
     return f"{value:.0f}%"
 
 
-def build_ace_man(srv_scores, min_battute=10):
+def build_ace_man(srv_scores):
     """
     ACE MAN
     - Aggiunge %# = ace / battute totali
-    - Entra solo chi ha almeno `min_battute` battute
+    - Entra chi ha fatto almeno un ace, qualunque sia il numero di battute
+      (richiesta dell'utente, 2026-10-30: prima serviva una soglia minima di
+      battute, e chi aveva 0 ace entrava comunque in coda)
     - Ordina per ace assoluti, poi per %#
     """
-    work = srv_scores[srv_scores['Totale'] >= min_battute].copy()
+    work = srv_scores[srv_scores['#'] >= 1].copy()
     work['%#_sort'] = (work['#'] / work['Totale']) * 100
 
     result = work.sort_values(by=['#', '%#_sort'], ascending=[False, False]).reset_index()
@@ -134,9 +136,11 @@ def build_srv_shame(srv_scores):
     """
     MURO DELLA VERGOGNA / BATTUTE SBAGLIATE
     - Aggiunge Err% = errori '=' / battute totali
+    - Entra solo chi ha sbagliato almeno una battuta (richiesta dell'utente,
+      2026-10-30)
     - Ordina principalmente per numero assoluto di errori '='
     """
-    work = srv_scores.copy()
+    work = srv_scores[srv_scores['='] >= 1].copy()
     work['Err%_sort'] = (work['='] / work['Totale']) * 100
 
     result = work.sort_values(by=['=', 'Err%_sort'], ascending=[False, False]).reset_index()

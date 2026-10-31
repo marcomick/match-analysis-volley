@@ -1,0 +1,19 @@
+{
+  "_nota": "Punteggio MVP (src/mvp.py). Valori in punti: quanto un'azione sposta la probabilità di vincere lo scambio (calcolata su tutti i .dvw e arrotondata a 0,05), con le correzioni concordate il 2026-10-31 (ricezione # e + alla pari, per dare spinta anche al libero; attacco murato meno grave dell'errore). Voti non elencati = 0.",
+  "azioni": {
+    "battuta":   {"#": 0.60, "+": 0.10, "!": 0.05, "-": 0.00, "/": 0.25, "=": -0.40},
+    "ricezione": {"#": 0.15, "+": 0.15, "!": 0.05, "-": 0.00, "/": -0.05, "=": -0.55},
+    "attacco":   {"#": 0.40, "+": 0.10, "!": 0.05, "-": 0.00, "/": -0.50, "=": -0.60},
+    "muro":      {"#": 0.65, "+": 0.20, "!": 0.10, "-": 0.00, "/": -1.00, "=": -0.10},
+    "difesa":    {"#": 0.25, "-": 0.05, "=": -0.10},
+    "alzata":    {"=": -0.50}
+  },
+  "attacco_punto_free_ball": 0.50,
+  "errore_attacco_palla_alta": -0.75,
+  "palleggiatore": {
+    "quota": 0.10,
+    "pem_medio_per_attacco": 0.22,
+    "solo_alzate_veloci": false
+  },
+  "set_fittizi": 1
+}

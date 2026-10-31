@@ -51,7 +51,7 @@ Test di significatività (2026-10-25, richieste dell'utente):
 import numpy as np
 import pandas as pd
 
-from src.dvw import BALL_TYPES, HIT_TYPES, SETTER_ROLE, _cognome_by_number, side_actions
+from src.dvw import BALL_TYPES, HIT_TYPES, SETTER_ROLE, _cognome_by_number, roster_by_number, side_actions
 from src.efficiency import separate_attack_types
 
 # Griglia delle zone dalla rete verso il fondo, da sinistra a destra per chi attacca.
@@ -138,14 +138,10 @@ def short_player(attaccante):
 
 
 def _roles(parsed, side):
-    """numero -> ruolo DataVolley; con due voci per lo stesso numero (residui
-    di stagioni precedenti nella rosa del programma) vince quella con ruolo."""
-    players = parsed["players"]
-    out = {}
-    for p in players[players["squadra"] == side].itertuples():
-        if pd.notna(p.ruolo) or p.numero not in out:
-            out[p.numero] = None if pd.isna(p.ruolo) else int(p.ruolo)
-    return out
+    """numero -> ruolo DataVolley della squadra `side` (con più voci per lo
+    stesso numero, quella scelta da src.dvw.roster_by_number)."""
+    return {num: (None if pd.isna(p.ruolo) else int(p.ruolo))
+            for (sq, num), p in roster_by_number(parsed["players"]).items() if sq == side}
 
 
 def attack_zone(role, front, recorded):
@@ -300,22 +296,34 @@ def _eff(sub):
     return 100 * (pt - neg) / n
 
 
+BEST_MIN_PE = 2  # coppa del miglior p-e/m della zona solo sopra questo saldo
+
+
 def zone_stats(rows):
     """
     Per ognuna delle 9 zone (anche vuote): n attacchi, pct (sul totale
     con zona nota), pt (#), err (=), mur (/), pt_pct, eff ((# - = - /) /
     n, come l'efficienza d'attacco del progetto), giocatori serviti
-    [(attaccante, n, pt)] in ordine di palloni ricevuti.
+    [(attaccante, n, pt, p-e/m)] in ordine di palloni ricevuti (p-e/m =
+    punti meno errori meno murate), best = (attaccante, p-e/m, n) del giocatore con il
+    p-e/m più alto, solo se supera BEST_MIN_PE (con un saldo di 1 o 2 la
+    coppa ha poco senso, indicazione dell'utente) nella zona (a parità, più punti e più attacchi) o None.
     """
     known = rows[rows["zona"].notna()] if not rows.empty else rows
     total = len(known)
     out = []
     for z in ZONES:
         sub = known[known["zona"] == z] if total else known
-        players = []
+        players, best = [], None
         if len(sub):
-            g = sub.groupby("attaccante").agg(n=("voto", "size"), pt=("voto", lambda v: int((v == "#").sum())))
-            players = [(name, int(row.n), int(row.pt)) for name, row in g.sort_values(["n", "pt"], ascending=False).iterrows()]
+            g = sub.groupby("attaccante").agg(n=("voto", "size"), pt=("voto", lambda v: int((v == "#").sum())),
+                                              neg=("voto", lambda v: int(v.isin(["=", "/"]).sum())))
+            g["pe"] = g["pt"] - g["neg"]
+            players = [(name, int(row.n), int(row.pt), int(row.pe))
+                       for name, row in g.sort_values(["n", "pt"], ascending=False).iterrows()]
+            top = g.sort_values(["pe", "pt", "n"], ascending=False).iloc[0]
+            if top.pe > BEST_MIN_PE:
+                best = (top.name, int(top.pe), int(top.n))
         n = len(sub)
         out.append({
             "zona": z, "n": n, "pct": 100 * n / total if total else 0.0,
@@ -324,7 +332,7 @@ def zone_stats(rows):
             "mur": int((sub["voto"] == "/").sum()) if n else 0,
             "pt_pct": 100 * (sub["voto"] == "#").sum() / n if n else None,
             "eff": _eff(sub),
-            "giocatori": players,
+            "giocatori": players, "best": best,
         })
     return pd.DataFrame(out)
 
@@ -433,7 +441,7 @@ def _independence_test(sub, col, cats, strata_col=None, n_perm=N_PERMUTATIONS, s
     return {"n": int(n), "chi2": float(stat), "p": float(p), "cramer_v": v, "scostamenti": deviations}
 
 
-def test_direction(rows, direction, n_perm=N_PERMUTATIONS, seed=0):
+def test_direction(rows, direction, n_perm=N_PERMUTATIONS, seed=0, stratify=True):
     """
     La distribuzione per zona cambia lungo `direction` (vedi DIRECTIONS)?
     Test chi quadro di indipendenza zona x categoria con p-value per
@@ -454,7 +462,7 @@ def test_direction(rows, direction, n_perm=N_PERMUTATIONS, seed=0):
     counts = sub[direction].value_counts()
     cats = [c for c in direction_categories(sub, direction) if counts.get(c, 0) >= MIN_PER_CATEGORY]
     sub = sub[sub[direction].isin(cats)]
-    strata_col = STRATA.get(direction)
+    strata_col = STRATA.get(direction) if stratify else None
     if strata_col:
         # strati in cui c'è almeno un confronto possibile (due categorie)
         ok = sub.groupby(strata_col)[direction].transform("nunique") > 1
@@ -481,12 +489,45 @@ def _holm(results):
     return results
 
 
-def test_all_directions(rows, directions=tuple(DIRECTIONS)):
+def test_all_directions(rows, directions=tuple(DIRECTIONS), stratify=True):
     """test_direction su ogni direzione, con correzione di Holm sui p-value
     (più direzioni guardate insieme = più occasioni di un falso allarme):
     ogni risultato ha in più p_holm e significativo (p_holm < ALPHA).
     Direzioni senza dati sufficienti: risultato None."""
-    return _holm({d: test_direction(rows, d) for d in directions})
+    return _holm({d: test_direction(rows, d, stratify=stratify) for d in directions})
+
+
+# Test della distribuzione nei due casi indicati dall'utente (2026-10-30):
+# side-out da ricezione positiva (R+ e R# insieme) e da ricezione !. Dentro
+# ciascun caso la qualità della ricezione è già fissata: i test lungo le
+# altre direzioni non sono stratificati sul voto; la qualità della ricezione
+# diventa il confronto tra i due casi.
+RECEPTION_CASES = {"pos": ("Da ricezione positiva (R+ / R#)", ("#", "+")), "escl": ("Da ricezione R!", ("!",))}
+CASE_DIRECTIONS = ("rotazione", "tipo_ricevitore", "ricevitore", "situazione_punteggio", "partita")
+
+
+def test_reception_cases(rows, n_perm=N_PERMUTATIONS):
+    """
+    {'qualita': confronto R+/R# contro R! (_independence_test, categorie
+    'R+ / R#' e 'R!', o None), 'pos': {direzione: risultato}, 'escl':
+    {direzione: risultato}} sugli attacchi di side-out di `rows`; dentro
+    ciascun caso test_direction lungo CASE_DIRECTIONS (partita solo se ce n'è
+    più d'una) con Holm sulle direzioni del caso.
+    """
+    so = rows[(rows["fase"] == "Side-out") & rows["zona"].notna()]
+    out = {}
+    labels = {}
+    for key, (_, grades) in RECEPTION_CASES.items():
+        case = so[so["ricezione"].isin(grades)]
+        dirs = [d for d in CASE_DIRECTIONS if d != "partita" or case["partita"].nunique() > 1]
+        out[key] = _holm({d: test_direction(case, d, n_perm=n_perm, stratify=False) for d in dirs})
+        labels.update({g: "R+ / R#" if key == "pos" else "R!" for g in grades})
+    both = so[so["ricezione"].isin(list(labels))].assign(_qualita=lambda d: d["ricezione"].map(labels))
+    counts = both["_qualita"].value_counts()
+    cats = [c for c in ("R+ / R#", "R!") if counts.get(c, 0) >= MIN_PER_CATEGORY]
+    out["qualita"] = (_independence_test(both[both["_qualita"].isin(cats)], "_qualita", cats, n_perm=n_perm)
+                      if len(cats) == 2 and len(both) >= MIN_TOTAL else None)
+    return out
 
 
 def test_setter_situations(rows, n_perm=N_PERMUTATIONS):

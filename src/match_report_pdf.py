@@ -22,12 +22,14 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import matplotlib.patheffects
 import matplotlib.ticker
 import numpy as np
 from fpdf import FPDF
 from fpdf.fonts import FontFace
 
-from src.match_report import POINT_SOURCES, SET_METRICS, TOTAL_LABEL
+from src.mvp import scoring_rules
+from src.match_report import POINT_SOURCE_COLORS_LIGHT, POINT_SOURCES, SET_METRICS, TOTAL_LABEL
 from src.setter_distribution import (
     ANTENNA_RED,
     CELL_INK,
@@ -60,7 +62,7 @@ TABLE_SIZE = 7.2
 LINE_H = 4.0
 PAD = 0.7
 INT_W, PCT_W = 6.5, 10.0  # mm: colonne dei conteggi / delle percentuali
-WIDE_COLS = {}  # colonne sole sotto un'intestazione di gruppo più lunga (in mm)
+WIDE_COLS = {"muro_pt": 9.0, "p-e": 8.0}  # colonne sole sotto un'intestazione di gruppo più lunga (in mm)
 
 MM_PER_INCH = 25.4
 
@@ -70,9 +72,11 @@ METRIC_INFO = {
     "Ricezione%": ("Ricezione", "efficienza: perfette e positive, meno errori e palle rimandate di là"),
     "Attacco SO%": ("Attacco side-out", "efficienza dell'attacco subito dopo la ricezione"),
     "Contrattacco%": ("Contrattacco", "efficienza dell'attacco dopo una difesa o una free ball"),
-    "Muro%": ("Muro", "efficienza: muri punto e muri che rallentano, meno errori e mani-out"),
+    "Muro punti": ("Muro", "muri punto: numero"),
     "Errori": ("Errori", "battuta, attacco, alzata e muro: numero, meno è meglio"),
 }
+# KPI per set che sono conteggi (il totale è una somma, fuori scala rispetto ai set)
+COUNT_METRICS = ("Errori", "Muro punti")
 
 plt.rcParams.update({
     "font.family": "DejaVu Sans", "font.size": 8, "text.color": INK,
@@ -188,7 +192,16 @@ def _team_legend(pdf, nome_noi, nome_loro):
     pdf.set_xy(MARGIN, y + 6.5)
 
 
-def _image(pdf, png, height_mm):
+def _image(pdf, png, height_mm, shrink_to_fit=0.0):
+    """`shrink_to_fit`: se l'immagine non sta nello spazio rimasto nella
+    pagina, la si rimpicciolisce (centrata) fino a questa frazione invece di
+    passare alla pagina successiva."""
+    room = PAGE_H - BOTTOM - pdf.get_y() - 1.5
+    if shrink_to_fit and height_mm > room >= height_mm * shrink_to_fit:
+        w = CONTENT_W * room / height_mm
+        pdf.image(png, x=MARGIN + (CONTENT_W - w) / 2, w=w)
+        pdf.ln(1.5)
+        return
     _ensure_space(pdf, height_mm)
     pdf.image(png, x=MARGIN, w=CONTENT_W)
     pdf.ln(1.5)
@@ -202,11 +215,11 @@ def _header(pdf, header, nome_noi, nome_loro):
     parziali come pillole del colore di chi ha vinto il set."""
     noi_casa = header["casa"] == nome_noi
     color_casa, color_ospite = (NOI_COLOR, LORO_COLOR) if noi_casa else (LORO_COLOR, NOI_COLOR)
-    band_h = 47
+    band_h = 40
     pdf.set_fill_color(*_rgb(NAVY))
     pdf.rect(0, 0, PAGE_W, band_h, style="F")
 
-    pdf.set_xy(MARGIN, 5)
+    pdf.set_xy(MARGIN, 4.5)
     pdf.set_font("helvetica", "B", 7.5)
     pdf.set_text_color(185, 196, 214)
     pdf.cell(CONTENT_W, 4, _t(f"REPORT PARTITA  ·  {header['data'] or ''}".replace("·", "-")), align="C")
@@ -219,12 +232,12 @@ def _header(pdf, header, nome_noi, nome_loro):
     w_casa = pdf.get_string_width(_t(header["casa"])) + 5
     w_ospite = pdf.get_string_width(_t(header["ospite"])) + 5
     x = MARGIN + max(0, (CONTENT_W - (w_casa + score_w + w_ospite)) / 2)
-    _chip(pdf, x, 15.5, header["casa"], color_casa, size=9, h=6.4)
-    pdf.set_xy(x + w_casa, 12.7)
+    _chip(pdf, x, 13.5, header["casa"], color_casa, size=9, h=6.4)
+    pdf.set_xy(x + w_casa, 10.7)
     pdf.set_font("helvetica", "B", 24)
     pdf.set_text_color(*WHITE)
     pdf.cell(score_w, 12, score, align="C")
-    _chip(pdf, x + w_casa + score_w, 15.5, header["ospite"], color_ospite, size=9, h=6.4)
+    _chip(pdf, x + w_casa + score_w, 13.5, header["ospite"], color_ospite, size=9, h=6.4)
 
     # parziali
     pills = list(header["parziali"])
@@ -232,8 +245,8 @@ def _header(pdf, header, nome_noi, nome_loro):
     x = MARGIN + (CONTENT_W - (len(pills) * pill_w + (len(pills) - 1) * gap)) / 2
     for a, b in pills:
         pdf.set_fill_color(*_rgb(color_casa if a > b else color_ospite))
-        pdf.rect(x, 31, pill_w, 6, style="F", round_corners=True, corner_radius=1.8)
-        pdf.set_xy(x, 31)
+        pdf.rect(x, 25.5, pill_w, 6, style="F", round_corners=True, corner_radius=1.8)
+        pdf.set_xy(x, 25.5)
         pdf.set_font("helvetica", "B", 8.5)
         pdf.set_text_color(*WHITE)
         pdf.cell(pill_w, 6, f"{a}-{b}", align="C")
@@ -241,7 +254,7 @@ def _header(pdf, header, nome_noi, nome_loro):
 
     incompleti = [f"{n}° set rilevato fino al {a}-{b}" for n, a, b, completo in header["set_scout"] if not completo]
     if incompleti:
-        pdf.set_xy(MARGIN, 39.5)
+        pdf.set_xy(MARGIN, 33.5)
         pdf.set_font("helvetica", "I", 6.8)
         pdf.set_text_color(185, 196, 214)
         pdf.cell(CONTENT_W, 4, _t("Scout parziale: " + ", ".join(incompleti)), align="C")
@@ -252,11 +265,12 @@ def _header(pdf, header, nome_noi, nome_loro):
 def _comment(pdf, comment):
     if not comment or not comment.strip():
         return
-    _section_title(pdf, "Il commento")
     pdf.set_font("helvetica", size=9)
     text = _t(comment.strip())
     lines = len(pdf.multi_cell(CONTENT_W - 7, 4.6, text, dry_run=True, output="LINES"))
     h = lines * 4.6 + 5
+    _section_title(pdf, "Il commento", keep_with=min(h, 40))
+    pdf.set_font("helvetica", size=9)
     _ensure_space(pdf, h)
     y = pdf.get_y()
     pdf.set_fill_color(*TOTAL_FILL)
@@ -269,6 +283,61 @@ def _comment(pdf, comment):
 
 
 # ---------------------------------------------------------------------------
+# MVP della partita (src.mvp)
+# ---------------------------------------------------------------------------
+MVP_NOTE = "Come si guadagnano e si perdono i punti MVP: in appendice, in fondo al report."
+
+
+def _fmt_signed(v):
+    return f"{v:+.2f}".replace(".", ",")
+
+
+def _mvp(pdf, row, highlights):
+    """Il riquadro dell'MVP: coppa, nome, punteggio e i fondamentali che
+    hanno pesato di più, ciascuno con i suoi numeri."""
+    if row is None:
+        return
+    text_w = CONTENT_W - 8
+    pdf.set_font("helvetica", size=8.4)
+    lines = []
+    for label, value, text in highlights:
+        body = f"**{label}** ({_fmt_signed(value)}): {text}"
+        n = len(pdf.multi_cell(text_w, 4.2, _t(body), dry_run=True, output="LINES", markdown=True))
+        lines.append((body, n))
+    h = 19 + sum(n for _, n in lines) * 4.2 + 3
+    _ensure_space(pdf, h + 6)
+    pdf.ln(2)
+    y = pdf.get_y()
+    pdf.set_fill_color(253, 246, 222)
+    pdf.rect(MARGIN, y, CONTENT_W, h, style="F", round_corners=True, corner_radius=1.5)
+    pdf.set_fill_color(*TROPHY_GOLD)
+    pdf.rect(MARGIN, y, 1.6, h, style="F")
+    _trophy(pdf, MARGIN + 5, y + 5, 10)
+    pdf.set_xy(MARGIN + 16, y + 2)
+    pdf.set_font("helvetica", "B", 7)
+    pdf.set_text_color(*TROPHY_DARK)
+    pdf.cell(CONTENT_W - 20, 3.5, "MVP DELLA PARTITA")
+    pdf.set_xy(MARGIN + 16, y + 5)
+    _fit_font(pdf, _t(_display_name(row["giocatore"])), "B", 16, CONTENT_W - 20)
+    pdf.set_text_color(*_rgb(NAVY))
+    pdf.cell(CONTENT_W - 20, 7, _t(_display_name(row["giocatore"])), new_x="LMARGIN", new_y="NEXT")
+    pdf.set_xy(MARGIN + 16, y + 12)
+    pdf.set_font("helvetica", size=8.5)
+    pdf.set_text_color(*_rgb(MUTED))
+    played = (f" · in {int(row['set_giocati'])} set su {int(row['set_partita'])}"
+              if row["set_giocati"] < row["set_partita"] else "")
+    pdf.cell(CONTENT_W - 20, 4.5, _t(f"{_fmt_signed(row['punteggio'])} punti MVP{played}"))
+    pdf.set_text_color(*_rgb(INK))
+    pdf.set_xy(MARGIN + 4.5, y + 19)
+    pdf.set_left_margin(MARGIN + 4.5)
+    pdf.set_font("helvetica", size=8.4)
+    for body, _ in lines:
+        pdf.multi_cell(text_w, 4.2, _t(body), new_x="LMARGIN", new_y="NEXT", markdown=True)
+    pdf.set_left_margin(MARGIN)
+    pdf.set_y(y + h + 1)
+    _note(pdf, MVP_NOTE, size=6.6)
+
+# ---------------------------------------------------------------------------
 # Da dove arrivano i punti
 # ---------------------------------------------------------------------------
 def _points_tiles(pdf, sources, nome_noi, nome_loro):
@@ -278,46 +347,91 @@ def _points_tiles(pdf, sources, nome_noi, nome_loro):
     for i, (key, name, color) in enumerate((("noi", nome_noi, NOI_COLOR), ("loro", nome_loro, LORO_COLOR))):
         x = MARGIN + i * (w + 3)
         pdf.set_fill_color(*HEADER_FILL)
-        pdf.rect(x, y, w, 15, style="F", round_corners=True, corner_radius=1.5)
+        pdf.rect(x, y, w, 9, style="F", round_corners=True, corner_radius=1.5)
         pdf.set_fill_color(*_rgb(color))
-        pdf.rect(x, y, w, 1.4, style="F")
-        pdf.set_xy(x, y + 2.2)
-        pdf.set_font("helvetica", "B", 16)
-        pdf.cell(w, 7.5, str(sum(sources[key].values())), align="C")
-        pdf.set_xy(x, y + 9.5)
+        pdf.rect(x, y, 1.4, 9, style="F")
+        number = str(sum(sources[key].values()))
+        pdf.set_font("helvetica", "B", 14)
+        nw = pdf.get_string_width(number)
+        pdf.set_font("helvetica", "B", 7)
+        label = _t(f"punti {name}")
+        lw = pdf.get_string_width(label)
+        x0 = x + (w - nw - 2 - lw) / 2
+        pdf.set_xy(x0, y + 1)
+        pdf.set_font("helvetica", "B", 14)
+        pdf.cell(nw, 7, number)
+        pdf.set_xy(x0 + nw + 2, y + 1.6)
         pdf.set_font("helvetica", "B", 7)
         pdf.set_text_color(*_rgb(MUTED))
-        pdf.cell(w, 4, _t(f"punti {name}"), align="C")
+        pdf.cell(lw, 7, label)
         pdf.set_text_color(*_rgb(INK))
-    pdf.set_xy(MARGIN, y + 18)
+    pdf.set_xy(MARGIN, y + 11)
 
 
-def _points_chart(sources, nome_noi, nome_loro):
-    cats = [c for c in POINT_SOURCES if sources["noi"][c] or sources["loro"][c]]
-    noi = [sources["noi"][c] for c in cats]
-    loro = [sources["loro"][c] for c in cats]
-    y = np.arange(len(cats)) * 1.25
-    h = 0.5
-    height = 0.55 * len(cats) + 0.25
-    fig, ax = plt.subplots(figsize=(CONTENT_W / MM_PER_INCH, height))
-    vmax = max(noi + loro)
-    for offset, vals, color, name in ((-h / 2 - 0.03, noi, NOI_COLOR, nome_noi),
-                                      (h / 2 + 0.03, loro, LORO_COLOR, nome_loro)):
-        ax.barh(y + offset, vals, h, color=color)
-        for yy, v in zip(y + offset, vals):
-            ax.text(v + vmax * 0.012, yy, str(v), va="center", fontsize=8.5, color=INK, fontweight="bold")
-        # etichetta diretta: il nome della squadra dentro la sua prima barra
-        if vals[0] > vmax * 0.35:
-            ax.text(vmax * 0.015, y[0] + offset, name, va="center", fontsize=7.5, color="white", fontweight="bold")
-    ax.set_yticks(y, cats)
-    ax.invert_yaxis()
-    ax.set_xlim(0, vmax * 1.1)
-    ax.xaxis.set_visible(False)
-    ax.spines["bottom"].set_visible(False)
-    ax.tick_params(axis="y", length=0, labelsize=8.5, labelcolor=INK, pad=4)
-    for label in ax.get_yticklabels():
-        label.set_fontweight("bold")
-    return _fig_to_png(fig), height
+def _points_by_set_chart(points, header, nome_noi, nome_loro):
+    """
+    Da dove arrivano i punti set per set, come nella dashboard (richiesta
+    dell'utente, 2026-10-30): un riquadro per set con il punteggio, dentro le
+    due barre delle squadre impilate per causa, lunghe quanto i punti (stessa
+    scala per tutti i set), il numero dentro ogni segmento. `points`:
+    src.match_report.point_sources_by_set.
+    """
+    noi_casa = header["casa"] == nome_noi
+    sets = [x for x in points["set"].unique() if x != TOTAL_LABEL]
+    in_sets = points[points["set"] != TOTAL_LABEL]
+    causes = [c for c in POINT_SOURCES if in_sets[in_sets["causa"] == c]["n"].sum()]
+    scouted = {str(n): ok for n, _, _, ok in header["set_scout"]}
+    per_panel = 0.5
+    height = per_panel * len(sets) + 0.1
+    fig, axes = plt.subplots(len(sets), 1, figsize=(CONTENT_W / MM_PER_INCH, height), sharex=True, squeeze=False)
+    totals = in_sets.groupby(["set", "squadra"])["n"].sum()
+    vmax = max(totals.max(), 1)
+    for ax, label in zip(axes[:, 0], sets):
+        sub = points[points["set"] == label]
+        left = np.zeros(2)
+        for causa in causes:
+            vals = np.array([sub[(sub["squadra"] == k) & (sub["causa"] == causa)]["n"].sum() for k in ("noi", "loro")])
+            ax.barh([0, 1], vals, 0.72, left=left, color=POINT_SOURCE_COLORS_LIGHT[causa], edgecolor="white",
+                    linewidth=0.8)
+            for yy, v, l0 in zip((0, 1), vals, left):
+                if v:
+                    ax.text(l0 + v / 2, yy, str(int(v)), ha="center", va="center", fontsize=6.6, color="white",
+                            fontweight="bold")
+            left += vals
+        for yy, v in zip((0, 1), left):
+            ax.text(v + vmax * 0.01, yy, str(int(v)), ha="left", va="center", fontsize=7, color=INK, fontweight="bold")
+        i = int(label) - 1
+        score = ""
+        if i < len(header["parziali"]):
+            a, b = header["parziali"][i]
+            score = f"{a}-{b}" if noi_casa else f"{b}-{a}"
+        partial = "  (scout parziale)" if not scouted.get(label, True) else ""
+        ax.set_title(f"Set {label}   {score}{partial}", loc="left", fontsize=7.6, fontweight="bold", color=NAVY,
+                     pad=2)
+        ax.set_yticks([0, 1], [nome_noi, nome_loro])
+        for tick, color in zip(ax.get_yticklabels(), (NOI_COLOR, LORO_COLOR)):
+            tick.set_color(color)
+            tick.set_fontweight("bold")
+        ax.tick_params(axis="y", length=0, labelsize=7, pad=3)
+        ax.invert_yaxis()
+        ax.set_xlim(0, vmax * 1.08)
+        ax.xaxis.set_visible(False)
+        ax.spines["bottom"].set_visible(False)
+    fig.subplots_adjust(hspace=0.85)
+    return _fig_to_png(fig), height, causes
+
+
+def _cause_legend(pdf, causes):
+    """I colori delle cause dei punti, come badge in fila (a capo se serve)."""
+    x, y = MARGIN, pdf.get_y()
+    for causa in causes:
+        pdf.set_font("helvetica", "B", 6.8)
+        w = pdf.get_string_width(_t(causa)) + 5
+        if x + w > MARGIN + CONTENT_W:
+            x, y = MARGIN, y + 5.6
+        _chip(pdf, x, y, causa, POINT_SOURCE_COLORS_LIGHT[causa], size=6.8, h=4.4)
+        x += w + 1.8
+    pdf.set_xy(MARGIN, y + 6)
 
 
 # ---------------------------------------------------------------------------
@@ -328,16 +442,20 @@ def _metric_chart(comp, metric, nome_noi, nome_loro, incomplete_sets=()):
     Un KPI a tutta larghezza: set per set (S1..S5 su ogni grafico) per le due
     squadre. Il totale della partita è una linea orizzontale tratteggiata nel
     colore della squadra, etichettata "Tot <squadra> <valore>" in una fascia
-    libera a destra (così l'etichetta non copre mai i punti dei set). Per gli
-    errori il totale è una somma, non sulla scala dei set: solo l'etichetta,
-    senza linea, e la scala segue i valori dei set.
+    libera a destra (così l'etichetta non copre mai i punti dei set). Per i
+    conteggi (errori, muri punto) il totale è una somma, non sulla scala dei
+    set: solo l'etichetta, senza linea, e la scala segue i valori dei set.
+    Il valore di ogni set è scritto vicino al suo punto, nel colore della
+    squadra (richiesta dell'utente, 2026-10-30): sopra per la squadra più
+    alta in quel set, sotto per l'altra, così le due etichette non si
+    sovrappongono mai tra loro né ai punti.
     """
     labels = [l for l in comp["noi"].index if l != TOTAL_LABEL]
     x = np.arange(len(labels))
     ticks = [f"S{l}*" if int(l) in incomplete_sets else f"S{l}" for l in labels]
-    height = 1.55
+    height = 1.75
     fig, ax = plt.subplots(figsize=(CONTENT_W / MM_PER_INCH, height))
-    is_count = metric == "Errori"
+    is_count = metric in COUNT_METRICS
     unit = "" if is_count else "%"
     series = {}
     for key, color, name in (("noi", NOI_COLOR, nome_noi), ("loro", LORO_COLOR, nome_loro)):
@@ -348,7 +466,7 @@ def _metric_chart(comp, metric, nome_noi, nome_loro, incomplete_sets=()):
     all_vals = np.concatenate(scale_vals)
     lo, hi = np.nanmin(all_vals), np.nanmax(all_vals)
     span = max(hi - lo, 4 if is_count else 10)
-    lo, hi = lo - span * 0.15, hi + span * 0.15
+    lo, hi = lo - span * 0.3, hi + span * 0.3  # spazio per le etichette dei set
     if not is_count:
         lo = min(lo, -2)
     if is_count:
@@ -360,6 +478,17 @@ def _metric_chart(comp, metric, nome_noi, nome_loro, incomplete_sets=()):
         ax.scatter(x, vals, color=color, s=34, zorder=3, edgecolor="white", linewidth=1.2)
         if not np.isnan(tot) and not is_count:
             ax.axhline(tot, color=color, linewidth=1.1, linestyle=(0, (4, 3)), alpha=0.9, zorder=1)
+
+    # valore di ogni set: sopra il punto per la squadra più alta, sotto per l'altra
+    (v_noi, c_noi, _, _), (v_loro, c_loro, _, _) = series["noi"], series["loro"]
+    halo = [matplotlib.patheffects.withStroke(linewidth=2.2, foreground="white")]
+    for i in range(len(x)):
+        pair = [(v, c) for v, c in ((v_noi[i], c_noi), (v_loro[i], c_loro)) if not np.isnan(v)]
+        for k, (v, c) in enumerate(sorted(pair, key=lambda t: -t[0])):
+            above = k == 0 if len(pair) == 2 else True
+            ax.annotate(f"{v:.0f}{unit}", (x[i], v), xytext=(0, 5.5 if above else -5.5), textcoords="offset points",
+                        ha="center", va="bottom" if above else "top", fontsize=6.4, fontweight="bold", color=c,
+                        path_effects=halo, zorder=4)
 
     # etichette dei totali nella fascia di destra, centrate sulla propria
     # linea e distanziate se le due linee sono vicine
@@ -496,12 +625,83 @@ PLAYER_TABLE_LEGEND = (
     "**pt** punti fatti: attacchi, muri e ace punto.  "
     "**err** errori: battute, attacchi e alzate sbagliate, errori di muro (gli attacchi murati sono in "
     "**mur**, gli ace subiti sono gli **err** di ricezione).  "
-    "**p-e** il saldo, punti fatti meno errori: sopra zero hai dato alla squadra più di quanto le hai tolto.  "
+    "**p-e/m** il saldo, punti fatti meno errori meno attacchi murati: sopra zero hai dato alla squadra più di "
+    "quanto le hai tolto.  "
     "**eff** efficienza, sul totale delle azioni del fondamentale (come nella dashboard): battuta "
-    "((# + + + /) - =); ricezione ((# + +) - (/ + =)); attacco (# - (= + /)); muro ((# + +) - (= + /)).  "
+    "((# + + + /) - =); ricezione ((# + +) - (/ + =)); attacco (# - (= + /)). Muro: muri punto.  "
     "**Side-out** attacco subito dopo la ricezione; **contrattacco** tutti gli altri; **free ball (FB)** attacco "
     "dopo una difesa con voto ! (palla facile), una parte del contrattacco."
 )
+
+
+KPI_TABLE_LEGEND = (
+    "Per ogni giocatore, fondamentale per fondamentale: **tot** azioni, **pt** punti fatti, **err** errori (in "
+    "attacco solo gli attacchi sbagliati), **mur** murate, **p-e/m** punti meno errori meno murate (per i "
+    "fondamentali senza murate, punti meno errori), **eff** efficienza (come nella dashboard: ricezione "
+    "((# + +) - (/ + =)); battuta ((# + + + /) - =); attacco (# - (= + /)), tutte sul totale).  **Ricezione**: "
+    "err = ace subiti.  **Attacco SO** (side-out) attacco subito dopo la ricezione; **attacco BP** (break-point) "
+    "tutti gli altri, **free ball** compresa (attacco dopo una difesa con voto !).  **Palla alta** e **palla "
+    "veloce** (super, quick): gli stessi attacchi divisi per tipo di alzata.  **Totale**: battuta, attacco, muro e "
+    "alzata.  **Colori**: confronto con la media del giocatore nelle partite precedenti, verde meglio del solito, "
+    "rosso peggio, più intenso quanto più si discosta (bianco = in media o storia troppo breve)."
+)
+KPI_TABLE_COLS = ["tot", "pt", "err", "mur", "pe", "eff"]
+KPI_TABLE_WIDTHS = [15, 5.5, 5.5, 5.5, 6, 8, 7]  # mm: fondamentale, tot, pt, err, mur, p-e/m, eff
+DEVIATION_SCALE = 2.5  # deviazioni standard per il colore pieno
+
+
+def _kpi_table_rows(table):
+    data, raw = [], []
+    for r in table.to_dict("records"):
+        label = "  di cui FB" if r["kpi"] == "fb" else r["label"]
+        data.append([label, _fmt_int(r["tot"]), _fmt_int(r["pt"]), _fmt_int(r["err"]), _fmt_int(r.get("mur")),
+                     "." if _is_missing(r["pe"]) else f"{int(r['pe']):+d}", _fmt_pct(r["eff"])])
+        raw.append([None] * 7)
+    return data, raw
+
+
+def _player_kpi_tables(pdf, tables, deviations=None):
+    """
+    Tabellino del report, una tabella per giocatore (src.set_analysis.
+    player_kpi_table, richiesta dell'utente 2026-10-30): fondamentali in riga,
+    tot/punti/errori/murate/p-e/m/efficienza in colonna; due tabelle
+    affiancate per riga, la squadra per prima. `deviations`: {giocatore:
+    {(riga, colonna): z}} (src.set_analysis.kpi_deviations), il colore di
+    ogni cella rispetto alla media personale.
+    """
+    entries = list(tables.items())
+    if not entries:
+        return
+    deviations = deviations or {}
+    first_h = 5 + _table_height(len(entries[0][1]))
+    _section_title(pdf, "Tabellino giocatori", keep_with=first_h)
+    _note(pdf, KPI_TABLE_LEGEND, markdown=True)
+    pdf.ln(1)
+    col_w = (CONTENT_W - 3) / 2
+    for i in range(0, len(entries), 2):
+        pair = entries[i:i + 2]
+        _ensure_space(pdf, max(5 + _table_height(len(t)) for _, t in pair))
+        y0, y_end = pdf.get_y(), pdf.get_y()
+        for j, (name, table) in enumerate(pair):
+            x0 = MARGIN + j * (col_w + 3)
+            pdf.set_xy(x0, y0)
+            pdf.set_font("helvetica", "B", 8.5)
+            pdf.set_text_color(*_rgb(NAVY))
+            pdf.cell(col_w, 5, _t(_display_name(name)))
+            pdf.set_text_color(*_rgb(INK))
+            pdf.set_xy(x0, y0 + 5)
+            data, raw = _kpi_table_rows(table)
+            fills = {}
+            for (row, col), z in deviations.get(name, {}).items():
+                fill = _diverging_fill(z, scale=DEVIATION_SCALE)
+                if fill:
+                    fills[(row, 1 + KPI_TABLE_COLS.index(col))] = fill
+            pdf.set_left_margin(x0)
+            _grouped_table(pdf, None, ["", "tot", "pt", "err", "mur", "p-e/m", "eff"], data, raw, KPI_TABLE_WIDTHS,
+                           size=6.3, left_cols=(0,), bold_cols=(0,), cell_fills=fills)
+            pdf.set_left_margin(MARGIN)
+            y_end = max(y_end, pdf.get_y())
+        pdf.set_xy(MARGIN, y_end + 1)
 
 
 def _player_tables(pdf, table, legend=PLAYER_TABLE_LEGEND):
@@ -515,20 +715,20 @@ def _player_tables(pdf, table, legend=PLAYER_TABLE_LEGEND):
     raw = [[None] + [r[c] for c, _ in cols] for r in rows]
     _grouped_table(
         pdf, [("", 1), ("Punti", 3), ("Battuta", 4), ("Ricezione", 3)],
-        ["", "pt", "err", "p-e", "tot", "err", "ace", "eff", "tot", "err", "eff"],
+        ["", "pt", "err", "p-e/m", "tot", "err", "ace", "eff", "tot", "err", "eff"],
         data, raw, _widths(cols),
         fills={3: lambda v: _diverging_fill(v, scale=12), 7: _diverging_fill, 10: _diverging_fill},
     )
     # 2) attacco e muro
     rows = [r for r in rows if r["giocatore"] != "Generici"]
     cols = [("att_tot", _fmt_int), ("att_err", _fmt_int), ("att_mur", _fmt_int), ("att_pt", _fmt_int),
-            ("att_eff", _fmt_pct), ("muro_pt", _fmt_int), ("muro_eff", _fmt_pct)]
+            ("att_eff", _fmt_pct), ("muro_pt", _fmt_int)]
     data = [[r["giocatore"]] + [f(r[c]) for c, f in cols] for r in rows]
     raw = [[None] + [r[c] for c, _ in cols] for r in rows]
     _grouped_table(
-        pdf, [("", 1), ("Attacco", 5), ("Muro", 2)],
-        ["", "tot", "err", "mur", "pt", "eff", "pt", "eff"],
-        data, raw, _widths(cols), fills={5: _diverging_fill, 7: _diverging_fill},
+        pdf, [("", 1), ("Attacco", 5), ("Muro", 1)],
+        ["", "tot", "err", "mur", "pt", "eff", "pt"],
+        data, raw, _widths(cols), fills={5: _diverging_fill},
     )
     # 3) attacco per fase: side-out, contrattacco, di cui free ball
     cols = [("so_eff", _fmt_pct), ("so_tot", _fmt_int), ("contr_eff", _fmt_pct), ("contr_tot", _fmt_int),
@@ -559,9 +759,42 @@ def _court(pdf, stats, x0, width):
     giocatore più servito. Disegno vettoriale, come il campo della
     dashboard (build_court_chart). Parte dalla y corrente, in `x0`.
     """
-    with pdf.local_context():
-        _draw_court(pdf, stats, x0, width)
+    margin = pdf.c_margin
+    pdf.c_margin = 0  # testo misurato e centrato a mano nelle celle
+    try:
+        with pdf.local_context():
+            _draw_court(pdf, stats, x0, width)
+    finally:
+        pdf.c_margin = margin
     pdf.set_text_color(*_rgb(INK))
+
+
+TROPHY_GOLD = (229, 184, 11)
+TROPHY_DARK = (150, 115, 0)
+
+
+def _fit_font(pdf, text, style, size, width):
+    """Imposta il font alla dimensione `size`, ridotta quanto serve perché
+    `text` stia in `width` mm."""
+    pdf.set_font("helvetica", style, size)
+    w = pdf.get_string_width(text)
+    if w > width:
+        pdf.set_font("helvetica", style, size * width / w)
+
+
+def _trophy(pdf, x, y, h):
+    """Coppa stilizzata alta `h` mm con l'angolo in alto a sinistra in (x, y)."""
+    with pdf.local_context():
+        pdf.set_fill_color(*TROPHY_GOLD)
+        pdf.set_draw_color(*TROPHY_GOLD)
+        pdf.set_line_width(h * 0.09)
+        w = h * 0.8
+        pdf.rect(x + w * 0.12, y, w * 0.76, h * 0.42, style="F", round_corners=("BOTTOM_LEFT", "BOTTOM_RIGHT"),
+                 corner_radius=w * 0.3)
+        pdf.ellipse(x - w * 0.02, y + h * 0.04, w * 0.28, h * 0.28, style="D")
+        pdf.ellipse(x + w * 0.74, y + h * 0.04, w * 0.28, h * 0.28, style="D")
+        pdf.rect(x + w * 0.43, y + h * 0.42, w * 0.14, h * 0.28, style="F")
+        pdf.rect(x + w * 0.22, y + h * 0.7, w * 0.56, h * 0.18, style="F")
 
 
 def _draw_court(pdf, stats, x0, width):
@@ -604,14 +837,26 @@ def _draw_court(pdf, stats, x0, width):
                 pdf.rect(cx + 0.6, cy + 0.6, cell - 1.2, cell - 1.2, style="F", round_corners=True, corner_radius=1)
                 pdf.set_text_color(*ink)
                 eff = "-" if s["eff"] is None else f"{s['eff']:.0f}%"
-                lines = [("B", 8.5, f"{s['pct']:.0f}%", 3.3), ("", 4.6, f"{int(s['n'])} att \u00b7 {eff}", 1.9)]
-                lines += [("", 4.4, f"{short_player(p)} {k}", 1.8) for p, k, _ in s["giocatori"][:1]]
+                avail = cell - 1.6  # larghezza utile dentro il quadratino
+                lines = [("B", 8.5, f"{s['pct']:.0f}%", 3.3), ("", 4.4, f"{int(s['n'])} att \u00b7 eff {eff}", 1.9)]
                 y = cy + 1.9
                 for style, size, text, h in lines:
-                    pdf.set_font("helvetica", style, size)
+                    _fit_font(pdf, _t(text), style, size, avail)
                     pdf.set_xy(cx, y)
                     pdf.cell(cell, h, _t(text), align="C")
                     y += h + 0.25
+                if s["best"]:
+                    # coppa disegnata + miglior p-e della zona (i font standard
+                    # del PDF non hanno l'emoji)
+                    name, pe, _ = s["best"]
+                    text = _t(f"{short_player(name)} p-e/m {pe:+d}")
+                    icon = 1.4
+                    _fit_font(pdf, text, "", 4.1, avail - icon)
+                    tw = pdf.get_string_width(text)
+                    tx = cx + (cell - tw - icon) / 2
+                    _trophy(pdf, tx, y + 0.3, 1.15)
+                    pdf.set_xy(tx + icon, y)
+                    pdf.cell(tw, 1.8, text)
             else:
                 pdf.set_text_color(*_rgb(MUTED))
                 pdf.set_font("helvetica", "", 7)
@@ -619,7 +864,7 @@ def _draw_court(pdf, stats, x0, width):
                 pdf.cell(cell, 3, "-", align="C")
             pdf.set_text_color(*ink)
             pdf.set_font("helvetica", "B", 3.8)
-            pdf.set_xy(cx + 0.5, cy + 0.6)
+            pdf.set_xy(cx + 0.9, cy + 0.7)
             pdf.cell(2.5, 1.6, str(z))
     pdf.set_text_color(*_rgb(INK))
 
@@ -648,7 +893,7 @@ def _setter_tables(pdf, setters, distributions=None):
           markdown=True)
     if distributions:
         _note(pdf, "Sotto, la **distribuzione** con lui in campo, da R+ / #, da R! e da free ball: da quale zona "
-                   "attaccano i giocatori serviti (% delle alzate, attacchi ed efficienza, il più servito), escluse le "
+                   "attaccano i giocatori serviti (% delle alzate, attacchi ed efficienza; con la coppa chi ha il miglior p-e/m della zona, punti − errori − murate, se maggiore di 2), escluse le "
                    "sue seconde intenzioni (per questo i totali possono differire di poco dalla tabella). Centrali sempre da 3, schiacciatori da dietro da 8 (pipe), opposto da "
                    "dietro da 9.", markdown=True)
         if any(d["stimate"] for d in distributions.values()):
@@ -696,7 +941,7 @@ def _setter_courts(pdf, dist, titles=None):
         pdf.set_xy(x0 - 1.2, y + 3.6)
         pdf.set_font("helvetica", "", 5.6)
         pdf.set_text_color(*_rgb(MUTED))
-        eff = "" if d["eff"] is None else f" \u00b7 eff {d['eff']:.0f}%"
+        eff = "" if d["eff"] is None else f" \u00b7 efficienza totale {d['eff']:.0f}%"
         pdf.cell(COURT_W + 2.4, 3, _t(f"{d['n']} attacchi{eff}" if d["n"] else "nessun attacco"), align="C")
         pdf.set_text_color(*_rgb(INK))
         if d["n"]:
@@ -714,11 +959,16 @@ def _display_name(giocatore):
     return " ".join(part.title() if not part.isdigit() else part for part in str(giocatore).split(" "))
 
 
-def _rankings(pdf, rankings, n_partite):
+def _rankings(pdf, rankings, n_partite, mins=None):
     if not rankings:
         return
     _section_title(pdf, "Classifiche della stagione", keep_with=12 + 5 + _table_height(len(rankings[0][1])))
-    _note(pdf, f"Sulle {n_partite} partite giocate finora, senza soglie minime"
+    min_att, min_ric = mins or (0, 0)
+    soglie = (f"Spike Guarantee con almeno {min_att} attacchi, Miglior ricevitore con almeno {min_ric} ricezioni"
+              if min_att or min_ric else "senza soglie minime di attacchi e ricezioni")
+    _note(pdf, f"Sulle {n_partite} partite giocate finora: {soglie}; Ace Man chi ha fatto almeno un ace, Muro della "
+               "vergogna chi ha sbagliato almeno una battuta; MVP della stagione = somma dei punti MVP partita per "
+               "partita (MVP = volte in cui è stato il migliore)"
                f"{' (una partita sola: le percentuali su pochi tentativi pesano molto)' if n_partite == 1 else ''}.")
     pdf.ln(1)
     col_w = (CONTENT_W - 3) / 2
@@ -751,34 +1001,157 @@ def _rankings(pdf, rankings, n_partite):
 
 
 # ---------------------------------------------------------------------------
+# Appendice: come si calcola il punteggio MVP (dai valori di config/mvp.json)
+# ---------------------------------------------------------------------------
+PILL_POS = (26, 127, 55)
+PILL_NEG = (207, 34, 46)
+PILL_ZERO = (140, 149, 159)
+RULE_ROW_H = 5.4
+
+
+def _value_pill(pdf, x, y, value, w=15, h=4.4):
+    color = PILL_POS if value > 0 else PILL_NEG if value < 0 else PILL_ZERO
+    pdf.set_fill_color(*color)
+    pdf.rect(x, y, w, h, style="F", round_corners=True, corner_radius=1.4)
+    pdf.set_xy(x, y)
+    pdf.set_font("helvetica", "B", 8)
+    pdf.set_text_color(*WHITE)
+    pdf.cell(w, h, "0" if value == 0 else f"{value:+.2f}".replace(".", ","), align="C")
+    pdf.set_text_color(*_rgb(INK))
+
+
+def _rule_block(pdf, title, rows):
+    """Un fondamentale: titolo e una riga per azione, valore in una pillola
+    verde (guadagna), rossa (perde) o grigia (non conta)."""
+    pdf.set_font("helvetica", size=8.3)
+    n_lines = [len(pdf.multi_cell(CONTENT_W - 18, 4.0, _t(d), dry_run=True, output="LINES")) for _, d in rows]
+    _ensure_space(pdf, 8 + sum(RULE_ROW_H + 4.0 * (n - 1) for n in n_lines))
+    pdf.ln(1.5)
+    pdf.set_font("helvetica", "B", 9.5)
+    pdf.set_text_color(*_rgb(NAVY))
+    pdf.cell(0, 5.5, _t(title), new_x="LMARGIN", new_y="NEXT")
+    pdf.set_draw_color(*_rgb(GRID))
+    pdf.line(MARGIN, pdf.get_y(), MARGIN + CONTENT_W, pdf.get_y())
+    pdf.ln(0.8)
+    for (value, desc), n in zip(rows, n_lines):
+        y = pdf.get_y()
+        _value_pill(pdf, MARGIN, y + 0.5, value)
+        pdf.set_xy(MARGIN + 18, y + 0.7)
+        pdf.set_font("helvetica", size=8.3)
+        pdf.set_text_color(*_rgb(INK if value else MUTED))
+        pdf.multi_cell(CONTENT_W - 18, 4.0, _t(desc))
+        pdf.set_text_color(*_rgb(INK))
+        pdf.set_xy(MARGIN, y + RULE_ROW_H + 4.0 * (n - 1))
+
+
+def _rule_text(pdf, title, paragraphs):
+    pdf.set_font("helvetica", size=8.3)
+    h = 8 + sum(len(pdf.multi_cell(CONTENT_W, 4.2, _t(p), dry_run=True, output="LINES", markdown=True)) * 4.2 + 1
+                for p in paragraphs)
+    _ensure_space(pdf, h)
+    pdf.ln(1.5)
+    pdf.set_font("helvetica", "B", 9.5)
+    pdf.set_text_color(*_rgb(NAVY))
+    pdf.cell(0, 5.5, _t(title), new_x="LMARGIN", new_y="NEXT")
+    pdf.set_draw_color(*_rgb(GRID))
+    pdf.line(MARGIN, pdf.get_y(), MARGIN + CONTENT_W, pdf.get_y())
+    pdf.ln(1)
+    pdf.set_text_color(*_rgb(INK))
+    for p in paragraphs:
+        pdf.set_font("helvetica", size=8.3)
+        pdf.multi_cell(CONTENT_W, 4.2, _t(p), new_x="LMARGIN", new_y="NEXT", markdown=True)
+        pdf.ln(1)
+
+
+def _num(v, digits=2):
+    return f"{v:.{digits}f}".replace(".", ",")
+
+
+def _mvp_appendix(pdf, rules):
+    pdf.add_page()
+    _section_title(pdf, "Appendice: i punti MVP")
+    _note(pdf, "Ogni azione vale quanto cambia la probabilità di vincere lo scambio (calcolata su tutte le partite "
+               "rilevate). Il punteggio di un giocatore è la somma delle sue azioni.", size=7.6)
+    pdf.ln(1)
+    y = pdf.get_y()
+    x = MARGIN
+    for value, label in ((0.4, "guadagna"), (-0.6, "perde"), (0, "non conta")):
+        _value_pill(pdf, x, y, value, w=12, h=4)
+        pdf.set_xy(x + 13, y)
+        pdf.set_font("helvetica", size=7.6)
+        pdf.set_text_color(*_rgb(MUTED))
+        pdf.cell(20, 4, label)
+        x += 34
+    pdf.set_text_color(*_rgb(INK))
+    pdf.set_xy(MARGIN, y + 6)
+    for title, rows in rules["per_fondamentale"]:
+        _rule_block(pdf, title, rows)
+
+    q, media = rules["quota"], rules["media"]
+    n_ex = 40
+    atteso = media * n_ex
+    _rule_text(pdf, "Palleggiatore", [
+        f"Oltre alle sue azioni, il palleggiatore guadagna **{_num(q)} per ogni punto** e perde **{_num(q)} per ogni "
+        "errore o murata** dei suoi attaccanti, ma solo per la parte **sopra o sotto il solito**: in media un "
+        f"attacco vale {_num(media)} di punti meno errori e murate.",
+        f"Esempio: alza {n_ex} palloni, su cui di solito i suoi attaccanti farebbero +{_num(atteso, 1)} (punti meno "
+        f"errori e murate). Se fanno +14 guadagna (14 - {_num(atteso, 1)}) x {_num(q)} = "
+        f"**+{_num((14 - atteso) * q)}**; se fanno +4 perde ({_num(atteso, 1)} - 4) x {_num(q)} = "
+        f"**-{_num((atteso - 4) * q)}**.",
+        "Contano gli attacchi dopo una ricezione #, + o ! e dopo una free ball"
+        + (", solo su alzata veloce" if rules["solo_veloci"] else "")
+        + ", non i suoi attacchi. Gli errori di alzata li paga come tutti.",
+    ])
+    k = rules["set_fittizi"]
+    ex_tot, ex_sets, ex_played = 3.0, 5, 2
+    ex = ex_tot * (ex_sets + k) / (ex_played + k)
+    _rule_text(pdf, "Chi gioca meno set", [
+        "Un punteggio positivo si rapporta ai set giocati, così può vincere anche chi entra a partita in corso: "
+        f"**totale x (set della partita + {k}) / (set giocati + {k})**. I punteggi negativi restano come sono.",
+        f"Esempio: in una partita da {ex_sets} set chi gioca solo gli ultimi {ex_played} e fa +{_num(ex_tot)} arriva a "
+        f"{_num(ex_tot)} x {ex_sets + k}/{ex_played + k} = **+{_num(ex)}**.",
+    ])
+
+# ---------------------------------------------------------------------------
 # Documento
 # ---------------------------------------------------------------------------
-def build_match_report_pdf(header, comment, sources, comparison, players, setters, rankings,
-                           nome_noi, nome_loro, n_partite_stagione, distributions=None):
-    """Ritorna il PDF (bytes). `distributions`: griglie della distribuzione
-    per palleggiatore (src.setter_distribution.distributions_by_setter)."""
+def build_match_report_pdf(header, comment, sources, points_by_set, comparison, players, setters, rankings,
+                           nome_noi, nome_loro, n_partite_stagione, distributions=None, ranking_mins=None,
+                           deviations=None, mvp=None):
+    """Ritorna il PDF (bytes). `points_by_set`: src.match_report.
+    point_sources_by_set; `players`: src.set_analysis.player_kpi_table;
+    `distributions`: griglie della distribuzione per
+    palleggiatore (src.setter_distribution.distributions_by_setter);
+    `ranking_mins`: (min attacchi, min ricezioni) delle classifiche;
+    `deviations`: colori del tabellino rispetto alle medie personali; `mvp`:
+    (riga dell'MVP di src.mvp.match_mvp, src.mvp.mvp_highlights)."""
     pdf = _ReportPDF(format=(PAGE_W, PAGE_H))
     pdf.set_margins(MARGIN, MARGIN, MARGIN)
     pdf.set_auto_page_break(True, margin=BOTTOM)
     pdf.add_page()
 
+    # prima pagina: risultato, MVP e da dove arrivano i punti (richiesta
+    # dell'utente, 2026-10-31); il commento subito dopo
     _header(pdf, header, nome_noi, nome_loro)
-    _comment(pdf, comment)
+    if mvp:
+        _mvp(pdf, *mvp)
 
-    png_points, h_points = _points_chart(sources, nome_noi, nome_loro)
-    _section_title(pdf, "Da dove arrivano i punti", keep_with=h_points * MM_PER_INCH + 34)
+    png_points, h_points, causes = _points_by_set_chart(points_by_set, header, nome_noi, nome_loro)
+    _section_title(pdf, "Da dove arrivano i punti", keep_with=30)
     _points_tiles(pdf, sources, nome_noi, nome_loro)
-    _note(pdf, "Ogni punto ha una sola causa: l'azione vincente di chi l'ha fatto, altrimenti l'errore di chi "
-               "l'ha perso (scambi rilevati nello scout).")
-    pdf.ln(1)
-    _team_legend(pdf, nome_noi, nome_loro)
-    _image(pdf, png_points, h_points * MM_PER_INCH)
+    _note(pdf, "Set per set, divisi per causa: l'azione vincente di chi ha fatto il punto, altrimenti l'errore di chi "
+               "l'ha perso.", size=6.8)
+    pdf.ln(0.5)
+    _cause_legend(pdf, causes)
+    _image(pdf, png_points, h_points * MM_PER_INCH, shrink_to_fit=0.75)
+    _comment(pdf, comment)
 
     _comparison_section(pdf, comparison, header, nome_noi, nome_loro)
     _setter_tables(pdf, setters, distributions)
 
-    _section_title(pdf, "Tabellino giocatori", keep_with=_table_height(len(players), 2))
-    _player_tables(pdf, players)
+    _player_kpi_tables(pdf, players, deviations)
 
-    _rankings(pdf, rankings, n_partite_stagione)
+    _rankings(pdf, rankings, n_partite_stagione, ranking_mins)
+    if mvp:
+        _mvp_appendix(pdf, scoring_rules())
     return bytes(pdf.output())

@@ -73,9 +73,9 @@ SETTER_COLUMNS = {"R+#": "Da R+ / #", "R!": "Da R!", "FB": "Da free ball"}
 
 LEGEND = (
     "**pt** punti fatti: attacchi, muri e ace punto.  **err** errori: battute, attacchi e alzate sbagliate, errori "
-    "di muro (attacchi murati in **mur**, ace subiti negli **err** di ricezione).  **p-e** punti fatti meno errori.  "
+    "di muro (attacchi murati in **mur**, ace subiti negli **err** di ricezione).  **p-e/m** punti fatti meno errori meno attacchi murati.  "
     "**eff** efficienza (come nella dashboard): battuta ((# + + + /) - =); ricezione ((# + +) - (/ + =)); attacco "
-    "(# - (= + /)); muro ((# + +) - (= + /)).  **Side-out** attacco subito dopo la ricezione; **contrattacco** tutti "
+    "(# - (= + /)). Muro: muri punto.  **Side-out** attacco subito dopo la ricezione; **contrattacco** tutti "
     "gli altri; **free ball (FB)** attacco dopo una difesa con voto !, una parte del contrattacco."
 )
 
@@ -300,7 +300,7 @@ def _setters(pdf, setters, distributions, tests):
     _section_title(pdf, "Palleggiatori", keep_with=50)
     _note(pdf, "Efficienza d'attacco della squadra **con lui in campo** (tra parentesi il numero di attacchi), poi la "
                "**distribuzione**: da quale zona attaccano i giocatori serviti (% delle alzate, attacchi ed "
-               "efficienza, il più servito), escluse le sue seconde intenzioni. Centrali sempre da 3, schiacciatori da "
+               "efficienza; con la coppa il miglior p-e/m della zona, se maggiore di 2), escluse le sue seconde intenzioni. Centrali sempre da 3, schiacciatori da "
                "dietro da 8 (pipe), opposto da dietro da 9.", markdown=True)
     pdf.ln(1)
     keys = list(SETTER_COLUMNS)
