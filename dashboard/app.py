@@ -2388,8 +2388,11 @@ def render_classifiche_section(season, matches, match_label_lookup, version):
             ignore[tipo] = col.multiselect(
                 f"Esclusi da {tipo}", cognomi, default=saved["ignore"][tipo], key=f"ignore_{tipo}_{season}",
             )
+    # chi non gioca nelle partite scelte non compare tra le opzioni ma resta
+    # escluso: senza questo, scegliere poche partite cancellava le esclusioni
+    absent = {t: [c for c in names if c not in cognomi] for t, names in load_ranking_settings(season)["ignore"].items()}
     save_ranking_settings(season, {"min_attacchi": int(min_attacchi), "min_ricezioni": int(min_ricezioni),
-                                   "ignore": ignore})
+                                   "ignore": {t: ignore[t] + absent.get(t, []) for t in ignore}})
 
     tables = build_rankings(season_df, ignore, min_attacchi, min_ricezioni)
     for row_start in range(0, len(tables), 3):
