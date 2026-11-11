@@ -113,7 +113,7 @@ from src.leg_comparison import (
     load_all_matches,
 )
 from config.paths import ROOT, build_base_path, load_seasons
-from src.dvw import decimo_side, normalize_team_name, parse_dvw, read_dvw_header, team_side
+from src.dvw import decimo_side, normalize_team_name, parse_dvw, read_dvw_header, role_codes, team_side
 from src.efficiency import (
     SET_TABELLINO_TOTAL,
     compute_set_tabellino,
@@ -128,6 +128,7 @@ from src.match_report import (
     POINT_SOURCE_COLORS_DARK,
     POINT_SOURCE_COLORS_LIGHT,
     POINT_SOURCES,
+    RIGORI,
     RECEPTION_GRADES,
     SET_KPI_COUNTS,
     SET_KPI_PERCENT,
@@ -145,9 +146,14 @@ from src.match_report import (
     side_out_by_reception,
     team_comparison,
 )
-from src.match_report_pdf import build_match_report_pdf, build_mvp_rules_pdf
+from src.match_report_pdf import NOT_APPLICABLE, build_match_report_pdf, build_mvp_rules_pdf
+from src.social_graphics import (
+    LOGO_PATH, PHOTOS_FOLDER, build_mvp_story, build_result_story, find_player_photo, opponent_logo_path,
+    result_story_inputs, save_opponent_logo,
+)
 from src.mvp import (
-    FUNDAMENTAL_LABELS, FUNDAMENTALS, match_mvp, mvp_by_match_long, mvp_highlights, scoring_rules, season_mvp,
+    FUNDAMENTAL_LABELS, FUNDAMENTALS, match_awards, match_mvp, mvp_by_match_long, mvp_highlights, player_mvp_detail, scoring_rules,
+    season_mvp,
 )
 from src.opponent_report_pdf import build_opponent_report_pdf
 from src.player_report import build_player_report_base
@@ -156,9 +162,11 @@ from src.rankings import (
     build_best_attack,
     build_best_block,
     build_best_rec,
+    build_rigoristi,
     build_spike_guarantee,
     build_srv_shame,
     calculate_player_scores_by_type,
+    without_rigori,
 )
 from src.player_season_report import build_player_season_report
 from src.setter_distribution import (
@@ -218,6 +226,7 @@ from src.set_analysis import (
     MIN_BASELINE_SETS,
     MIN_FORM_VOLUME,
     MIN_HISTORY,
+    RECEIVE_ROWS,
     SET_PROFILE_KPIS,
     SIGNAL_P,
     ball_type_pe_by_match,
@@ -1342,16 +1351,20 @@ def save_ranking_settings(season, settings):
 
 
 def build_rankings(season_df, ignore, min_attacchi=0, min_ricezioni=0):
-    """Le 6 classifiche di classifiche.ipynb: [(titolo, tabella)]."""
+    """Le 6 classifiche di classifiche.ipynb, più i Rigoristi se nelle partite
+    c'è almeno un rigore: [(titolo, tabella)]. Block Monster senza i rigori
+    (richiesta dell'utente, 2026-11-02; esclusioni del muro per entrambe)."""
     srv = calculate_player_scores_by_type(season_df, "battuta", ignore_list=ignore["battuta"])
     att = calculate_player_scores_by_type(season_df, "attacco", ignore_list=ignore["attacco"])
-    blk = calculate_player_scores_by_type(season_df, "muro", ignore_list=ignore["muro"])
+    blk = calculate_player_scores_by_type(without_rigori(season_df), "muro", ignore_list=ignore["muro"])
     rec = calculate_player_scores_by_type(season_df, "ricezione", ignore_list=ignore["ricezione"])
+    rigoristi = build_rigoristi(season_df, ignore_list=ignore["muro"])
     return [
         ("Ace Man", build_ace_man(srv)),
         ("Spike Leader", build_best_attack(att)),
         ("Spike Guarantee", build_spike_guarantee(att, min_attacchi=min_attacchi)),
         ("Block Monster", build_best_block(blk)),
+        *([("Rigoristi", rigoristi)] if not rigoristi.empty else []),
         ("Miglior ricevitore", build_best_rec(rec, min_ricezioni=min_ricezioni)),
         ("Muro della vergogna (battute sbagliate)", build_srv_shame(srv)),
     ]
@@ -1366,7 +1379,7 @@ def build_rankings(season_df, ignore, min_attacchi=0, min_ricezioni=0):
 SET_KPI_LABELS = {
     "Battuta%": "Battuta", "Ricezione%": "Ricezione", "Attacco%": "Attacco", "Attacco SO%": "Attacco side-out",
     "Contrattacco%": "Contrattacco", "Attacco FB%": "Attacco da free ball", "Muro%": "Muro",
-    "Punti": "Punti", "Errori": "Errori", "p-e": "p-e/m", "Muri punto": "Muri punto",
+    "Punti": "Punti", "Errori": "Errori", "p-e": "p-e/m", "Muri punto": "Muri punto", RIGORI: RIGORI,
 }
 SETTER_FAMILIES = {"R+#": "Da ricezione positiva (+ o #)", "R!": "Da ricezione !", "FB": "Da free ball"}
 
@@ -1729,6 +1742,12 @@ def render_mvp_rules():
                              " font-weight: bold" for x in col], subset=["Punti"]),
                 hide_index=True, width="stretch")
     q, media, k = rules["quota"], rules["media"], rules["set_fittizi"]
+    if rules.get("premio"):
+        st.markdown(
+            f"**Miglior ricevitore della partita** (migliore efficienza di ricezione della squadra, almeno "
+            f"{rules['min_ricezioni_per_set']:.1f}".replace(".", ",") + " ricezioni a set): premio di {_signed(rules['premio'])} meno i punti "
+            "fatti in attacco, battuta e muro, mai sotto zero. Così può vincere anche il libero, e chi ha già fatto "
+            "una grande partita in attacco non prende punti in più.")
     st.markdown(
         f"**Palleggiatore**: oltre alle sue azioni, {_signed(q)} per ogni punto e {_signed(-q)} per ogni errore o murata "
         f"dei suoi attaccanti (dopo ricezione #, + o ! e free ball), ma solo sopra o sotto il solito: in media un "
@@ -1762,10 +1781,64 @@ def mvp_display_table(mvp):
     shown = pd.DataFrame({"": range(1, len(mvp) + 1), "Giocatore": mvp["giocatore"]})
     for f in used:
         shown[FUNDAMENTAL_LABELS[f]] = [_signed(v) for v in mvp[f]]
+    if "premio" in mvp and (mvp["premio"] > 0).any():
+        shown["Premio ricezione"] = ["" if not v else _signed(v) for v in mvp["premio"]]
     shown["Totale"] = [_signed(v) for v in mvp["totale"]]
     shown["Set giocati"] = [f"{int(a)}/{int(b)}" for a, b in zip(mvp["set_giocati"], mvp["set_partita"])]
     shown["Punteggio"] = [_signed(v) for v in mvp["punteggio"]]
     return shown
+
+
+def render_player_mvp_detail(match, mvp):
+    """Le azioni di un giocatore con il loro valore MVP (src.mvp.
+    player_mvp_detail), la quota del palleggiatore e la correzione per i set
+    giocati."""
+    giocatore = st.selectbox("Giocatore", list(mvp["giocatore"]), key="mvp_detail_player")
+    detail = player_mvp_detail(load_report_source(match["file_path"]), giocatore)
+    actions, row, cfg = detail["azioni"], detail["riga"], detail["config"]
+    shown = pd.DataFrame({
+        "Fondamentale": actions["fondamentale"], "Azione": actions["azione"], "Volte": actions["volte"],
+        "Valore": ["0" if v == 0 else _signed(v) for v in actions["valore"]],
+        "Totale": ["0" if v == 0 else _signed(v) for v in actions["totale"]],
+    })
+
+    def style(_):
+        css = pd.DataFrame("", index=shown.index, columns=shown.columns)
+        css["Totale"] = ["color: #1a7f37; font-weight: bold" if v > 0 else "color: #cf222e; font-weight: bold"
+                         if v < 0 else "color: #8c959f" for v in actions["totale"]]
+        return css
+
+    st.dataframe(shown.style.apply(style, axis=None), hide_index=True, width="stretch",
+                 height=35 * (len(shown) + 1) + 3)
+    lines = []
+    if row.get("alzati_n") and not pd.isna(row.get("alzati_n")):
+        n, pt, pem, expected = int(row["alzati_n"]), int(row["alzati_pt"]), int(row["alzati_pem"]), row["alzati_attesi"]
+        q = cfg["palleggiatore"]["quota"]
+        dec = lambda v, d: f"{v:.{d}f}".replace(".", ",")
+        lines.append(
+            f"**Quota da palleggiatore**: {n} attacchi alzati dopo ricezione #, + o ! e free ball, con {pt} punti e "
+            f"{pt - pem} errori o murate, cioè p-e/m {pem:+d}. Di solito sarebbe {_signed(expected, 1)} "
+            f"({dec(cfg['palleggiatore']['pem_medio_per_attacco'], 2)} × {n}). Quota: ({pem} − {dec(expected, 1)}) × "
+            f"{dec(q, 2)} = **{_signed(q * (pem - expected))}**, già nella colonna Alzata."
+        )
+    if row.get("premio"):
+        p = cfg["miglior_ricevitore"]["premio"]
+        other = row["attacco"] + row["battuta"] + row["muro"]
+        lines.append(
+            f"**Premio miglior ricevitore**: efficienza {row['ric_eff']:.0f}% su {int(row['ric_n'])} ricezioni, la migliore "
+            f"della squadra. Premio = {_signed(p)} meno i punti fatti in attacco, battuta e muro ({_signed(other)}) = "
+            f"**{_signed(row['premio'])}**, nella riga \"Premio\".")
+    lines.append(f"**Totale**: {_signed(row['totale'])}.")
+    if row["totale"] > 0 and row["set_giocati"] < row["set_partita"]:
+        k = cfg["set_fittizi"]
+        lines.append(f"**Set giocati**: {int(row['set_giocati'])} su {int(row['set_partita'])}, quindi punteggio = "
+                     f"{_signed(row['totale'])} × ({int(row['set_partita'])} + {k}) / ({int(row['set_giocati'])} + {k}) "
+                     f"= **{_signed(row['punteggio'])}**.")
+    else:
+        lines.append(f"**Punteggio**: {_signed(row['punteggio'])}"
+                     + (" (ha giocato tutti i set)." if row["set_giocati"] >= row["set_partita"]
+                        else " (punteggio negativo: non si rapporta ai set giocati)."))
+    st.markdown("  \n".join(lines))
 
 
 def render_match_mvp(match, version):
@@ -1785,7 +1858,21 @@ def render_match_mvp(match, version):
         f"<span style='font-weight: 400; font-size: 1.1rem'>{_signed(best['punteggio'])}{played}</span></div>"
         f"<ul style='margin: 6px 0 0 0'>{lines}</ul></div>"
     )
+    awards = match_awards(load_report_source(match["file_path"]), mvp)
+    parts = []
+    if awards["ricevitore"]:
+        r = awards["ricevitore"]
+        parts.append(f"**Miglior ricevitore** {r['giocatore']} ({r['eff']:.0f}% su {r['n']}, premio {_signed(r['premio'])})")
+    if awards["attaccante"]:
+        a = awards["attaccante"]
+        parts.append(f"**Miglior attaccante** {a['giocatore']} ({a['eff']:.0f}% su {a['n']}, {a['pt']} punti)")
+    if awards["muro"]:
+        parts.append(f"**Miglior muro** {awards['muro']['giocatore']} ({awards['muro']['pt']} muri punto)")
+    if parts:
+        st.markdown(" · ".join(parts))
     st.dataframe(mvp_display_table(mvp), hide_index=True, width="stretch", height=35 * (len(mvp) + 1) + 3)
+    with st.expander("Dettaglio di un giocatore: da dove arrivano i suoi punti MVP"):
+        render_player_mvp_detail(match, mvp)
     with st.expander("Come si guadagnano e si perdono i punti MVP"):
         render_mvp_rules()
         st.download_button("⬇️ Le regole in una pagina (PDF, da mandare al gruppo)",
@@ -2234,40 +2321,68 @@ def _deviation_css(z, scale=2.5):
     return f"background-color: rgb({r},{g},{b}); color: #000"
 
 
-KPI_TABLE_HEADERS = {"tot": "tot", "pt": "pt", "err": "err", "mur": "mur", "pe": "p-e/m", "eff": "eff"}
+KPI_SCORE_HEADERS = {"tot": "tot", "pt": "pt", "err": "err", "mur": "mur", "pe": "p-e/m", "eff": "eff"}
+KPI_RECEIVE_HEADERS = {"tot": "tot", "hash": "#", "plus": "+", "ex": "!", "neg": "-", "err": "err", "eff": "eff"}
+
+
+def _kpi_part_frame(table, part, headers, devs):
+    """Una delle due tabelle del giocatore (fanno punto / ricezione e difesa),
+    con le caselle senza senso barrate e i colori rispetto alla media."""
+    rows = table[table["kpi"].isin(part)] if isinstance(part, tuple) else table[~table["kpi"].isin(RECEIVE_ROWS)]
+    na = NOT_APPLICABLE
+
+    def cell(r, c):
+        if c in na.get(r["kpi"], ()):
+            return "╱"
+        v = r.get(c)
+        if c == "pe" and v is not None and not pd.isna(v):
+            return f"{int(v):+d}"
+        return _fmt_cell(v, c == "eff")
+
+    recs = rows.to_dict("records")
+    shown = pd.DataFrame({"": [("  " + r["label"]) if r["kpi"] == "fb" else r["label"] for r in recs],
+                          **{h: [cell(r, c) for r in recs] for c, h in headers.items()}})
+    all_kpis, kpis = list(table["kpi"]), list(rows["kpi"])
+
+    def style(_):
+        css = pd.DataFrame("", index=shown.index, columns=shown.columns)
+        for (row, col), z in devs.items():
+            if all_kpis[row] in kpis and col in headers:
+                css.iloc[kpis.index(all_kpis[row]), list(headers).index(col) + 1] = _deviation_css(z)
+        for i, r in enumerate(recs):
+            for j, c in enumerate(headers):
+                if c in na.get(r["kpi"], ()):
+                    css.iloc[i, j + 1] = "background-color: #e5e7eb; color: #cf222e; text-align: center"
+        if not isinstance(part, tuple):
+            css.iloc[-1] = [x + "; font-weight: bold" for x in css.iloc[-1]]
+        return css
+
+    return shown, style
 
 
 def render_player_kpi_tables(tables, deviations, n_history):
     """Il tabellino per giocatore del report (src.set_analysis.player_kpi_table),
-    tre per riga, con le celle colorate rispetto alla media personale."""
+    tre per riga: fondamentali che fanno punto e, sotto, ricezione e difesa,
+    con le celle colorate rispetto alla media personale."""
     st.caption(
         f"Colori: confronto con la media del giocatore nelle {n_history} partite precedenti (comprese quelle della "
         f"stagione precedente se servono), verde meglio del solito, rosso peggio, più intenso quanto più si discosta; "
         f"bianco = in media o meno di {MIN_HISTORY} partite con quel dato. err = errori (in attacco solo gli attacchi "
         "sbagliati), mur = murate, p-e/m = punti − errori − murate, eff = efficienza. Attacco SO = dopo ricezione, "
-        "BP = tutti gli altri (free ball compresa)."
+        "BP = tutti gli altri (free ball compresa). Ricezione e difesa: quante per voto (#, +, !, -), "
+        "err errori (ricezione: rimandate di là e ace subiti). ╱ = non ha senso per quel fondamentale."
     )
     cols = st.columns(3)
     for i, (name, table) in enumerate(tables.items()):
-        shown = pd.DataFrame({
-            "": [("  " + r["label"]) if r["kpi"] == "fb" else r["label"] for r in table.to_dict("records")],
-            **{h: [_fmt_cell(v, c == "eff") if not (c == "pe" and v is not None and not pd.isna(v))
-                   else f"{int(v):+d}" for v in table.get(c, pd.Series([None] * len(table)))]
-               for c, h in KPI_TABLE_HEADERS.items()},
-        })
         devs = deviations.get(name, {})
-
-        def style(_, devs=devs):
-            css = pd.DataFrame("", index=shown.index, columns=shown.columns)
-            for (row, col), z in devs.items():
-                css.iloc[row, list(KPI_TABLE_HEADERS).index(col) + 1] = _deviation_css(z)
-            css.iloc[-1] = [x + "; font-weight: bold" for x in css.iloc[-1]]
-            return css
-
         with cols[i % 3]:
             st.markdown(f"**{name}**")
-            st.dataframe(shown.style.apply(style, axis=None), hide_index=True, width="stretch",
-                         height=35 * (len(shown) + 1) + 3)
+            for part, headers in ((None, KPI_SCORE_HEADERS), (RECEIVE_ROWS, KPI_RECEIVE_HEADERS)):
+                shown, style = _kpi_part_frame(table, part, headers, devs)
+                if shown.empty:
+                    continue
+                st.dataframe(shown.style.apply(style, axis=None), hide_index=True, width="stretch",
+                             height=35 * (len(shown) + 1) + 3)
 
 
 def render_player_table(players):
@@ -2280,7 +2395,7 @@ def render_player_table(players):
         "ric_tot": "Ricezioni", "ric_err": "Ric. err", "ric_eff": "Ricezione eff", "att_tot": "Attacchi",
         "att_err": "Att. err", "att_mur": "Murati", "att_pt": "Att. punti", "att_eff": "Attacco eff",
         "so_eff": "Side-out eff", "so_tot": "Side-out n", "contr_eff": "Contrattacco eff",
-        "contr_tot": "Contrattacco n", "fb_eff": "Free ball eff", "fb_tot": "Free ball n", "muro_pt": "Muri punto",
+        "contr_tot": "Contrattacco n", "fb_eff": "Free ball eff", "fb_tot": "Free ball n", "muro_pt": "Muri punto", "rigori": '"Rigori"',
     }
     tab = players[[c for c in names if c in players.columns]].rename(columns=names)
     pct_cols = ["Battuta eff", "Ricezione eff", "Attacco eff", "Side-out eff", "Contrattacco eff", "Free ball eff"]
@@ -2290,6 +2405,32 @@ def render_player_table(players):
     st.dataframe(tab, hide_index=True, width="stretch", height=35 * (len(tab) + 1) + 3)
     st.caption("Errori = battute, attacchi e alzate sbagliate ed errori di muro (gli attacchi murati sono in \"Murati\", "
                "gli ace subiti in \"Ric. err\"), divisi per fondamentale. p-e/m = punti − errori − murate.")
+
+
+# Commenti del report salvati per partita (richiesta dell'utente, 2026-11-09):
+# nella cartella della stagione su Drive, come gli scout (mai nel repo), chiave =
+# nome del file dello scout.
+REPORT_COMMENTS_FILE = "commenti_report.json"
+
+
+def load_report_comments(season):
+    path = build_base_path(season) / REPORT_COMMENTS_FILE
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, ValueError):
+        return {}
+
+
+def save_report_comment(season, match, text):
+    comments = load_report_comments(season)
+    key = os.path.basename(match["file_path"])
+    if text.strip():
+        comments[key] = text
+    else:
+        comments.pop(key, None)
+    with open(build_base_path(season) / REPORT_COMMENTS_FILE, "w", encoding="utf-8") as f:
+        json.dump(comments, f, ensure_ascii=False, indent=1)
 
 
 def render_match_report_section(season, matches, match_label_lookup, version):
@@ -2311,10 +2452,15 @@ def render_match_report_section(season, matches, match_label_lookup, version):
         "Partita", list(by_seq), index=len(by_seq) - 1,
         format_func=lambda ms: _match_option_label(ms, match_label_lookup), key="report_partita",
     )
+    key = f"report_commento_{seq}"
+    if key not in st.session_state:  # il commento salvato per questa partita
+        st.session_state[key] = load_report_comments(season).get(os.path.basename(by_seq[seq]["file_path"]), "")
     comment = st.text_area(
-        "Commento (dopo l'MVP e i punti per causa)", key=f"report_commento_{seq}", height=200,
+        "Commento (dopo l'MVP e i punti per causa)", key=key, height=200,
         placeholder="Cosa è andato bene, cosa no, su cosa lavorare in settimana...",
-        help="Formattazione: **testo** in grassetto; le righe che iniziano con \"- \" diventano un elenco puntato.",
+        help="Formattazione: **testo** in grassetto; le righe che iniziano con \"- \" diventano un elenco puntato. "
+             f"Si salva da solo ({REPORT_COMMENTS_FILE} nella cartella della stagione su Drive).",
+        on_change=lambda: save_report_comment(season, by_seq[seq], st.session_state[key]),
     )
     if st.button("📄 Genera PDF", key="report_genera"):
         match = by_seq[seq]
@@ -2347,6 +2493,7 @@ def render_match_report_section(season, matches, match_label_lookup, version):
                 ranking_mins=(ranking["min_attacchi"], ranking["min_ricezioni"]), deviations=deviations,
                 distributions=distributions_by_setter(attack_rows(source["parsed"], source["side"])),
                 mvp=(mvp_row, mvp_highlights(mvp_row)) if mvp_row else None,
+                mvp_ranking=mvp, awards=match_awards(source, mvp) if not mvp.empty else None,
             )
             name = f"Report {header['casa']} - {header['ospite']} {header['data'] or ''}".strip().replace("/", "-")
             st.session_state["report_pdf"] = (seq, name, pdf)
@@ -2357,6 +2504,61 @@ def render_match_report_section(season, matches, match_label_lookup, version):
             key="report_scarica",
         )
         st.caption("Se cambi il commento, premi di nuovo \"Genera PDF\" prima di scaricarlo.")
+
+    render_instagram_stories(season, by_seq[seq], version)
+
+
+def render_instagram_stories(season, match, version):
+    """Le due storie Instagram della partita (src.social_graphics): MVP e
+    risultato, 1080 x 1920, con anteprima e download."""
+    st.subheader("Storie per Instagram")
+    source = load_report_source(match["file_path"])
+    data = result_story_inputs(source, match["opponent"], match["official_result"])
+    mvp = load_match_mvp(match["file_path"], version)
+    if mvp.empty:
+        st.info("Nessuna azione rilevata per i nostri giocatori.")
+        return
+    row = mvp.iloc[0].to_dict()
+    numero, _, cognome = str(row["giocatore"]).partition(" ")
+    folder = build_base_path(season).parent / PHOTOS_FOLDER
+    drive_photo = find_player_photo(cognome, folder)
+    opp_logo = opponent_logo_path(match["opponent"])
+
+    c1, c2 = st.columns(2)
+    with c1:
+        uploaded = st.file_uploader(
+            f"Foto di {cognome} (facoltativa)", type=["jpg", "jpeg", "png"], key=f"story_photo_{match['match_seq']}",
+            help=f"Se non la carichi uso quella del roster su Drive ({PHOTOS_FOLDER}/{cognome}.png), se c'è; "
+                 "altrimenti il numero di maglia.",
+        )
+    with c2:
+        logo_upload = st.file_uploader(
+            f"Logo di {match['opponent']} (facoltativo)", type=["png", "jpg", "jpeg"],
+            key=f"story_logo_{match['match_seq']}",
+            help="Meglio un PNG con lo sfondo trasparente. Viene salvato in assets/loghi_avversari/ e usato anche "
+                 "nelle prossime partite con la stessa squadra.",
+        )
+    if logo_upload is not None:
+        opp_logo = save_opponent_logo(match["opponent"], logo_upload.getvalue())
+    photo = uploaded.getvalue() if uploaded is not None else drive_photo
+    st.caption(
+        ("Foto: caricata qui." if uploaded is not None else
+         f"Foto dal roster su Drive: {drive_photo.name}." if drive_photo else
+         f"Nessuna foto di {cognome} in {PHOTOS_FOLDER}: al suo posto il numero di maglia.")
+        + (f" Logo di {match['opponent']}: {opp_logo.name}." if opp_logo.exists() else
+           f" Nessun logo di {match['opponent']}: c'è solo il nome.")
+    )
+    logos = {True: LOGO_PATH if LOGO_PATH.exists() else None, False: opp_logo if opp_logo.exists() else None}
+    mvp_png = build_mvp_story(row, data["match_line"], data["date"], photo=photo)
+    result_png = build_result_story(data["teams"], data["sets_won"], data["partials"], data["kpis"], data["date"],
+                                    mvp=(cognome, numero), logos=[logos[ours] for _, ours in data["teams"]])
+    base = f"{data['teams'][0][0]} - {data['teams'][1][0]} {data['date'] or ''}".strip().replace("/", "-")
+    c1, c2 = st.columns(2)
+    for col, png, label, suffix in ((c1, mvp_png, "MVP", "MVP"), (c2, result_png, "Risultato", "risultato")):
+        with col:
+            st.image(png, caption=label, width=330)
+            st.download_button(f"⬇️ Scarica storia {label.lower()}", data=png, file_name=f"{base} {suffix}.png",
+                               mime="image/png", key=f"story_{suffix}_{match['match_seq']}")
 
 
 def render_classifiche_section(season, matches, match_label_lookup, version):
@@ -3001,6 +3203,7 @@ def load_team_match(file_path, team, mtime):
         "points": pts[pts["set"] == TOTAL_LABEL], "points_by_set": pts,
         "set_results": set_results(source["parsed"], source["side"]),
         "serves": serve_rows(source),
+        "sigle": role_codes(source["parsed"]["players"], source["side"]),
         "kpi": {"noi": set_kpis(source["noi"]), "loro": set_kpis(source["loro"])},
         "setters": setter_table(source),
         "rows": attack_rows(source["parsed"], source["side"], f"{header['data'] or ''} vs {source['nome_loro']}"),
@@ -3025,29 +3228,46 @@ def points_balance_table(by_outcome, n_sets, team_name):
     return pd.DataFrame(rows)
 
 
-def _receiver_text(rec):
-    return (f"**{rec['giocatore']}**: efficienza {rec['eff']:.0f}% su {rec['n']} ricezioni "
+def opponent_labeler(sigle):
+    """'11 Dolci' o 'Dolci' → 'Dolci (11, L)': numero e sigla di ruolo
+    (src.dvw.role_codes) per ogni avversario nominato."""
+    def label(text):
+        text = str(text).strip()
+        head, _, rest = text.partition(" ")
+        cognome = rest if head.isdigit() and rest else text
+        key = cognome.replace("\u2019", "'")
+        if key not in sigle:
+            return text
+        numero, sigla = sigle[key]
+        return f"{cognome} ({numero}, {sigla})" if sigla else f"{cognome} ({numero})"
+    return label
+
+
+def _receiver_text(rec, label=str):
+    return (f"**{label(rec['giocatore'])}**: efficienza {rec['eff']:.0f}% su {rec['n']} ricezioni "
             f"({rec['perfette_pos']:.0f}% perfette o positive, {rec['errori']} ace subiti)")
 
 
-def render_opponent_summary(df, rows, serves):
-    """Riassunto iniziale dello studio dell'avversario (src.opponent_summary)."""
+def render_opponent_summary(df, rows, serves, sigle=None):
+    """Riassunto iniziale dello studio dell'avversario (src.opponent_summary);
+    i giocatori con numero e sigla di ruolo (`sigle`, opponent_labeler)."""
+    label = opponent_labeler(sigle or {})
     st.subheader("In breve")
     c1, c2, c3 = st.columns(3)
     worst, best = worst_receiver(df), best_receiver(df)
     with c1:
         st.markdown("**🎯 Peggior ricevitore**")
-        st.markdown(_receiver_text(worst) if worst else f"Nessuno con almeno {MIN_RECEPTIONS} ricezioni.")
+        st.markdown(_receiver_text(worst, label) if worst else f"Nessuno con almeno {MIN_RECEPTIONS} ricezioni.")
     with c2:
         st.markdown("**🛡️ Miglior ricevitore**")
-        st.markdown(_receiver_text(best) if best and best != worst
+        st.markdown(_receiver_text(best, label) if best and best != worst
                     else f"Nessun altro con almeno {MIN_RECEPTIONS} ricezioni." if worst
                     else f"Nessuno con almeno {MIN_RECEPTIONS} ricezioni.")
     srv = dangerous_server(serves)
     with c3:
         st.markdown("**💥 Battitore più pericoloso**")
         if srv:
-            st.markdown(f"**{srv['giocatore']}**: la squadra vince il {srv['break']:.0f}% degli scambi sulla sua "
+            st.markdown(f"**{label(srv['giocatore'])}**: la squadra vince il {srv['break']:.0f}% degli scambi sulla sua "
                         f"battuta (media della squadra {srv['break_squadra']:.0f}%), {srv['quota']:.0f}% di battute "
                         f"#, + o / su {srv['n']} ({srv['ace']} ace, {srv['errori']} "
                         f"{'errore' if srv['errori'] == 1 else 'errori'})")
@@ -3061,7 +3281,7 @@ def render_opponent_summary(df, rows, serves):
     with c4:
         st.markdown("**🔥 Più servito nei finali di set**")
         if clutch:
-            st.markdown(f"**{clutch['giocatore']}**: {clutch['n']} attacchi su {clutch['totale']} "
+            st.markdown(f"**{label(clutch['giocatore'])}**: {clutch['n']} attacchi su {clutch['totale']} "
                         f"({clutch['quota']:.0f}%, contro il {clutch['quota_partita']:.0f}% sul totale degli attacchi "
                         f"della squadra), {clutch['punti']} punti, efficienza {clutch['eff']:.0f}%")
         else:
@@ -3074,7 +3294,7 @@ def render_opponent_summary(df, rows, serves):
         st.markdown("**🧭 Tendenze del palleggiatore**")
         if sig:
             for setter, k, r in sig:
-                st.markdown(f"- {situation_text(setter, k, r['scostamenti'][0])}")
+                st.markdown(f"- {situation_text(label(setter), k, r['scostamenti'][0])}")
         else:
             st.markdown("Nessuna tendenza significativa da R+ / R#, da R! o da free ball.")
     st.divider()
@@ -3175,16 +3395,50 @@ def render_opponent_section(season, version):
             t = teams.setdefault(key, {"names": Counter(), "matches": []})
             t["names"][name] += 1
             t["matches"].append((e, name))
-    if not teams:
-        st.info(f"Nessuno scout .dvw di altre squadre nella cartella della stagione {season} "
-                f"({build_base_path(season)}, sottocartelle comprese).")
-        return
     display = {k: v["names"].most_common(1)[0][0] for k, v in teams.items()}
+
+    # stagione del modello di prestazione: un solo menu con tutte le squadre del
+    # girone (anche senza scout), prima le indicazioni del modello e la scheda,
+    # poi gli scout della squadra se ci sono
+    from src.performance_model import RESULTS_PATH
+    model = load_performance_results(RESULTS_PATH.stat().st_mtime if RESULTS_PATH.exists() else 0)
+    model_season = model is not None and model["meta"]["config"]["stagioni"][-1] == season
     c1, c2 = st.columns([1, 2])
-    with c1:
-        team_key = st.selectbox("Squadra", sorted(teams, key=lambda k: display[k].casefold()), key="opp_team",
-                                format_func=lambda k: f"{display[k]} ({len(teams[k]['matches'])} "
-                                                      f"{'partita' if len(teams[k]['matches']) == 1 else 'partite'})")
+    if model_season:
+        o = model["avversari"]
+        o = o[o["chiave"] != "media"]
+        to_ts = {k: model.get("nomi_dvw", {}).get(f"{season}|{k}") for k in teams}
+        from_ts = {v: k for k, v in to_ts.items() if v}
+        next_key, next_date = _pm_next_opponent(model)
+        options = o.sort_values("posizione")["chiave"].tolist()
+
+        def label(k):
+            x = o[o["chiave"] == k].iloc[0]
+            n = len(teams[from_ts[k]]["matches"]) if k in from_ts else 0
+            lab = f"{x['nome']} ({int(x['posizione'])}ª, {n} scout)" if pd.notna(x["posizione"]) else x["nome"]
+            return lab + (f" — prossima partita, {next_date}" if k == next_key else "")
+        with c1:
+            ts_key = st.selectbox("Squadra", options, index=options.index(next_key) if next_key in options else 0,
+                                  format_func=label, key="opp_team_girone")
+        st.subheader("Indicazioni per la partita")
+        st.caption(f"Dal modello di prestazione (stima del {model['meta']['data_stima']}): rispetto a come giochiamo "
+                   "di solito. Si aggiornano con \"Stima di nuovo il modello\" nella tab \"Modello di prestazione\".")
+        _pm_opponent_view(model, ts_key)
+        team_key = from_ts.get(ts_key)
+        if team_key is None:
+            st.info("Nessuno scout di questa squadra nella cartella della stagione: qui sotto non c'è altro.")
+            return
+        st.divider()
+        st.subheader(f"Scout di {display[team_key]}")
+    else:
+        if not teams:
+            st.info(f"Nessuno scout .dvw di altre squadre nella cartella della stagione {season} "
+                    f"({build_base_path(season)}, sottocartelle comprese).")
+            return
+        with c1:
+            team_key = st.selectbox("Squadra", sorted(teams, key=lambda k: display[k].casefold()), key="opp_team",
+                                    format_func=lambda k: f"{display[k]} ({len(teams[k]['matches'])} "
+                                                          f"{'partita' if len(teams[k]['matches']) == 1 else 'partite'})")
     entries = sorted(teams[team_key]["matches"], key=lambda en: _date_key(en[0]["data"]))
     labels = {en[0]["path"]: f"{en[0]['data'] or '?'} · {en[0]['teams'].get('*', '?')} - {en[0]['teams'].get('a', '?')}"
               for en in entries}
@@ -3206,7 +3460,10 @@ def render_opponent_section(season, version):
     all_rows = pd.concat([m["rows"] for m in ms], ignore_index=True)
 
     serves = pd.concat([m["serves"] for m in ms], ignore_index=True)
-    render_opponent_summary(combined["noi"], all_rows, serves)
+    sigle = {}
+    for m in sorted(ms, key=lambda m: _date_key(m["header"]["data"])):  # numero e ruolo della partita più recente
+        sigle.update(m.get("sigle", {}))
+    render_opponent_summary(combined["noi"], all_rows, serves, sigle)
     render_opponent_report_button(team_key, team_name, ms, combined, all_rows, serves)
 
     # 1) partite
@@ -3611,6 +3868,903 @@ def _filter_by_matches(df, selected_seqs):
     return df[df["match_seq"].isin(selected_seqs)] if not df.empty else df
 
 
+# ---------------------------------------------------------------------------
+# Tab "Modello di prestazione" (src/performance_model.py)
+# ---------------------------------------------------------------------------
+PM_SITUATION_ORDER = ["R#+", "R!", "R-", "FB", "CA"]
+PM_REFERENCE_GREY = "#898781"
+
+
+def _it(x, dec=1, sign=False):
+    """Numero all'italiana (virgola decimale)."""
+    s = f"{x:+.{dec}f}" if sign else f"{x:.{dec}f}"
+    return s.replace(".", ",")
+
+
+def _pct(x, dec=0):
+    return _it(100 * x, dec) + "%"
+
+
+@st.cache_data(show_spinner=False)
+def load_performance_results(mtime):
+    from src.performance_model import load_results
+    return load_results()
+
+
+def _pm_table(df):
+    """Tabella senza barra di scorrimento: tutte le righe visibili."""
+    st.dataframe(df, hide_index=True, width="stretch", height=35 * (len(df) + 1) + 3)
+
+
+def _place_labels(x, y, names, x_range, y_range, width_px, height_px):
+    """Spostamenti (xshift, yshift in pixel) delle etichette dei punti, scelti
+    in modo che non si sovrappongano tra loro né ai punti: per ogni punto la
+    prima posizione libera tra sopra, sotto, destra, sinistra e diagonali."""
+    sx = width_px / (x_range[1] - x_range[0])
+    sy = height_px / (y_range[1] - y_range[0])
+    pts = [((xi - x_range[0]) * sx, (yi - y_range[0]) * sy) for xi, yi in zip(x, y)]
+    boxes, shifts = [], []
+
+    def overlaps(b):
+        if any(not (b[2] < o[0] or b[0] > o[2] or b[3] < o[1] or b[1] > o[3]) for o in boxes):
+            return True
+        return any(b[0] - 5 < px < b[2] + 5 and b[1] - 5 < py < b[3] + 5 for px, py in pts)
+
+    for (px, py), name in zip(pts, names):
+        w, h = 6.6 * len(str(name)) + 4, 14
+        candidates = [(0, 13), (0, -13), (w / 2 + 9, 0), (-w / 2 - 9, 0), (w / 2 + 5, 12), (-w / 2 - 5, 12),
+                      (w / 2 + 5, -12), (-w / 2 - 5, -12), (0, 26), (0, -26)]
+        chosen = candidates[0]
+        for dx, dy in candidates:
+            b = (px + dx - w / 2, py + dy - h / 2, px + dx + w / 2, py + dy + h / 2)
+            if not overlaps(b):
+                chosen = (dx, dy)
+                break
+        dx, dy = chosen
+        boxes.append((px + dx - w / 2, py + dy - h / 2, px + dx + w / 2, py + dy + h / 2))
+        shifts.append(chosen)
+    return shifts
+
+
+def _pm_layout(height, x_title, left_margin=150):
+    layout = base_layout("", x_title, "")
+    layout.update(height=height, hovermode="closest", showlegend=True,
+                  margin=dict(t=50, b=50, l=left_margin, r=30))
+    return layout
+
+
+def _dot_interval_figure(df, label_col, x_title, color, text_col=None, ref_col=None, ref_name=None,
+                         scale=100, zero_line=None, hover_col=None):
+    """Pallino = stima, linea = intervallo all'80%; facoltativi un riferimento
+    (rombo grigio) e un'etichetta a destra dell'intervallo."""
+    colors = theme_colors()
+    y = df[label_col].tolist()
+    mean, lo, hi = (scale * df[c].to_numpy() for c in ("media", "basso", "alto"))
+    fig = go.Figure()
+    if ref_col is not None:
+        fig.add_trace(go.Scatter(
+            x=scale * df[ref_col], y=y, mode="markers", name=ref_name,
+            marker=dict(symbol="diamond", size=9, color=PM_REFERENCE_GREY, line=dict(color=colors["surface"], width=2)),
+            hovertemplate="%{y}<br>" + ref_name + ": %{x:.1f}<extra></extra>"))
+    fig.add_trace(go.Scatter(
+        x=mean, y=y, mode="markers", name="Stima (pallino) e intervallo all'80% (linea)",
+        error_x=dict(type="data", array=hi - mean, arrayminus=mean - lo, thickness=2, width=0, color=color),
+        marker=dict(size=11, color=color, line=dict(color=colors["surface"], width=2)),
+        customdata=df[hover_col] if hover_col else None,
+        hovertemplate=("%{customdata}" if hover_col else "%{y}: %{x:.1f}") + "<extra></extra>"))
+    if text_col is not None:
+        text_x = np.maximum(hi, scale * df[ref_col].to_numpy()) if ref_col is not None else hi
+        fig.add_trace(go.Scatter(
+            x=text_x, y=y, mode="text", text=df[text_col], textposition="middle right", showlegend=False,
+            textfont=dict(size=12, color=colors["ink"]), hoverinfo="skip"))
+    if zero_line is not None:
+        fig.add_vline(x=zero_line, line=dict(color=colors["grid"], width=2))
+    span = max(hi) - min(lo) if len(df) else 1
+    fig.update_layout(**_pm_layout(max(260, 46 * len(df) + 110), x_title,
+                                   left_margin=int(max(len(str(v)) for v in y) * 7.2) + 30 if y else 150))
+    right = max(hi.max(), (scale * df[ref_col]).max()) if ref_col is not None else hi.max()
+    left = min(lo.min(), (scale * df[ref_col]).min()) if ref_col is not None else lo.min()
+    fig.update_xaxes(range=[left - 0.05 * span, right + 0.35 * span], zeroline=False)
+    fig.update_yaxes(autorange="reversed", gridcolor=colors["grid"])
+    return fig
+
+
+def _pm_example(markdown_text, title="Esempio"):
+    """Riquadro con un esempio pratico (icona + titolo, mai solo colore)."""
+    with st.container(border=True):
+        st.markdown(f"**💡 {title}**  \n{markdown_text}")
+
+
+def _pm_set_after(r, points_per_set):
+    """Set vinti contro una squadra media, prima e dopo `points_per_set` punti
+    in più per set (spalmati su tutti gli scambi del set)."""
+    from src.performance_model import p_set
+    media = r["avversari"].set_index("chiave").loc["media"]
+    n = r["esempi"]["set"]["scambi_per_set"]
+    d = points_per_set / n
+    return p_set(media["so_noi"], media["so_loro"]), p_set(media["so_noi"] + d, media["so_loro"] - d)
+
+
+def _small_ratio(x, max_den=3):
+    """x ≈ n / m con m piccolo: 1,56 → (3, 2) ("3 errori ogni 2 ace")."""
+    best = min(((round(x * m), m) for m in range(1, max_den + 1)), key=lambda nm: abs(nm[0] / nm[1] - x))
+    return best
+
+
+def _pm_serve_licence(r):
+    """
+    Licenza di sbagliare in battuta, rispetto al livello playoff (battitore
+    medio delle squadre tra le prime 4 in classifica, indicazione
+    dell'utente del 2026-11-11). Squadra: errori massimi nel set con i nostri
+    ace e le nostre ricezioni non positive (!, -, /) e, per ogni errore in
+    più, ace o ricezioni non positive necessari (arrotondati per eccesso).
+    Atleti: con la sua media di errori, quanti ace o quante ricezioni non
+    positive dovrebbe fare su 100 battute.
+    """
+    import math
+    e = r.get("esempi", {}).get("battuta")
+    if not e or e["battitori"].empty or "riferimento_playoff" not in e:
+        return
+    wg, wb = e["valore_facile"], e["valore_difficile"]
+    po, us = e["riferimento_playoff"], e["riferimento"]
+    per_set = e["battute_per_set"]
+    ceil = lambda v: max(0, math.ceil(v - 1e-9))
+
+    def value(n, err, ace, diff):       # scambi vinti su n battute (le altre ricevute # o +)
+        return ace + wb * diff + wg * (n - err - ace - diff)
+    target_100 = value(100, po["errori"], po["ace"], po["difficili"])   # livello playoff su 100 battute
+
+    def allowed(n, ace, diff):          # errori massimi su n battute per stare a livello playoff
+        return (value(n, 0, ace, diff) - target_100 * n / 100) / wg
+
+    def aces_needed(n, err, diff):
+        return (target_100 * n / 100 - value(n, err, 0, diff)) / (1 - wg)
+
+    def diff_needed(n, err, ace):
+        return (target_100 * n / 100 - value(n, err, ace, 0)) / (wb - wg)
+
+    ace_per_err, rec_per_err = ceil(e["ace_per_errore"]), ceil(e["ricezioni_per_errore"])
+    s = per_set / 100
+    us_set = {k: v * s for k, v in us.items()}
+    po_set = {k: v * s for k, v in po.items()}
+    max_err = allowed(per_set, us_set["ace"], us_set["difficili"])
+    st.markdown("#### Licenza di sbagliare in battuta: il livello playoff")
+    st.markdown(
+        f"Riferimento: il battitore medio delle squadre tra le prime 4 in classifica "
+        f"({', '.join(e['squadre_playoff']) or 'nessuna con abbastanza scout'}). Su un set (circa "
+        f"{round(per_set)} battute) loro fanno {_it(po_set['errori'], 1)} errori, {_it(po_set['ace'], 1)} ace e "
+        f"{_it(po_set['difficili'], 1)} ricezioni non positive (!, - o /); noi {_it(us_set['errori'], 1)} errori, "
+        f"{_it(us_set['ace'], 1)} ace e {_it(us_set['difficili'], 1)} ricezioni non positive.")
+    _pm_example(
+        f"Con i nostri ace e le nostre ricezioni non positive, **per stare a livello playoff possiamo fare al massimo "
+        f"{max(0, math.floor(max_err + 1e-9))} errori in battuta nel set** (oggi ne facciamo "
+        f"{_it(us_set['errori'], 1)}). **Per ogni errore in più dobbiamo assicurare {ace_per_err} ace in più, oppure "
+        f"{rec_per_err} ricezioni non positive in più.**",
+        title="La regola per la squadra")
+    rows = []
+    for err in range(1, 6):
+        rows.append({"Errori in battuta nel set": err,
+                     f"Ace necessari nel set (con {round(us_set['difficili'])} ricezioni non positive)":
+                         ceil(aces_needed(per_set, err, us_set["difficili"])),
+                     f"Ricezioni non positive necessarie nel set (con {_it(us_set['ace'], 0)} ace)":
+                         ceil(diff_needed(per_set, err, us_set["ace"]))})
+    st.caption("Cosa serve nel set per stare a livello playoff con un certo numero di errori (una cosa o l'altra, "
+               "oppure un misto), arrotondato per eccesso:")
+    _pm_table(pd.DataFrame(rows))
+
+    lic = e["battitori"].copy()
+    lic["concessi"] = lic.apply(lambda x: allowed(100, x["ace_100"], x["difficili_100"]), axis=1)
+    lic["ace_servono"] = lic.apply(lambda x: ceil(aces_needed(100, x["errori_100"], x["difficili_100"])), axis=1)
+    lic["ric_servono"] = lic.apply(lambda x: ceil(diff_needed(100, x["errori_100"], x["ace_100"])), axis=1)
+    # a livello playoff se, sui numeri interi mostrati, fa almeno gli ace che servono oppure crea almeno le
+    # ricezioni non positive che servono
+    lic["senza"] = ~((lic["ace_100"].round() >= lic["ace_servono"]) | (lic["difficili_100"].round() >= lic["ric_servono"]))
+    st.markdown("**Atleta per atleta** (su 100 battute: per un titolare sono circa 25-30 set)")
+    no = lic[lic["senza"]]
+    if len(no):
+        x = no.sort_values("errori_100", ascending=False).iloc[0]
+        text = (f"**{x['giocatore']}**: con la sua media di **{round(x['errori_100'])} errori ogni 100 battute** "
+                f"dovrebbe fare **{x['ace_servono']} ace** (ne fa {round(x['ace_100'])}), oppure creare "
+                f"**{x['ric_servono']} ricezioni non positive** (ne crea {round(x['difficili_100'])}).")
+        enough = no[no["battute"] >= 50]
+        close = (enough if len(enough) else no).assign(gap=lambda d: d["ace_servono"] - d["ace_100"]) \
+            .sort_values("gap").iloc[0]
+        if close["giocatore"] != x["giocatore"]:
+            text += (f"  \nIl più vicino è **{close['giocatore']}**: con {round(close['errori_100'])} errori ogni 100 "
+                     f"battute gli servono {close['ace_servono']} ace (ne fa {round(close['ace_100'])}) oppure "
+                     f"{close['ric_servono']} ricezioni non positive (ne crea {round(close['difficili_100'])}).")
+        _pm_example(text)
+    yes = lic[~lic["senza"] & (lic["errori_100"] < lic["concessi"] - 1)]
+    if len(yes):
+        y = yes.assign(m=lambda d: d["concessi"] - d["errori_100"]).sort_values("m", ascending=False).iloc[0]
+        _pm_example(
+            f"**{y['giocatore']}** a livello playoff si può permettere {round(y['concessi'])} errori ogni 100 battute "
+            f"e ne fa {round(y['errori_100'])}: può battere più forte, purché ogni errore in più porti "
+            f"{ace_per_err} ace o {rec_per_err} ricezioni non positive.", title="Chi ha margine")
+    lic = lic.sort_values("errori_100")
+    _pm_table(pd.DataFrame({
+        "Battitore": lic["giocatore"], "Battute": lic["battute"],
+        "Errori su 100": lic["errori_100"].map(lambda v: f"{v:.0f}"),
+        "Ace che servono": lic["ace_servono"], "Ace che fa": lic["ace_100"].map(lambda v: f"{v:.0f}"),
+        "Ricezioni non positive che servono": lic["ric_servono"],
+        "Ricezioni non positive che crea": lic["difficili_100"].map(lambda v: f"{v:.0f}"),
+        "A livello playoff": lic["senza"].map(lambda v: "❌ no" if v else "✅ sì"),
+    }))
+    st.caption("Su 100 battute, stime del modello (chi ha poche battute resta vicino alla media della squadra). "
+               "\"Ace che servono\" con le sue ricezioni non positive, \"ricezioni che servono\" con i suoi ace: basta "
+               "una delle due. Ricezioni non positive = !, - o / (l'ace è a parte).")
+
+
+def _pm_attack_example(r, d, sit):
+    """Licenza di sbagliare in attacco, a livello playoff (stesso schema della
+    battuta, richiesta dell'utente del 2026-11-11): per la squadra, errori +
+    murate massimi nel set nella situazione scelta e punti necessari per ogni
+    errore in più; per l'atleta, su 100 attacchi nella sua zona, i punti
+    necessari con la sua media di errori e murate."""
+    import math
+    from src.performance_model import SITUATION_LABELS, ZONE_LABELS
+    lic = r.get("esempi", {}).get("attacco", {}).get("licenza", {}).get(sit)
+    if not lic:
+        return
+    c, n = lic["c"], lic["attacchi_per_set"]
+    ceil = lambda v: max(0, math.ceil(v - 1e-9))
+    v_po = lic["playoff_punto"] + (1 - lic["playoff_punto"] - lic["playoff_errmur"]) * c
+    target = n * v_po
+    k_us, e_us = n * lic["noi_punto"], n * lic["noi_errmur"]
+    max_err = (k_us + c * (n - k_us) - target) / c
+    pts_per_err = ceil(c / (1 - c))
+    sit_name = SITUATION_LABELS[sit].split(" (")[0].lower()
+    st.markdown("#### Licenza di sbagliare in attacco: il livello playoff")
+    st.markdown(
+        f"In questa situazione ({sit_name}) un attacco vale per chi attacca: punto sempre, errore o murata mai, "
+        f"pallone difeso dall'avversario il **{_pct(c)}** (si vince lo scambio dopo). Attacchiamo così circa "
+        f"**{_it(n, 0)} volte a set**: su questi attacchi le squadre playoff fanno {_it(n * lic['playoff_punto'], 1)} "
+        f"punti e {_it(n * lic['playoff_errmur'], 1)} errori o murate, noi {_it(k_us, 1)} punti e {_it(e_us, 1)} "
+        "errori o murate.")
+    if 0 <= max_err < 1:
+        rule = (f"Con i punti che facciamo ({_it(k_us, 1)} a set), **per stare a livello playoff possiamo "
+                f"permetterci meno di 1 errore o murata a set** in questa situazione (oggi {_it(e_us, 1)}): il "
+                "margine va cercato soprattutto nei punti.")
+    elif max_err >= 1:
+        rule = (f"Con i punti che facciamo, **per stare a livello playoff possiamo fare al massimo "
+                f"{math.floor(max_err + 1e-9)} errori o murate nel set** in questa situazione (oggi "
+                f"{_it(e_us, 1)}).")
+    else:
+        rule = (f"Con i punti che facciamo oggi ({_it(k_us, 1)} a set) **non arriviamo al livello playoff nemmeno "
+                f"senza errori**: servono più punti.")
+    _pm_example(rule + f" **Per ogni errore o murata in più serve {pts_per_err} punto in più.**",
+                title="La regola per la squadra")
+    rows = []
+    for err in range(0, 5):
+        rows.append({"Errori o murate nel set": err,
+                     "Punti necessari nel set": ceil((target - c * (n - err)) / (1 - c))})
+    st.caption(f"Cosa serve nel set, su circa {_it(n, 0)} attacchi in questa situazione, per stare a livello playoff "
+               f"(arrotondato per eccesso; oggi facciamo {_it(k_us, 1)} punti):")
+    _pm_table(pd.DataFrame(rows))
+
+    a = d.copy()
+    a["errmur_100"] = 100 * (a["errore"] + a["murato"])
+    a["punti_100"] = 100 * a["punto"]
+
+    def need(x):
+        ref = lic["per_zona"][x["zona"]]
+        v = ref["punto"] + (1 - ref["punto"] - ref["errmur"]) * c
+        return ceil((100 * v - c * (100 - round(x["errmur_100"]))) / (1 - c))
+    a["servono"] = a.apply(need, axis=1)
+    a["senza"] = a["punti_100"].round() < a["servono"]
+    a["etichetta"] = a.apply(lambda x: f"{x['giocatore']} ({ZONE_LABELS[x['zona']]})", axis=1)
+    st.markdown("**Atleta per atleta** (su 100 attacchi in questa situazione, confrontato con l'attaccante medio "
+                "delle squadre playoff nella stessa zona)")
+    pool = a[a["n"] >= 30] if (a["n"] >= 30).any() else a
+    no = pool[pool["senza"]]
+    if len(no):
+        x = no.assign(gap=no["servono"] - no["punti_100"]).sort_values("gap", ascending=False).iloc[0]
+        ref = lic["per_zona"][x["zona"]]
+        v = ref["punto"] + (1 - ref["punto"] - ref["errmur"]) * c
+        k = round(x["punti_100"])
+        allowed = math.floor((k + c * (100 - k) - 100 * v) / c + 1e-9)
+        alt = (f"oppure, con i {k} punti che fa, scendere a **{allowed} "
+               f"{'errore o murata' if allowed == 1 else 'errori o murate'}**" if allowed >= 0
+               else f"con i {k} punti che fa non basterebbe nemmeno non sbagliare mai")
+        text = (f"**{x['etichetta']}**: con la sua media di **{round(x['errmur_100'])} errori o murate ogni 100 "
+                f"attacchi** dovrebbe fare **{x['servono']} punti** (ne fa {k}); {alt}.")
+        y = no.assign(gap=no["servono"] - no["punti_100"]).sort_values("gap").iloc[0]
+        if y["etichetta"] != x["etichetta"]:
+            text += (f"  \nIl più vicino è **{y['etichetta']}**: con {round(y['errmur_100'])} errori o murate gli "
+                     f"servono {y['servono']} punti, ne fa {round(y['punti_100'])}.")
+        _pm_example(text)
+    yes = pool[~pool["senza"]]
+    if len(yes):
+        z = yes.assign(m=yes["punti_100"] - yes["servono"]).sort_values("m", ascending=False).iloc[0]
+        _pm_example(
+            f"**{z['etichetta']}** con {round(z['errmur_100'])} errori o murate ogni 100 attacchi fa "
+            f"{round(z['punti_100'])} punti, {round(z['punti_100'] - z['servono'])} più di quelli che servono: può "
+            f"rischiare di più, purché ogni errore o murata in più porti {pts_per_err} punto in più.",
+            title="Chi ha margine")
+    a = a.sort_values("servono")
+    _pm_table(pd.DataFrame({
+        "Attaccante": a["etichetta"], "Attacchi": a["n"],
+        "Errori o murate su 100": a["errmur_100"].map(lambda v: f"{v:.0f}"),
+        "Punti che servono": a["servono"], "Punti che fa": a["punti_100"].map(lambda v: f"{v:.0f}"),
+        "A livello playoff": a["senza"].map(lambda v: "❌ no" if v else "✅ sì"),
+    }))
+    st.caption("Su 100 attacchi, stime del modello (chi ha pochi attacchi resta vicino alla media della squadra). "
+               "\"Punti che servono\" con la sua media di errori e murate, rispetto all'attaccante medio delle "
+               "squadre playoff nella stessa zona.")
+
+
+def _pm_training_section(r):
+    st.subheader("1. Cosa allenare")
+    st.caption(
+        "Quanti punti per set guadagneremmo se in ogni area fossimo come **le squadre più brave in quell'area** "
+        "(il primo quarto: con tante squadre quante ne abbiamo, più o meno la terza o quarta migliore in "
+        f"quell'area, non in classifica; {len(r['squadre_confronto'])} squadre con almeno 3 partite nei dati). "
+        "Un punto = uno scambio "
+        "vinto in più. Pallino = stima, linea = l'80% di probabilità.")
+    a = r["aree"].copy().rename(columns={"punti_set_media": "media", "punti_set_basso": "basso",
+                                         "punti_set_alto": "alto"})
+    a["etichetta"] = a.apply(lambda x: f"  {_it(x['media'], 2, sign=True)} punti per set", axis=1)
+    a["hover"] = a.apply(lambda x: (
+        f"<b>{x['area']}</b><br>{_it(x['media'], 2, sign=True)} punti per set "
+        f"(tra {_it(x['basso'], 2, sign=True)} e {_it(x['alto'], 2, sign=True)})<br>"
+        f"{x['nota']}<br>probabilità che ci sia un guadagno: {_pct(x['p_guadagno'])}"), axis=1)
+    fig = _dot_interval_figure(a, "area", "Punti per set guadagnati", theme_colors()["palette"][0],
+                               text_col="etichetta", scale=1, zero_line=0, hover_col="hover")
+    st.plotly_chart(fig, theme=None, key="pm_aree")
+    best = a.iloc[0]
+    if r.get("esempi"):
+        before, after = _pm_set_after(r, best["media"])
+        _pm_example(
+            f"{_it(best['media'], 2, sign=True)} punti per set sembrano pochi: sono circa "
+            f"{_it(best['media'] * 4, 1)} punti in una partita da quattro set. Contro una squadra media oggi vinciamo "
+            f"il set il **{_pct(before)}** delle volte; con {best['area'].lower()} al livello delle squadre più brave "
+            f"lo vinceremmo il **{_pct(after)}**. Sommando tutte le aree in cui c'è margine (+"
+            f"{_it(a.loc[a['media'] > 0, 'media'].sum(), 1)} punti per set) arriveremmo al "
+            f"**{_pct(_pm_set_after(r, a.loc[a['media'] > 0, 'media'].sum())[1])}**.")
+    st.markdown(
+        f"L'area con più margine è **{best['area'].lower()}**: {_it(best['media'], 2, sign=True)} punti per set "
+        f"(tra {_it(best['basso'], 2, sign=True)} e {_it(best['alto'], 2, sign=True)}). "
+        "Un'area con l'intervallo che tocca lo zero vuol dire che lì siamo già vicini ai migliori, o che i dati "
+        "non bastano a dirlo.")
+    table = pd.DataFrame({
+        "Area": a["area"],
+        "Noi": a.apply(lambda x: _pct(x["noi"], 1), axis=1),
+        "Le più brave": a.apply(lambda x: _pct(x["quarto_migliore"], 1), axis=1),
+        "Media campionato": a.apply(lambda x: _pct(x["media_campionato"], 1), axis=1),
+        "Cosa misura": a["unita"],
+        "Azioni per set": a["volume_set"].map(lambda v: _it(v, 1)),
+        "Punti per set": a.apply(lambda x: f"{_it(x['media'], 2, sign=True)} ({_it(x['basso'], 2, sign=True)} / "
+                                           f"{_it(x['alto'], 2, sign=True)})", axis=1),
+    })
+    _pm_table(table)
+
+
+def _pm_serve_section(r):
+    st.subheader("2. Battuta: rischiare o no")
+    v = r["valori_battuta"].set_index("esito")
+    _pm_serve_licence(r)
+    st.markdown("#### Quanto vale ogni esito, e tutti i battitori del campionato")
+    cols = st.columns([2, 3])
+    with cols[0]:
+        order = ["=", "/", "-", "!", "+", "#"]
+        names = {"=": "Ace", "/": "Ricezione /", "-": "Ricezione -", "!": "Ricezione !",
+                 "+": "Ricezione +", "#": "Ricezione #"}
+        t = pd.DataFrame({
+            "Esito della battuta": ["Errore"] + [names[o] for o in order],
+            "Quota sulle battute in gioco": ["—"] + [_pct(v.loc[o, "quota"]) for o in order],
+            "Scambi vinti da chi batte": ["0%"] + [_pct(v.loc[o, "media"]) for o in order],
+        })
+        _pm_table(t)
+    srv = r["battitori"]
+    colors = theme_colors()
+    with cols[1]:
+        fig = go.Figure()
+        others, ours = srv[~srv["noi"]], srv[srv["noi"]]
+        xmax = max(0.32, srv["err_media"].max() + 0.03)
+        y_lo, y_hi = srv["in_gioco_media"].min() - 0.01, srv["in_gioco_media"].max() + 0.012
+        for level in np.arange(0.36, 0.48, 0.02):
+            e = np.linspace(0, xmax, 60)
+            yy = level / (1 - e)
+            keep = (yy >= y_lo) & (yy <= y_hi)
+            if keep.sum() < 2:
+                continue
+            fig.add_trace(go.Scatter(x=100 * e[keep], y=100 * yy[keep], mode="lines", showlegend=False,
+                                     line=dict(color=colors["grid"], width=1.5, dash="dot"), hoverinfo="skip"))
+            fig.add_annotation(x=100 * e[keep][-1], y=100 * yy[keep][-1], text=f"{_it(100 * level, 0)}",
+                               showarrow=False, xanchor="left", yanchor="bottom",
+                               font=dict(size=10, color=PM_REFERENCE_GREY))
+        hover = ("<b>%{customdata[0]}</b> (%{customdata[1]})<br>%{customdata[2]} battute<br>errori %{x:.1f}%<br>"
+                 "in gioco: chi batte vince %{y:.1f}%<br>in totale: %{customdata[3]:.1f} break su 100<extra></extra>")
+        for part, name, color, size, mode in ((others, "Altri battitori del campionato", PM_REFERENCE_GREY, 7,
+                                               "markers"),
+                                              (ours, "Decimo", colors["palette"][0], 11, "markers")):
+            fig.add_trace(go.Scatter(
+                x=100 * part["err_media"], y=100 * part["in_gioco_media"], mode=mode, name=name,
+                marker=dict(size=size, color=color, opacity=0.55 if color == PM_REFERENCE_GREY else 1,
+                            line=dict(color=colors["surface"], width=2)),
+                customdata=np.c_[part["giocatore"], part["squadra"], part["n"], 100 * part["totale_media"]],
+                hovertemplate=hover))
+        x_rng, y_rng = [0, 100 * xmax + 2], [100 * y_lo, 100 * y_hi]
+        shifts = _place_labels(100 * ours["err_media"], 100 * ours["in_gioco_media"], ours["giocatore"], x_rng,
+                               y_rng, width_px=560, height_px=400)
+        for (_, row), (dx, dy) in zip(ours.iterrows(), shifts):
+            fig.add_annotation(x=100 * row["err_media"], y=100 * row["in_gioco_media"], text=row["giocatore"],
+                               showarrow=False, xshift=dx, yshift=dy, font=dict(size=11, color=colors["ink"]))
+        layout = _pm_layout(520, "Errori in battuta (%)", left_margin=60)
+        layout.update(yaxis_title="Battute in gioco: scambi vinti da chi batte (%)",
+                      legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0))
+        fig.update_layout(**layout)
+        fig.update_xaxes(range=x_rng)
+        fig.update_yaxes(range=y_rng)
+        st.plotly_chart(fig, theme=None, key="pm_battuta")
+        st.caption(
+            "Ogni pallino è un battitore (almeno 30 battute). Più a destra = più errori, più in alto = battute in "
+            "gioco più efficaci. Le linee punteggiate uniscono i punti con lo **stesso rendimento totale** (break "
+            "su 100 battute): spostarsi a destra conviene solo se si sale fino a una linea più alta.")
+
+
+PM_DECISION_THRESHOLD = 0.7   # probabilità oltre la quale si dà un'indicazione
+
+
+def _pm_next_opponent(r):
+    """Chiave della prossima avversaria del Decimo (dal calendario del girone)."""
+    from datetime import date
+    us_title = r["squadra"].split("|", 1)[1]
+    today = date.today()
+    upcoming = []
+    for m in r.get("calendario", []):
+        if us_title not in (m["casa"], m["ospite"]) or m["giocata"]:
+            continue
+        try:
+            g, mo, a = (int(x) for x in m["data"].split("/"))
+        except ValueError:
+            continue
+        if date(a, mo, g) >= today:
+            other = m["ospite"] if m["casa"] == us_title else m["casa"]
+            upcoming.append((date(a, mo, g), other, m["data"]))
+    if not upcoming:
+        return None, None
+    d, title, data = min(upcoming)
+    return f"{r['squadra'].split('|')[0]}|{title}", data
+
+
+def _pm_decision(p, yes, no, neutral, reference=False):
+    """Indicazione con la sua probabilità: icona + testo (mai solo colore).
+    Per l'avversario medio nessuna indicazione: è il riferimento."""
+    if reference:
+        return "Riferimento", None
+    if p >= PM_DECISION_THRESHOLD:
+        return f"⬆️ {yes}", p
+    if p <= 1 - PM_DECISION_THRESHOLD:
+        return f"⬇️ {no}", 1 - p
+    return f"↔️ {neutral}", max(p, 1 - p)
+
+
+def _pm_setter_line_courts(rows, key):
+    """Due campetti della distribuzione da ricezione # o +: palleggiatore in
+    seconda linea (P1/P6/P5, opposto davanti) e in prima linea (P2/P3/P4,
+    opposto dietro)."""
+    if rows is None or len(rows) == 0:
+        return
+    st.markdown("**Da ricezione # o +, secondo la linea del palleggiatore**")
+    cols = st.columns(2)
+    for col, (line, title) in zip(cols, (("dietro", "Palleggiatore dietro (P1, P6, P5): opposto davanti"),
+                                         ("davanti", "Palleggiatore davanti (P2, P3, P4): opposto dietro"))):
+        part = rows[rows["linea"] == line]
+        with col:
+            st.caption(f"{title} — {len(part)} attacchi")
+            if len(part):
+                st.plotly_chart(build_court_chart(zone_stats(part), compact=True), theme=None,
+                                key=f"pm_court_{key}_{line}")
+    st.caption("Esclusi gli attacchi del palleggiatore. Con meno di una ventina di attacchi per campetto la "
+               "distribuzione va presa come indizio.")
+
+
+def _pm_scouting_card(r, key):
+    """Scheda dell'avversario: frasi con i dati che spiccano e tabelle degli
+    scout di quest'anno e dell'anno prima (giocatori rimasti)."""
+    from src.performance_model import SITUATION_LABELS, ZONE_LABELS
+    card = r.get("schede", {}).get(key)
+    st.markdown("#### Cosa dicono gli scout su di loro")
+    st.caption("Riassunto automatico; il dettaglio di tutte le partite scoutate è più sotto in questa tab.")
+    if card is None:
+        return
+    n = len(card["partite"])
+    if n == 0 and card["attaccanti_prima"].empty:
+        st.info("Nessuno scout di questa squadra, né di quest'anno né dell'anno scorso: le indicazioni sopra vengono "
+                "solo dai risultati. Uno scout di una loro partita, anche contro un'altra squadra, basta per avere "
+                "una scheda.")
+        return
+    if n:
+        st.caption(f"Quest'anno: {n} {'partita' if n == 1 else 'partite'} scoutate ({', '.join(card['partite'])}), "
+                   f"{card['n_scambi']} scambi. Con pochi scambi i numeri vanno presi come indizi da verificare in campo.")
+    for frase in card["frasi"]:
+        st.markdown(f"- {frase}")
+
+    def show(df, kind):
+        if df is None or df.empty:
+            st.caption("Nessun dato.")
+            return
+        d = df.copy()
+        if kind == "att":
+            _pm_table(pd.DataFrame({
+                "Attaccante": d["giocatore"], "Zona": d["zona"].map(ZONE_LABELS), "Attacchi": d["attacchi"],
+                "Punto": d["punto"].map(_pct), "Errore o murato": d["errore_murato"].map(_pct),
+                "Efficienza": d["efficienza"].map(_pct), "Scambi vinti": d["scambi_vinti"].map(_pct)}))
+        elif kind == "ric":
+            _pm_table(pd.DataFrame({
+                "Ricevitore": d["giocatore"], "Ricezioni": d["ricezioni"], "Positive (# o +)": d["positive"].map(_pct),
+                "Negative, / e ace": d["negative"].map(_pct), "Side-out": d["side_out"].map(_pct)}))
+        else:
+            _pm_table(pd.DataFrame({
+                "Battitore": d["giocatore"], "Battute": d["battute"], "Errori": d["errori"].map(_pct),
+                "Ace": d["ace"].map(_pct), "Break-point": d["break_point"].map(_pct)}))
+
+    prev_label = ("Rimasti dall'anno scorso" if card["rosa_nota"] else "Anno scorso (rosa di quest'anno non nota)")
+    tab_names = (["Quest'anno"] if n else []) + ([f"{prev_label}: {card['stagione_prima']}"]
+                                                  if card["stagione_prima"] else [])
+    for tab, name in zip(st.tabs(tab_names), tab_names):
+        with tab:
+            if name == "Quest'anno":
+                sit = card["attacco_situazioni"]
+                if len(sit):
+                    st.markdown("**Attacco per situazione**")
+                    _pm_table(pd.DataFrame({
+                        "Situazione": sit["situazione"].map(SITUATION_LABELS), "Attacchi": sit["attacchi"],
+                        "Punto": sit["punto"].map(_pct), "Errore o murato": sit["errore_murato"].map(_pct),
+                        "Scambi vinti": sit["scambi_vinti"].map(_pct)}))
+                zones = []
+                for k, lab in (("R#+", "Da ricezione # o +"), ("R-", "Da ricezione -"), ("FB", "Da free ball")):
+                    counts = card["zone"].get(k, {})
+                    tot = sum(counts.values())
+                    if tot:
+                        zones.append(f"{lab} ({tot}): " + ", ".join(
+                            f"{ZONE_LABELS[z]} {_pct(c / tot)}" for z, c in sorted(counts.items(), key=lambda kv: -kv[1])))
+                if zones:
+                    st.markdown("**Dove attaccano**  \n" + "  \n".join(zones))
+                _pm_setter_line_courts(card["campetti"], key + "_ora")
+                cols = st.columns(2)
+                with cols[0]:
+                    st.markdown("**Attaccanti**")
+                    show(card["attaccanti"], "att")
+                    st.markdown("**Battitori**")
+                    show(card["battitori"], "srv")
+                with cols[1]:
+                    st.markdown("**Ricevitori**")
+                    show(card["ricevitori"], "ric")
+            else:
+                if len(card.get("campetti_prima", [])):
+                    st.caption(f"Stesso palleggiatore dell'anno scorso ({card['palleggiatore_prima']}): la sua "
+                               "distribuzione di allora, con gli attaccanti di allora.")
+                    _pm_setter_line_courts(card["campetti_prima"], key + "_prima")
+                cols = st.columns(2)
+                with cols[0]:
+                    st.markdown("**Attaccanti**")
+                    show(card["attaccanti_prima"], "att")
+                    st.markdown("**Battitori**")
+                    show(card["battitori_prima"], "srv")
+                with cols[1]:
+                    st.markdown("**Ricevitori**")
+                    show(card["ricevitori_prima"], "ric")
+    st.caption("Il dettaglio con i campetti delle zone e il palleggiatore è nella tab \"Studio avversario\".")
+
+
+def _pm_opponent_view(r, key):
+    """Indicazioni del modello contro la squadra `key` (squadra-stagione o
+    'media'): cosa sappiamo, battuta/attacco/contrattacco, scheda degli scout,
+    budget di errori. Nella tab "Studio avversario"."""
+    o = r["avversari"].copy()
+    base = o[o["chiave"] == "media"].iloc[0]
+    x = o[o["chiave"] == key].iloc[0]
+
+    if key != "media":
+        n_now, n_prev = int(x["scout_stagione"]), int(x["scout_stagione_prima"])
+        level = ("Indicazioni affidabili" if n_now >= 3 else
+                 "Indicazioni orientative" if n_now + n_prev >= 3 else "Indicazioni deboli: solo dai risultati")
+        known = [f"**{n_now}** scout di quest'anno"]
+        if n_prev:
+            known.append(f"**{n_prev}** scout dell'anno scorso ({x['stagione_prima']}): contano i giocatori rimasti")
+        known.append(f"**{int(x['posizione'])}ª** in classifica ({int(x['punti'])} punti in {int(x['giocate'])} "
+                     f"partite, punti nei set {int(x['punti_fatti'])}-{int(x['punti_subiti'])})")
+        st.markdown(f"**{level}.** Cosa sappiamo: " + " · ".join(known) + ".")
+        if n_now == 0:
+            st.caption("Senza scout di quest'anno, il modello usa la loro forza nei risultati e, se ci sono, i "
+                       "giocatori già visti: le indicazioni sono vicine a quelle per una squadra di quel livello. "
+                       "Uno scout di una loro partita (anche contro un'altra squadra) le rende molto più precise.")
+
+    cols = st.columns(3)
+    is_ref = key == "media"
+    head, prob = _pm_decision(x["p_battere_forte"], "Battere più forte del solito", "Battere più sicuro del solito",
+                              "Battuta come al solito", reference=is_ref)
+    with cols[0]:
+        with st.container(border=True):
+            st.markdown(f"**Battuta**  \n#### {head}")
+            st.caption(f"Probabilità che sia la scelta giusta: {_pct(prob)}" if prob is not None
+                       else "I valori di una squadra media: il metro per gli altri avversari")
+            st.markdown(
+                f"Un errore in più conviene se fa scendere almeno **{_it(x['batt_ricezioni_per_errore'], 1)} "
+                f"ricezioni** da # a - (contro una squadra media: {_it(base['batt_ricezioni_per_errore'], 1)}). "
+                f"Contro la nostra battuta ricevono positivo il {_pct(x['loro_ric_positiva'])} "
+                f"(media {_pct(base['loro_ric_positiva'])}); dopo una loro ricezione - vinciamo noi "
+                f"{_it(100 * x['batt_gap'], 0)} scambi su 100 in più che dopo una #.")
+    for col, sit, title in ((cols[1], "R#+", "Primo attacco dopo ricezione"), (cols[2], "CA", "Contrattacco")):
+        head, prob = _pm_decision(x[f"p_forzare_{sit}"], "Forzare di più", "Rischiare meno, tenere in gioco",
+                                  "Rischio come al solito", reference=is_ref)
+        with col:
+            with st.container(border=True):
+                st.markdown(f"**{title}**  \n#### {head}")
+                st.caption(f"Probabilità che sia la scelta giusta: {_pct(prob)}" if prob is not None
+                           else "I valori di una squadra media: il metro per gli altri avversari")
+                st.markdown(
+                    f"Un nostro attacco difeso da loro ci lascia **{_it(100 * x[f'c_{sit}'], 0)} scambi su 100** "
+                    f"(contro una squadra media {_it(100 * base[f'c_{sit}'], 0)}): ogni errore o murata in più deve "
+                    f"portare almeno **{_it(x[f'soglia_{sit}'], 2)} punti** in più "
+                    f"(media {_it(base[f'soglia_{sit}'], 2)}). Il loro attacco su questa fase contro di noi: punto "
+                    f"{_pct(x[f'loro_{sit}_punto'])}, murato da noi {_pct(x[f'loro_{sit}_murato'])} "
+                    f"(media {_pct(base[f'loro_{sit}_punto'])} e {_pct(base[f'loro_{sit}_murato'])}).")
+    st.caption("Indicazioni rispetto a come giochiamo di solito: \"forzare di più\" vuol dire che contro di loro un "
+               "pallone rimesso in gioco vale meno che contro una squadra media (contrattaccano bene o li muriamo "
+               "poco), quindi il rischio rende di più. Freccia orizzontale = i dati non indicano una direzione chiara "
+               f"(meno del {_pct(PM_DECISION_THRESHOLD)} di probabilità).")
+
+    if key != "media":
+        _pm_scouting_card(r, key)
+
+    # --- budget di errori --------------------------------------------------
+    st.markdown("#### Budget di errori nel primo attacco dopo ricezione # o +")
+    st.markdown(
+        f"Con i valori di oggi, contro {'una squadra media' if key == 'media' else x['nome']} vinciamo un set il "
+        f"**{_pct(x['p_set_ora'])}** delle volte (side-out nostro {_pct(x['so_noi'])}, loro {_pct(x['so_loro'])}). "
+        "Per vincerlo il 50, 60 o 70% delle volte serve un side-out di "
+        + ", ".join(f"**{_pct(x[f'so_richiesto_{t}'])}**" for t in (50, 60, 70))
+        + ". Il grafico dice quanti punti servono nel primo attacco da R#/R+ per ogni livello di errori e murate, "
+          "se tutto il resto (ricezione, battuta, contrattacco) resta com'è.")
+    colors = theme_colors()
+    fig = go.Figure()
+    errs = [5, 10, 15, 20, 25]
+    shades = {50: "#86b6ef", 60: colors["palette"][0], 70: "#1c4f8f"} if colors["surface"] != "#1a1a19" else \
+        {50: "#1c4f8f", 60: colors["palette"][0], 70: "#9cc5f5"}
+    for t in (50, 60, 70):
+        ys = [100 * x[f"punti_richiesti_{t}_{e}"] for e in errs]
+        fig.add_trace(go.Scatter(x=errs, y=ys, mode="lines", name=f"{t}% dei set vinti",
+                                 line=dict(color=shades[t], width=2),
+                                 hovertemplate=f"{t}% dei set: con %{{x}}% di errori+murate servono "
+                                               "%{y:.0f}% di punti<extra></extra>"))
+        fig.add_annotation(x=errs[-1], y=ys[-1], text=f"{t}% dei set", showarrow=False, xanchor="left", xshift=6,
+                           font=dict(size=11, color=colors["ink"]))
+    att = r["attaccanti"]
+    att = att[(att["situazione"] == "R#+")].copy()
+    att["err_mur"] = att["errore"] + att["murato"]
+    from src.performance_model import ZONE_LABELS
+    multi = att["giocatore"].duplicated(keep=False)
+    att["etichetta"] = [f"{a['giocatore']} ({ZONE_LABELS[a['zona']]})" if m else a["giocatore"]
+                        for (_, a), m in zip(att.iterrows(), multi)]
+    fig.add_trace(go.Scatter(
+        x=100 * att["err_mur"], y=100 * att["punto"], mode="markers", name="Nostri attaccanti (stima)",
+        marker=dict(size=10, color=colors["palette"][1], line=dict(color=colors["surface"], width=2)),
+        customdata=np.c_[att["etichetta"], att["n"]],
+        hovertemplate="%{customdata[0]}: %{y:.0f}% punti, %{x:.0f}% errori+murate (%{customdata[1]} attacchi)"
+                      "<extra></extra>"))
+    x_rng = [0, 32]
+    all_y = [100 * x[f"punti_richiesti_{t}_{e}"] for t in (50, 60, 70) for e in errs] + list(100 * att["punto"])
+    y_rng = [max(0, min(all_y) - 5), min(100, max(all_y) + 9)]
+    for (_, a), (dx, dy) in zip(att.iterrows(), _place_labels(100 * att["err_mur"], 100 * att["punto"],
+                                                              att["etichetta"], x_rng, y_rng, 560, 360)):
+        fig.add_annotation(x=100 * a["err_mur"], y=100 * a["punto"], text=a["etichetta"], showarrow=False,
+                           xshift=dx, yshift=dy, font=dict(size=11, color=colors["ink"]))
+    layout = _pm_layout(460, "Errori + murate (% degli attacchi)", left_margin=60)
+    layout.update(yaxis_title="Punti (% degli attacchi)", margin=dict(t=50, b=50, l=60, r=90))
+    fig.update_layout(**layout)
+    fig.update_xaxes(range=x_rng, ticksuffix="%")
+    fig.update_yaxes(range=y_rng, ticksuffix="%")
+    st.plotly_chart(fig, theme=None, key=f"pm_budget_{key}")
+    st.caption("Chi sta sopra una linea, con i suoi errori, fa abbastanza punti per quell'obiettivo; chi sta sotto "
+               "deve fare più punti o sbagliare meno (la distanza in verticale e in orizzontale dice quale delle due "
+               "è più vicina). I pallini sono le stime per ogni attaccante contro una squadra media. Chiedere tutto "
+               "il miglioramento al solo primo attacco è un caso limite: nella realtà va diviso con ricezione, "
+               "battuta e contrattacco (vedi \"Cosa allenare\").")
+    _pm_table(pd.DataFrame({
+        "Errori + murate": [f"{e}%" for e in errs],
+        **{f"Punti per il {t}% dei set": [_pct(max(0, v)) + (" (fuori portata)" if v > 0.75 else "")
+                                           for v in (x[f"punti_richiesti_{t}_{e}"] for e in errs)]
+           for t in (50, 60, 70)},
+    }))
+
+
+def _pm_attackers_section(r):
+    from src.performance_model import SITUATION_LABELS, ZONE_LABELS
+    st.subheader("3. Chi servire")
+    att = r["attaccanti"]
+    sits = [s for s in PM_SITUATION_ORDER if (att["situazione"] == s).any()]
+    sit = st.radio("Situazione", sits, format_func=lambda s: SITUATION_LABELS[s], horizontal=True, key="pm_sit")
+    d = att[att["situazione"] == sit].copy().sort_values("ev_media", ascending=False)
+    d["etichetta"] = d.apply(lambda x: f"{x['giocatore']} ({ZONE_LABELS[x['zona']]})", axis=1)
+    d = d.rename(columns={"ev_media": "media", "ev_basso": "basso", "ev_alto": "alto"})
+    d["testo"] = d.apply(lambda x: f"  {_pct(x['quota'])} dei palloni · {x['n']}", axis=1)
+    d["hover"] = d.apply(lambda x: (
+        f"<b>{x['etichetta']}</b><br>{_it(100 * x['media'], 1)} scambi vinti su 100 palloni "
+        f"({_it(100 * x['basso'], 1)}–{_it(100 * x['alto'], 1)})<br>punto {_pct(x['punto'])} · errore "
+        f"{_pct(x['errore'])} · murato {_pct(x['murato'])}<br>{x['n']} attacchi, {_pct(x['quota'])} dei nostri "
+        f"palloni<br>probabilità di essere l'opzione migliore: {_pct(x['p_migliore'])}"), axis=1)
+    st.caption(
+        f"Scambi vinti su 100 palloni dati a ogni attaccante del Decimo in questa situazione (almeno "
+        f"{r['meta']['config']['min_attacchi_giocatore']} attacchi). Il rombo grigio è la media del campionato "
+        "nella stessa zona; a destra la quota dei nostri palloni e il numero di attacchi.")
+    fig = _dot_interval_figure(d, "etichetta", "Scambi vinti su 100 palloni", theme_colors()["palette"][0],
+                               text_col="testo", ref_col="ev_rif_zona", ref_name="Media del campionato nella zona",
+                               hover_col="hover")
+    st.plotly_chart(fig, theme=None, key=f"pm_att_{sit}")
+    _pm_attack_example(r, d, sit)
+    _pm_table(pd.DataFrame({
+        "Attaccante": d["etichetta"], "Attacchi": d["n"], "Quota dei palloni": d["quota"].map(_pct),
+        "Scambi vinti su 100": d.apply(lambda x: f"{_it(100 * x['media'], 1)} ({_it(100 * x['basso'], 1)}–"
+                                                 f"{_it(100 * x['alto'], 1)})", axis=1),
+        "Punto": d["punto"].map(_pct), "Errore": d["errore"].map(_pct), "Murato": d["murato"].map(_pct),
+        "Probabilità di essere il migliore": d["p_migliore"].map(_pct),
+    }))
+    return sit
+
+
+def _pm_final_section(r, sit):
+    from src.performance_model import SITUATION_LABELS, ZONE_LABELS
+    st.subheader("4. Finali di set")
+    d = r["attaccanti"]
+    d = d[d["situazione"] == sit].copy().sort_values("ev_fin_media", ascending=False)
+    if d.empty:
+        return
+    d["etichetta"] = d.apply(lambda x: f"{x['giocatore']} ({ZONE_LABELS[x['zona']]})", axis=1)
+    colors = theme_colors()
+    c_norm, c_fin = colors["palette"][0], colors["palette"][1]
+    fig = go.Figure()
+    for _, x in d.iterrows():
+        fig.add_trace(go.Scatter(x=[100 * x["ev_media"], 100 * x["ev_fin_media"]], y=[x["etichetta"]] * 2,
+                                 mode="lines", line=dict(color=colors["grid"], width=2), showlegend=False,
+                                 hoverinfo="skip"))
+    for col, name, color in (("ev_media", "Resto del set", c_norm), ("ev_fin_media", "Finale di set", c_fin)):
+        fig.add_trace(go.Scatter(
+            x=100 * d[col], y=d["etichetta"], mode="markers", name=name,
+            marker=dict(size=11, color=color, line=dict(color=colors["surface"], width=2)),
+            customdata=np.c_[d["n_finale"], 100 * d["quota_finale"], 100 * d["p_meglio_in_finale"],
+                             100 * d["p_migliore_finale"]],
+            hovertemplate="%{y}<br>" + name + ": %{x:.1f} scambi vinti su 100<br>nei finali: %{customdata[0]} "
+                          "attacchi (%{customdata[1]:.0f}% dei nostri)<br>probabilità di rendere di più nei finali: "
+                          "%{customdata[2]:.0f}%<br>probabilità di essere il migliore nei finali: "
+                          "%{customdata[3]:.0f}%<extra></extra>"))
+    fig.update_layout(**_pm_layout(max(240, 42 * len(d) + 110), "Scambi vinti su 100 palloni",
+                                   left_margin=int(d["etichetta"].str.len().max() * 7.2) + 30))
+    fig.update_yaxes(autorange="reversed", gridcolor=colors["grid"])
+    st.caption(
+        f"{SITUATION_LABELS[sit]}. Finale = una squadra a 20 (10 al quinto) e scarto al massimo 3. Il modello parte "
+        "dall'idea che nei finali nessuno renda diversamente dal solito e si sposta solo se i dati lo mostrano "
+        "chiaramente: differenze piccole qui sono normali.")
+    st.plotly_chart(fig, theme=None, key=f"pm_fin_{sit}")
+    _pm_table(pd.DataFrame({
+        "Attaccante": d["etichetta"], "Attacchi nei finali": d["n_finale"],
+        "Quota dei palloni nei finali": d["quota_finale"].map(_pct),
+        "Scambi vinti su 100 nei finali": d.apply(lambda x: f"{_it(100 * x['ev_fin_media'], 1)} "
+                                                            f"({_it(100 * x['ev_fin_basso'], 1)}–"
+                                                            f"{_it(100 * x['ev_fin_alto'], 1)})", axis=1),
+        "Rende di più nei finali (probabilità)": d["p_meglio_in_finale"].map(_pct),
+        "Il migliore nei finali (probabilità)": d["p_migliore_finale"].map(_pct),
+    }))
+
+
+def _pm_reception_section(r):
+    st.subheader("5. Ricezione")
+    rec = r["ricevitori"].sort_values("so_media", ascending=False).rename(
+        columns={"so_media": "media", "so_basso": "basso", "so_alto": "alto"})
+    if rec.empty:
+        return
+    league = float(r["aree"].set_index("area").loc["Ricezione", "media_campionato"])
+    rec["testo"] = rec.apply(lambda x: f"  {x['n']} ricezioni", axis=1)
+    rec["rif"] = league
+    v = r["valori_battuta"].set_index("esito")["media"]
+    st.caption(
+        "Side-out su 100 battute avversarie in gioco ricevute da ognuno (contro un battitore medio), con la "
+        "media del campionato come riferimento. Le differenze tra ricevitori in scambi vinti sono piccole: tra una "
+        f"ricezione # e una - il side-out cambia di {_it(100 * (v['-'] - v['#']), 0)} punti su 100.")
+    fig = _dot_interval_figure(rec, "giocatore", "Side-out su 100 ricezioni", theme_colors()["palette"][0],
+                               text_col="testo", ref_col="rif", ref_name="Media del campionato")
+    st.plotly_chart(fig, theme=None, key="pm_ric")
+    e = r.get("esempi", {}).get("ricezione")
+    if e:
+        per_set = float(r["aree"].set_index("area").loc["Ricezione", "volume_set"])
+        solid = rec[rec["n"] >= 100] if (rec["n"] >= 100).sum() >= 2 else rec  # esempio su chi riceve davvero
+        top = solid.sort_values("positiva_oss", ascending=False).iloc[0]
+        low = solid.sort_values("positiva_oss").iloc[0]
+        gap = top["positiva_oss"] - low["positiva_oss"]
+        _pm_example(
+            f"Dopo una nostra ricezione # o + facciamo side-out il **{_pct(e['so_facile'])}** delle volte, dopo una "
+            f"!, - o / il **{_pct(e['so_difficile'])}**: ogni ricezione portata da un gruppo all'altro vale "
+            f"{_it(e['guadagno'], 2)} punti. Riceviamo circa {_it(per_set, 0)} battute a set: "
+            f"**10 punti percentuali di ricezioni positive in più (2 ricezioni a set) valgono "
+            f"{_it(0.1 * per_set * e['guadagno'], 2)} punti per set**.  \nEsempio: tra **{top['giocatore']}** "
+            f"({_pct(top['positiva_oss'])} di positive) e **{low['giocatore']}** ({_pct(low['positiva_oss'])}) ci sono "
+            f"{_it(100 * gap, 0)} punti percentuali: se tutte le ricezioni di un set le facesse il primo, sarebbero "
+            f"{_it(gap * per_set * e['guadagno'], 2)} punti in più. Pesa di più l'ace subito: costa tutto lo scambio "
+            "invece di una parte.")
+    _pm_table(pd.DataFrame({
+        "Ricevitore": rec["giocatore"], "Ricezioni": rec["n"],
+        "Positive (# o +)": rec["positiva_oss"].map(_pct),
+        "Side-out su 100": rec.apply(lambda x: f"{_it(100 * x['media'], 1)} ({_it(100 * x['basso'], 1)}–"
+                                               f"{_it(100 * x['alto'], 1)})", axis=1),
+        "Meglio della media (probabilità)": rec["p_meglio_media"].map(_pct),
+    }))
+
+
+def render_performance_model_tab():
+    st.header("Modello di prestazione")
+    st.markdown(
+        "Cosa allenare di più e quanto rischiare, stimato su **tutte le partite di campionato con lo scout**, "
+        "anche quelle tra altre squadre. Ogni azione vale quanto cambia la probabilità di vincere lo scambio "
+        "(1 scambio = 1 punto). Il modello è bayesiano: squadre e giocatori con pochi dati restano vicini alla "
+        "media finché i dati non dicono altro, e ogni stima ha il suo intervallo.")
+    from src.performance_model import RESULTS_PATH
+    mtime = RESULTS_PATH.stat().st_mtime if RESULTS_PATH.exists() else 0
+    r = load_performance_results(mtime)
+    cols = st.columns([3, 1])
+    with cols[0]:
+        if r is not None:
+            m = r["meta"]
+            seasons = ", ".join(f"{s}: {n}" for s, n in m["partite"].items())
+            st.caption(f"Stima del {m['data_stima']} su {sum(m['partite'].values())} partite ({seasons}), "
+                       f"{m['attacchi']} attacchi e {m['battute']} battute.")
+    with cols[1]:
+        refit = st.button("Stima di nuovo il modello", help=(
+            "Rilegge tutti i .dvw di campionato delle stagioni in config/performance_model.json e ristima il "
+            "modello (circa 3 minuti). Da fare dopo aver aggiunto partite."))
+    if refit:
+        from src.performance_model import fit_and_save
+        with st.status("Stima del modello in corso (circa 3 minuti)…", expanded=True) as status:
+            fit_and_save(progress=status.write)
+            status.update(label="Modello stimato", state="complete")
+        load_performance_results.clear()
+        st.rerun()
+    if r is None:
+        st.info("Il modello non è ancora stato stimato: premi \"Stima di nuovo il modello\".")
+        return
+    _pm_training_section(r)
+    st.caption("Le indicazioni contro un singolo avversario (battere forte o sicuro, forzare o no, budget di errori, "
+               "scheda degli scout) sono nella tab \"Studio avversario\".")
+    _pm_serve_section(r)
+    sit = _pm_attackers_section(r)
+    _pm_final_section(r, sit)
+    _pm_reception_section(r)
+    with st.expander("Come funziona il modello e quanto fidarsi"):
+        m = r["meta"]
+        diag = m["diagnostica"]
+        st.markdown(
+            "- **Dati**: tutti i `.dvw` di campionato nelle cartelle delle stagioni (anche partite senza il "
+            "Decimo), dalla data di inizio del campionato; un file per partita. In più i risultati del girone dal "
+            "sito federale.\n"
+            "- **Squadre**: una per stagione. Il suo livello parte dalla forza nei risultati (punti fatti e subiti "
+            "nei set), più la società (comune alle stagioni, per le squadre indicate come stesso gruppo in "
+            "`config/performance_model.json`) e quanto la squadra di quest'anno se ne discosta: quanto conta "
+            "l'anno prima lo stimano i dati. I giocatori sono società + cognome: chi è rimasto porta i suoi dati.\n"
+            "- **Valore di un esito**: la quota di scambi vinti dopo quell'esito.\n"
+            "- **Attacco**: l'esito (punto, +, !, -, errore, murato) dipende dalla situazione e dalla zona, dalla "
+            "squadra che attacca in quella situazione, dall'attaccante, dalla squadra che difende (muro e difesa) "
+            "e dal finale di set. Situazioni: side-out da R#/R+ e da R! (palla veloce), da R- (palla alta), free "
+            "ball (D!), contrattacco. La difesa non è usata se non come free ball.\n"
+            "- **Battuta**: l'errore dipende da squadra e battitore; il voto della ricezione da squadra e "
+            "battitore che servono, squadra e giocatore che ricevono, finale di set. Il tipo di battuta non c'è.\n"
+            "- **Cosa succede dopo**, per ogni coppia di squadre: chi vince lo scambio dopo un attacco rimasto in "
+            "gioco, e dopo una ricezione con un certo voto. Da qui le indicazioni contro un avversario.\n"
+            "- **Set**: la probabilità di vincerlo viene dai side-out delle due squadre, punto per punto.\n"
+            "- **Limite**: le stime valgono con la distribuzione attuale. Se un attaccante riceve molti più "
+            "palloni, gli avversari lo leggono e il suo rendimento scende: le indicazioni vanno applicate per "
+            "gradi.")
+        st.caption(
+            "Convergenza (R-hat massimo, sotto 1,05 va bene; divergenze): "
+            + "; ".join(f"{k} {_it(v['r_hat_max'], 3)}, {v['divergenze']}" for k, v in diag.items())
+            + f". Stima in {m['durata_s']} s.")
+        if m.get("non_abbinate"):
+            st.warning("Squadre degli scout non trovate nel girone (aggiungerle in `nomi_fipav` di "
+                       "config/performance_model.json): " + ", ".join(f"{n} ({s_})" for s_, n in m["non_abbinate"]))
+        if m["scartati"]:
+            st.caption("File non usati: " + "; ".join(f"{f} ({why})" for f, why in m["scartati"]))
+
+
 def main():
     st.title("Decimo Roma — Match analysis")
 
@@ -3669,7 +4823,7 @@ def main():
     st.caption(f"Stagione {season} · {len(matches)} partite registrate")
 
     tab_names = (["Partita", "Report partita", "Distribuzione alzate", "Studio avversario", "Classifiche", "Tabellino",
-                  "Andamento KPI"] + (["Pagella"] if show_pagella else []))
+                  "Andamento KPI", "Modello di prestazione"] + (["Pagella"] if show_pagella else []))
     tabs = st.tabs(tab_names)
     with tabs[0]:
         render_match_section(season, matches, match_label_lookup_full, version)
@@ -3685,8 +4839,10 @@ def main():
         render_tabellino_section(matches, match_label_lookup_full)
     with tabs[6]:
         render_trend_tab(season, version, matches, team_df_fixed, player_df_fixed, match_label_lookup_full)
+    with tabs[7]:
+        render_performance_model_tab()
     if show_pagella:
-        with tabs[7]:
+        with tabs[8]:
             rec_vote_for_report = DEFAULT_REC_VOTE
             player_report, player_report_missing = load_player_report(season, rec_vote_for_report, version)
             season_report = load_player_season_report(season, rec_vote_for_report, version)
