@@ -189,7 +189,7 @@ def attack_rows(parsed, side, match_label=""):
     ricezione, se ce n'è esattamente uno; side-out), difesa (voto
     della difesa da cui parte il contrattacco, se c'è), situazione (chiave
     di SITUATIONS o None), punti_noi/punti_loro e diff_punteggio (prima
-    dell'attacco), situazione_punteggio.
+    dell'attacco), situazione_punteggio, rally (numero dello scambio).
     """
     df = side_actions(parsed, side)
     roles = _roles(parsed, side)
@@ -250,6 +250,7 @@ def attack_rows(parsed, side, match_label=""):
             "situazione": _situation(is_so, i in fb_idx, received[1] if received else None),
             "punti_noi": int(r[own_score]), "punti_loro": int(r[opp_score]),
             "diff_punteggio": diff, "situazione_punteggio": score_situation(diff),
+            "rally": r["Rally"],
         })
     return pd.DataFrame(rows)
 

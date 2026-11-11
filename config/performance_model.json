@@ -1,0 +1,53 @@
+{
+  "stagioni": [
+    "2025-2026",
+    "2026-2027"
+  ],
+  "inizio_campionato": {
+    "2025-2026": "12/10/2025",
+    "2026-2027": "17/10/2026"
+  },
+  "gironi_fipav": {
+    "2025-2026": 58681,
+    "2026-2027": 63671
+  },
+  "squadra": "DECIMO ROMA",
+  "nomi_fipav": {
+    "2025-2026": {
+      "nmc": "ASD NUOVO MONTONA CECILIA",
+      "pqp": "A.C.S.D. PUORQUOI PAS",
+      "roma7": "POL. ROMA 7 VOLLEY A D G",
+      "civita castellana": "ECOSANTAGATA CIVITA CASTELLANA"
+    },
+    "2026-2027": {
+      "san paolo 27": "SSD SAN PAOLO OSTIENSE",
+      "genzano": "BCC COLLI ALBANI VOLLEY SCHOOL GENZANO"
+    }
+  },
+  "stesso_gruppo": {
+    "2026-2027": {
+      "DECIMO ROMA": "DECIMO ROMA",
+      "ASTROLABIO 2000": "ASTROLABIO 2000",
+      "TVL ANGUILLARA": "STELLA MANTUS VOLLEY ANGUILLARA",
+      "NMC HUSKIES": "ASD NUOVO MONTONA CECILIA",
+      "ROMAN VOLLEY PURPLE": "ROMAN VOLLEY ASD APS",
+      "ROMA 7 VOLLEY G": "POL. ROMA 7 VOLLEY A D G"
+    }
+  },
+  "min_partite_squadra_confronto": 3,
+  "min_attacchi_giocatore": 15,
+  "min_battute_giocatore": 30,
+  "min_ricezioni_giocatore": 30,
+  "mcmc": {
+    "warmup": 600,
+    "campioni": 500,
+    "catene": 2,
+    "seed": 2026
+  },
+  "non_in_rosa": {
+    "2026-2027": [
+      "Licenziati",
+      "Martignoni"
+    ]
+  }
+}
