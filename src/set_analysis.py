@@ -54,9 +54,14 @@ def _attack_counts(att):
 
 
 # Righe della tabella per giocatore: (chiave, etichetta).
+# Ricezione e difesa non fanno punto: nel report hanno una tabella a parte
+# (RECEIVE_ROWS), con #, +, !, - ed errori al posto di punti e murate
+# (richiesta dell'utente, 2026-11-09: # e + separati, in difesa hanno
+# significati molto diversi).
+RECEIVE_ROWS = ("ricezione", "difesa")
 PLAYER_KPI_ROWS = [
-    ("ricezione", "Ricezione"), ("battuta", "Battuta"), ("so", "Attacco SO"),
-    ("bp", "Attacco BP"), ("fb", "di cui free ball"), ("muro", "Muro"),
+    ("ricezione", "Ricezione"), ("difesa", "Difesa"), ("battuta", "Battuta"), ("so", "Attacco SO"),
+    ("bp", "Attacco BP"), ("fb", "di cui free ball"), ("muro", "Muro"), ("rigori", '"Rigori"'),
     ("alta", "Palla alta"), ("veloce", "Palla veloce"), ("alzata", "Alzata"), ("totale", "Totale"),
 ]
 
@@ -66,7 +71,9 @@ def player_kpi_table(df):
     {giocatore ('<numero> <cognome>' o 'Squadra'): DataFrame} con una riga per
     fondamentale giocato (PLAYER_KPI_ROWS; sempre 'Totale') e colonne tot, pt,
     err, mur (murate, solo attacchi e totale), pe (p-e/m), eff (None dove
-    non ha senso: punti e p-e/m della ricezione, efficienza di muro e alzata). `df`: azioni di una squadra (formato di
+    non ha senso: efficienza di muro e alzata). Ricezione e difesa
+    (RECEIVE_ROWS) non fanno punto: al posto di pt/mur/pe hanno hash (#), plus
+    (+), ex (!), neg (-) ed err ((/ e =)); eff solo per la ricezione. `df`: azioni di una squadra (formato di
     src.dvw.side_actions); side-out e break-point divisi sulla sequenza di
     tutta la squadra, poi assegnati al giocatore.
     """
@@ -87,8 +94,16 @@ def player_kpi_table(df):
         ric = mine[mine["Tipo"] == "ricezione"]
         if len(ric):
             pos, neg = ric["Voto"].isin(["#", "+"]).sum(), ric["Voto"].isin(["/", "="]).sum()
-            rows["ricezione"] = {"tot": len(ric), "pt": None, "err": int((ric["Voto"] == "=").sum()), "pe": None,
+            rows["ricezione"] = {"tot": len(ric), "hash": int((ric["Voto"] == "#").sum()),
+                                 "plus": int((ric["Voto"] == "+").sum()), "ex": int((ric["Voto"] == "!").sum()),
+                                 "neg": int((ric["Voto"] == "-").sum()), "err": int(neg),
                                  "eff": 100 * (pos - neg) / len(ric)}
+        dif = mine[mine["Tipo"] == "difesa"]
+        if len(dif):
+            rows["difesa"] = {"tot": len(dif), "hash": int((dif["Voto"] == "#").sum()),
+                              "plus": int((dif["Voto"] == "+").sum()),
+                              "ex": int((dif["Voto"] == "!").sum()), "neg": int((dif["Voto"] == "-").sum()),
+                              "err": int(dif["Voto"].isin(["/", "="]).sum()), "eff": None}
         bat = mine[mine["Tipo"] == "battuta"]
         if len(bat):
             pt, err = int((bat["Voto"] == "#").sum()), int(bat["Voto"].isin(SRV_NEG).sum())
@@ -105,13 +120,17 @@ def player_kpi_table(df):
         if len(muro):
             pt, err = int((muro["Voto"] == "#").sum()), int((muro["Voto"] == "/").sum())
             rows["muro"] = {"tot": len(muro), "pt": pt, "err": err, "pe": pt - err, "eff": None}
+        # "Rigori": muri punto dopo una loro ricezione o difesa / (src.dvw._mark_rigori), a parte dal muro
+        rig = int((mine["Tipo"] == "rigore").sum())
+        if rig:
+            rows["rigori"] = {"tot": rig, "pt": rig, "err": 0, "pe": rig, "eff": None}
         alz_err = int(((mine["Tipo"] == "alzata") & (mine["Voto"] == "=")).sum())
         if alz_err:
             rows["alzata"] = {"tot": None, "pt": None, "err": alz_err, "pe": -alz_err, "eff": None}
         # totale: punti, errori e murate di attacco (side-out + break-point),
         # battuta, muro e alzata; la ricezione non dà punti e i suoi errori
         # (ace subiti) sono già i punti della battuta avversaria
-        parts = [rows.get(k) for k in ("battuta", "so", "bp", "muro", "alzata")]
+        parts = [rows.get(k) for k in ("battuta", "so", "bp", "muro", "rigori", "alzata")]
         pt = sum(r["pt"] or 0 for r in parts if r)
         err = sum(r["err"] or 0 for r in parts if r)
         mur = sum(r.get("mur") or 0 for r in parts if r)
@@ -243,7 +262,7 @@ def entity_key(name):
 
 # Verso di ogni colonna del tabellino (+1 più alto è meglio, -1 più basso è
 # meglio); 'tot' è un volume, non si colora.
-CELL_DIRECTION = {"pt": 1, "err": -1, "mur": -1, "pe": 1, "eff": 1}
+CELL_DIRECTION = {"pt": 1, "hash": 1, "plus": 1, "err": -1, "mur": -1, "pe": 1, "eff": 1}
 MIN_HISTORY = 3  # partite precedenti con quel dato per colorare la cella
 STD_FLOOR = {"eff": 8.0}  # deviazione minima: evita colori forti su storie piatte
 STD_FLOOR_COUNTS = 1.0

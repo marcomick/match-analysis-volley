@@ -1,15 +1,30 @@
 {
-  "_nota": "Punteggio MVP (src/mvp.py). Valori in punti: quanto un'azione sposta la probabilità di vincere lo scambio (calcolata su tutti i .dvw e arrotondata a 0,05), con le correzioni concordate il 2026-10-31 (ricezione # e + alla pari, per dare spinta anche al libero; attacco murato meno grave dell'errore). Voti non elencati = 0.",
+  "_nota": "Punteggio MVP (src/mvp.py). Valori in punti: quanto un'azione sposta la probabilità di vincere lo scambio (calcolata su tutti i .dvw e arrotondata a 0,05), con le correzioni concordate il 2026-10-31 e il 2026-11-09 (pari chance tra i ruoli per chi gioca davvero bene). Voti non elencati = 0.",
   "azioni": {
     "battuta":   {"#": 0.60, "+": 0.10, "!": 0.05, "-": 0.00, "/": 0.25, "=": -0.40},
-    "ricezione": {"#": 0.15, "+": 0.15, "!": 0.05, "-": 0.00, "/": -0.05, "=": -0.55},
-    "attacco":   {"#": 0.40, "+": 0.10, "!": 0.05, "-": 0.00, "/": -0.50, "=": -0.60},
+    "ricezione": {"#": 0.15, "+": 0.12, "!": 0.05, "-": 0.00, "/": -0.05, "=": -0.55},
+    "attacco":   {"#": 0.35, "+": 0.10, "!": 0.05, "-": 0.00, "/": -0.35, "=": -0.40},
     "muro":      {"#": 0.65, "+": 0.20, "!": 0.10, "-": 0.00, "/": -1.00, "=": -0.10},
-    "difesa":    {"#": 0.25, "-": 0.05, "=": -0.10},
-    "alzata":    {"=": -0.50}
+    "difesa":    {"#": 0.25, "+": 0.05, "-": 0.05, "=": -0.10},
+    "alzata":    {"#": 0.30, "+": 0.15, "-": -0.15, "=": -0.50}
   },
-  "attacco_punto_free_ball": 0.50,
-  "errore_attacco_palla_alta": -0.75,
+  "_attacco_per_situazione": "punto (#), errore (=) e murata (/) secondo la situazione (decisione dell'utente, 2026-11-09): da palla buona (R#/R+ e free ball) si rischia, l'errore costa poco; su palla alta il punto vale ma l'errore pesa. Palla alta = tipo di palla H (rilevato o stimato), prima di tutto il resto; poi free ball (attacco dopo una difesa !), poi side-out dopo R# o R+. Tutto il resto (dopo R!, contrattacco su palla veloce) usa azioni.attacco. Il \"rigore\" vale come azioni.attacco.#",
+  "attacco_per_situazione": {
+    "palla alta": {"#": 0.40, "=": -0.55, "/": -0.40},
+    "free ball":  {"#": 0.45, "=": -0.30, "/": -0.25},
+    "R#/R+":      {"#": 0.40, "=": -0.30, "/": -0.25}
+  },
+  "_attacco_seconda_linea": "in più per un attacco punto di chi è in seconda linea (P1, P5, P6 al momento dell'attacco): per lo più l'opposto",
+  "attacco_seconda_linea": 0.25,
+  "_alzata_a_punto": "in più per un'alzata # o + se l'attacco che segue va a punto",
+  "alzata_a_punto": 0.05,
+  "_miglior_ricevitore": "premio al miglior ricevitore della partita (efficienza di ricezione della squadra, almeno min_ricezioni_per_set x set della partita; a parità chi ne ha di più): valore meno i punti MVP già fatti in attacco, battuta e muro, mai sotto zero. Così premia chi non ha altri modi di fare punti (il libero) senza far scappare il martello. Il minimo è metà delle ricezioni medie a set di martelli e liberi titolari (5,6, su tutti i .dvw al 2026-11-09)",
+  "miglior_ricevitore": {"premio": 3.0, "min_ricezioni_per_set": 2.8},
+  "_riconoscimenti": "miglior attaccante (efficienza d'attacco, almeno min_attacchi_per_set x set: metà degli attacchi medi a set di martelli e opposti titolari, circa 7,9) e miglior muro (più muri punto, poi meno invasioni): solo riconoscimenti nel report, senza punti MVP",
+  "miglior_attaccante": {"min_attacchi_per_set": 4.0},
+  "_rigore": "rigore = muro punto subito dopo una ricezione o difesa / avversaria: vale come un attacco punto (azioni.attacco.#) e sta nella colonna Attacco, non è un muro punto (decisione dell'utente, 2026-11-09)",
+  "_errore_battuta_per_tipo": "errore in battuta per tipo di battuta (codice del .dvw: Q salto spin, M salto float); altri tipi o tipo non rilevato = azioni.battuta.=",
+  "errore_battuta_per_tipo": {"Q": -0.10, "M": -0.40},
   "palleggiatore": {
     "quota": 0.10,
     "pem_medio_per_attacco": 0.22,

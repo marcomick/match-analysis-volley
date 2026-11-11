@@ -27,7 +27,7 @@ con i criteri indicati dall'utente il 2026-10-25:
 """
 import pandas as pd
 
-from src.match_report import POINT_SOURCES, _eff
+from src.match_report import POINT_SOURCES, RIGORI, _eff
 
 MIN_RECEPTIONS = 15
 MIN_SERVES = 10
@@ -35,7 +35,7 @@ DANGEROUS_SERVE_GRADES = ("#", "+", "/")
 DANGEROUS_SERVE_SHARE = 40
 CLUTCH_FROM, CLUTCH_FROM_TIEBREAK, CLUTCH_MAX_DIFF = 20, 10, 3
 # Cause dei punti che descrivono il gioco (per il testo di swing_summary).
-SWING_CAUSES = {"Attacco": "attacco", "Muro": "muro", "Ace": "battuta (ace)",
+SWING_CAUSES = {"Attacco": "attacco", "Muro": "muro", RIGORI: '"rigori"', "Ace": "battuta (ace)",
                 "Errori avversari": "errori"}
 
 

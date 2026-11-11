@@ -4,13 +4,22 @@ MVP della partita (criteri concordati con l'utente il 2026-10-31).
 
 Ogni azione vale in punti quanto sposta la probabilità di vincere lo scambio
 (tabella in config/mvp.json, calcolata su tutti i .dvw e arrotondata a 0,05):
-muro punto +0,65, ace +0,60, attacco punto +0,40 (+0,50 da free ball),
-ricezione # o + +0,15 (alla pari, spinta anche al libero), ...; invasione a
-muro -1,00, errore d'attacco su palla alta -0,75 (tipo di palla rilevato o
-stimato, vedi src.dvw._infer_ball_type), errore d'attacco -0,60, murato -0,50, ...; l'attacco
-difeso (-) e la battuta facile (-) valgono 0, così chi attacca tanto non
-viene penalizzato. Muro e difesa sono confrontati con "attacco avversario in
-gioco": un muro o una difesa non segnati valgono 0.
+muro punto +0,65, ace +0,60, ricezione # +0,15 e + +0,12, ...; invasione a
+muro -1,00; l'attacco difeso (-) e la battuta facile (-) valgono 0, così chi
+attacca tanto non viene penalizzato. Muro e difesa sono confrontati con
+"attacco avversario in gioco": un muro o una difesa non segnati valgono 0.
+
+Revisione del 2026-11-09 (pari chance tra i ruoli per chi gioca davvero bene,
+verificata su tutte le partite .dvw):
+- attacco per situazione (attacco_per_situazione): da palla buona (R#/R+,
+  free ball) l'errore costa poco, su palla alta (tipo di palla rilevato o
+  stimato, src.dvw._infer_ball_type) il punto vale ma l'errore pesa; il
+  punto da 2ª linea vale attacco_seconda_linea in più;
+- alzate: E# (meritevole), E+ (attaccante contro muro a 1), E- (penalità),
+  più alzata_a_punto se l'attacco che segue va a punto;
+- premio al miglior ricevitore della partita: miglior_ricevitore.premio meno
+  i punti già fatti in attacco, battuta e muro (mai sotto zero), così il
+  libero può vincere e il martello che riceve bene non scappa via.
 
 Palleggiatore: quota x (p-e/m degli attacchi alzati da lui dopo R#, R+, R! o
 free ball - p-e/m medio atteso su quegli attacchi), cioè solo la parte "più
@@ -27,6 +36,7 @@ scambio o ha fatto un'azione (libero). Con 1 set fittizio chi gioca gli
 ultimi due set di cinque vince con metà del punteggio del titolare.
 """
 import json
+import math
 from pathlib import Path
 
 import pandas as pd
@@ -64,6 +74,55 @@ def _sets_played(source):
     return {n: len(s) for n, s in played.items()}, actions["Numero Set"].dropna().nunique()
 
 
+def _scored_actions(source, cfg):
+    """Le azioni dei nostri giocatori con il loro valore MVP ('valore') e la
+    voce della tabella dei punti ('voce'); anche gli attacchi side-out e
+    free ball (separate_attack_types) per la quota del palleggiatore."""
+    noi = source["noi"]
+    df = noi[noi["Numero"].notna() & noi["Tipo"].isin(FUNDAMENTALS + ["rigore"])].copy()
+    # "rigore" (muro punto sulla loro ricezione o difesa rimandata di qua, src.dvw._mark_rigori):
+    # nel punteggio vale come un attacco punto e sta nella colonna Attacco (indicazione dell'utente, 2026-11-09)
+    rigori = df.index[df["Tipo"] == "rigore"]
+    df.loc[rigori, "Tipo"] = "attacco"
+    df["valore"] = [cfg["azioni"].get(t, {}).get(v, 0.0) for t, v in zip(df["Tipo"], df["Voto"])]
+    df["voce"] = [ACTION_DESCRIPTIONS.get(t, {}).get(v) or f"{FUNDAMENTAL_LABELS[t]} con voto {v} ({GRADE_CODES[t]}{v})"
+                  for t, v in zip(df["Tipo"], df["Voto"])]
+    df.loc[rigori, "voce"] = RIGORE_LABEL
+    so, fb, _ = separate_attack_types(noi, rec_vote=SETTER_SITUATION_GRADES)
+    # attacco per situazione: palla alta (tipo di palla rilevato o stimato in lettura,
+    # src.dvw._infer_ball_type) prima di tutto, poi free ball, poi side-out da R# o R+
+    so_good, _, _ = separate_attack_types(noi, rec_vote=["#", "+"])
+    attacks = df[(df["Tipo"] == "attacco") & df["Voto"].isin(["#", "=", "/"])].index.difference(rigori)
+    for i in attacks:
+        sit = ("palla alta" if df.at[i, "Tipo palla"] in BALL_HIGH else "free ball" if i in fb.index
+               else "R#/R+" if i in so_good.index else None)
+        if sit and sit in cfg.get("attacco_per_situazione", {}):
+            v = df.at[i, "Voto"]
+            df.at[i, "valore"] = cfg["attacco_per_situazione"][sit][v]
+            df.at[i, "voce"] = SITUATION_LABELS[(sit, v)]
+    # attacco punto da 2ª linea (in P1, P5 o P6 al momento dell'attacco): vale di più
+    prefix = "Casa" if source["side"] == "*" else "Ospiti"
+    back = [i for i in attacks if df.at[i, "Voto"] == "#"
+            and df.at[i, "Numero"] in {df.at[i, f"{prefix} P{z}"] for z in (1, 5, 6)}]
+    df.loc[back, "valore"] += cfg.get("attacco_seconda_linea", 0.0)
+    df.loc[back, "voce"] = [f"{v.replace(' (A#)', '')}, da 2ª linea (A#)" for v in df.loc[back, "voce"]]
+    # alzata # o + seguita da un attacco punto nello stesso scambio: vale di più
+    bonus = cfg.get("alzata_a_punto", 0.0)
+    for i in df.index[(df["Tipo"] == "alzata") & df["Voto"].isin(["#", "+"])]:
+        j = noi.index.get_loc(i) + 1
+        if j < len(noi) and noi.iloc[j]["Tipo"] == "attacco" and noi.iloc[j]["Voto"] == "#" \
+                and noi.iloc[j]["Rally"] == df.at[i, "Rally"]:
+            df.at[i, "valore"] += bonus
+            df.at[i, "voce"] = df.at[i, "voce"].replace(")", " a punto)")
+    # errore in battuta secondo il tipo di battuta (salto spin / salto float), dove è rilevato
+    for code, value in cfg.get("errore_battuta_per_tipo", {}).items():
+        err = df[(df["Tipo"] == "battuta") & (df["Voto"] == "=") & (df["Tipo palla"] == code)].index
+        df.loc[err, "valore"] = value
+        df.loc[err, "voce"] = SERVE_ERROR_LABELS.get(code, f"Errore in battuta (B=, tipo {code})")
+    df["numero"] = df["Numero"].astype(int)
+    return df, so, fb
+
+
 def match_mvp(source, config=None):
     """
     Punteggio MVP di ogni giocatore della squadra "noi" di `source`
@@ -73,26 +132,18 @@ def match_mvp(source, config=None):
     set_partita, punteggio (totale corretto per i set giocati, solo se
     positivo), alzati_n/alzati_pem/alzati_attesi (palleggiatori: attacchi
     alzati che contano per la quota, loro p-e/m e p-e/m atteso) e i conteggi
-    per voto (colonne '<fondamentale> <voto>') per descrivere la partita.
+    per voto (colonne '<fondamentale> <voto>', più 'attacco rigore') per descrivere la partita.
     """
     cfg = config or load_mvp_config()
-    df = source["noi"]
-    df = df[df["Numero"].notna() & df["Tipo"].isin(FUNDAMENTALS)].copy()
-    df["valore"] = [cfg["azioni"].get(t, {}).get(v, 0.0) for t, v in zip(df["Tipo"], df["Voto"])]
-
-    so, fb, _ = separate_attack_types(source["noi"], rec_vote=SETTER_SITUATION_GRADES)
-    fb_points = fb[(fb["Tipo"] == "attacco") & (fb["Voto"] == "#")].index.intersection(df.index)
-    df.loc[fb_points, "valore"] = cfg["attacco_punto_free_ball"]
-    # tipo di palla rilevato o, dove manca, stimato in lettura (src.dvw._infer_ball_type)
-    attacks = df[df["Tipo"] == "attacco"]
-    high_err = attacks[(attacks["Voto"] == "=") & attacks["Tipo palla"].isin(BALL_HIGH)].index
-    df.loc[high_err, "valore"] = cfg["errore_attacco_palla_alta"]
-
-    df["numero"] = df["Numero"].astype(int)
+    df, so, fb = _scored_actions(source, cfg)
+    best_rec = _best_receiver(df, source, cfg)
     contrib = df.pivot_table(index="numero", columns="Tipo", values="valore", aggfunc="sum", fill_value=0.0)
     contrib = contrib.reindex(columns=FUNDAMENTALS, fill_value=0.0)
     counts = df.assign(k=df["Tipo"] + " " + df["Voto"]).pivot_table(
         index="numero", columns="k", values="valore", aggfunc="size", fill_value=0)
+    # i rigori sono tra gli attacchi punto ('attacco #'), contati anche a parte per il testo
+    counts["attacco rigore"] = df[df["voce"] == RIGORE_LABEL].groupby("numero").size().reindex(
+        counts.index, fill_value=0)
 
     # quota del palleggiatore: p-e/m dei suoi attacchi alzati oltre la media
     setter_cfg = cfg["palleggiatore"]
@@ -103,7 +154,8 @@ def match_mvp(source, config=None):
         set_attacks = set_attacks[set_attacks["Tipo palla"].isin(BALL_FAST)]
     pem = set_attacks["Voto"].map({"#": 1, "=": -1, "/": -1}).fillna(0)
     by_setter = pd.DataFrame({"n": pem.groupby(set_attacks["Palleggiatore in campo"]).size(),
-                              "pem": pem.groupby(set_attacks["Palleggiatore in campo"]).sum()})
+                              "pem": pem.groupby(set_attacks["Palleggiatore in campo"]).sum(),
+                              "pt": (set_attacks["Voto"] == "#").groupby(set_attacks["Palleggiatore in campo"]).sum()})
 
     names = {int(n): c for n, c in df.groupby("numero")["Cognome"].first().items()}
     roster = {n: p.cognome for (sq, n), p in roster_by_number(source["parsed"]["players"]).items() if sq == source["side"]}
@@ -116,11 +168,18 @@ def match_mvp(source, config=None):
         if cognome in by_setter.index:
             s = by_setter.loc[cognome]
             expected = setter_cfg["pem_medio_per_attacco"] * s["n"]
-            row.update(alzati_n=int(s["n"]), alzati_pem=int(s["pem"]), alzati_attesi=expected)
+            row.update(alzati_n=int(s["n"]), alzati_pem=int(s["pem"]), alzati_pt=int(s["pt"]), alzati_attesi=expected)
             row["alzata"] += setter_cfg["quota"] * (s["pem"] - expected)
         if n in counts.index:
             row.update({k: int(v) for k, v in counts.loc[n].items()})
-        row["totale"] = sum(row[f] for f in FUNDAMENTALS)
+        # premio al miglior ricevitore: il valore meno i punti già fatti in attacco, battuta e muro
+        row["miglior_ricevitore"] = best_rec is not None and n == best_rec["numero"]
+        row["premio"] = 0.0
+        if row["miglior_ricevitore"]:
+            p = cfg["miglior_ricevitore"]["premio"]
+            row["premio"] = min(p, max(0.0, p - (row["attacco"] + row["battuta"] + row["muro"])))
+            row.update(ric_n=best_rec["n"], ric_eff=best_rec["eff"])
+        row["totale"] = sum(row[f] for f in FUNDAMENTALS) + row["premio"]
         row["set_giocati"] = played.get(n, n_sets)
         row["set_partita"] = n_sets
         k = cfg["set_fittizi"]
@@ -132,6 +191,56 @@ def match_mvp(source, config=None):
         if " " in c and c.split(" ")[0] in FUNDAMENTALS:
             out[c] = out[c].fillna(0).astype(int)
     return out.sort_values("punteggio", ascending=False, ignore_index=True)
+
+
+def _best_receiver(df, source, cfg):
+    """Il miglior ricevitore della partita: migliore efficienza di ricezione
+    ((# + +) - (/ + =)) / ricezioni, con almeno min_ricezioni_per_set x set
+    della partita; a parità chi ne ha fatte di più. {numero, n, eff} o None."""
+    rc = cfg.get("miglior_ricevitore")
+    if not rc:
+        return None
+    _, n_sets = _sets_played(source)
+    rec = df[df["Tipo"] == "ricezione"].groupby("numero")["Voto"].agg(
+        n="size", eff=lambda v: 100 * (v.isin(["#", "+"]).sum() - v.isin(["/", "="]).sum()) / len(v))
+    rec = rec[rec["n"] >= math.ceil(rc["min_ricezioni_per_set"] * n_sets)]
+    if rec.empty:
+        return None
+    best = rec.sort_values(["eff", "n"], ascending=False).iloc[0]
+    return {"numero": int(best.name), "n": int(best["n"]), "eff": float(best["eff"])}
+
+
+def match_awards(source, mvp=None, config=None):
+    """
+    I riconoscimenti della partita per il report: miglior ricevitore (quello
+    del premio MVP), miglior attaccante (efficienza d'attacco, almeno
+    min_attacchi_per_set x set; a parità più attacchi; senza i "rigori") e
+    miglior muro (più muri punto, poi meno invasioni). Solo il ricevitore ha
+    un premio in punti MVP. {"ricevitore"|"attaccante"|"muro": dict o None}.
+    """
+    cfg = config or load_mvp_config()
+    mvp = match_mvp(source, cfg) if mvp is None else mvp
+    names = dict(zip(mvp["giocatore"].str.split(" ").str[0].astype(int), mvp["giocatore"]))
+    noi = source["noi"][source["noi"]["Numero"].notna()]
+    _, n_sets = _sets_played(source)
+    out = {"ricevitore": None, "attaccante": None, "muro": None}
+    r = mvp[mvp.get("miglior_ricevitore", False) == True] if "miglior_ricevitore" in mvp else mvp.iloc[0:0]
+    if len(r):
+        r = r.iloc[0]
+        out["ricevitore"] = {"giocatore": r["giocatore"], "n": int(r["ric_n"]), "eff": r["ric_eff"], "premio": r["premio"]}
+    att = noi[noi["Tipo"] == "attacco"].groupby("Numero")["Voto"].agg(
+        n="size", pt=lambda v: (v == "#").sum(), eff=lambda v: 100 * ((v == "#").sum() - v.isin(["=", "/"]).sum()) / len(v))
+    att = att[att["n"] >= math.ceil(cfg.get("miglior_attaccante", {}).get("min_attacchi_per_set", 4.0) * n_sets)]
+    if len(att):
+        b = att.sort_values(["eff", "n"], ascending=False).iloc[0]
+        out["attaccante"] = {"giocatore": names.get(int(b.name), str(int(b.name))), "n": int(b["n"]), "pt": int(b["pt"]),
+                             "eff": float(b["eff"])}
+    blk = noi[noi["Tipo"] == "muro"].groupby("Numero")["Voto"].agg(pt=lambda v: (v == "#").sum(), inv=lambda v: (v == "/").sum())
+    blk = blk[blk["pt"] > 0]
+    if len(blk):
+        b = blk.assign(neg=-blk["inv"]).sort_values(["pt", "neg"], ascending=False).iloc[0]
+        out["muro"] = {"giocatore": names.get(int(b.name), str(int(b.name))), "pt": int(b["pt"]), "inv": int(b["inv"])}
+    return out
 
 
 def _count(row, key):
@@ -149,17 +258,18 @@ def fundamental_text(row, fundamental):
     c = lambda v: _count(row, f"{fundamental} {v}")
     tot = sum(c(v) for v in ("#", "+", "!", "-", "/", "="))
     if fundamental == "attacco":
-        pt, err, mur = c("#"), c("="), c("/")
+        rig = c("rigore")  # i "rigori" contano come attacchi punto ma non sono attacchi: a parte
+        pt, err, mur, tot = c("#") - rig, c("="), c("/"), tot - rig
         text = (f"{_n(pt, 'punto', 'punti')} su {_n(tot, 'attacco', 'attacchi')}, {_n(err, 'errore', 'errori')}, "
                 f"{_n(mur, 'murata', 'murate')}")
         if tot >= MIN_EVENTS_FOR_PERCENT:
             text += f", efficienza {100 * (pt - err - mur) / tot:.0f}%"
-        return text
+        rig_text = _n(rig, '"rigore"', '"rigori"')
+        if rig and not tot:
+            return rig_text
+        return text + (f", più {rig_text}" if rig else "")
     if fundamental == "battuta":
-        pressure = c("+") + c("!") + c("/")
-        return (f"{c('#')} ace su {_n(tot, 'battuta', 'battute')}"
-                + (f", {_n(pressure, 'che mette', 'che mettono')} in difficoltà" if pressure else "")
-                + f", {_n(c('='), 'errore', 'errori')}")
+        return f"{c('#')} ace su {_n(tot, 'battuta', 'battute')}, {_n(c('='), 'errore', 'errori')}"
     if fundamental == "ricezione":
         # solo i conteggi, mai l'efficienza (indicazione dell'utente: "eff 100% su una ricezione è ridicolo")
         parts = [(c("#"), "perfetta", "perfette"), (c("+"), "positiva", "positive"), (c("="), "ace subito", "ace subiti")]
@@ -169,20 +279,27 @@ def fundamental_text(row, fundamental):
         return f"{_n(tot, 'ricezione', 'ricezioni')}" + (f": {detail}" if detail else "")
     if fundamental == "muro":
         parts = [_n(c("#"), "muro punto", "muri punto")]
-        if c("+") + c("!"):
-            parts.append(_n(c("+") + c("!"), "muro che rallenta la palla", "muri che rallentano la palla"))
         if c("/"):
             parts.append(_n(c("/"), "invasione", "invasioni"))
         return ", ".join(parts)
     if fundamental == "difesa":
-        return (f"{_n(c('#'), 'difesa che fa', 'difese che fanno')} contrattaccare, "
-                f"{_n(c('='), 'che dà', 'che danno')} il punto")
+        good = c("#") + c("+")
+        return (f"{_n(good, 'difesa che ci fa', 'difese che ci fanno')} contrattaccare"
+                + (f", {_n(c('='), 'che dà', 'che danno')} il punto" if c("=") else ""))
+    if fundamental == "premio":
+        return (f"miglior efficienza in ricezione della squadra ({row['ric_eff']:.0f}% su {int(row['ric_n'])}): "
+                "premio meno i punti fatti in attacco, battuta e muro")
     if fundamental == "alzata":
         n = row.get("alzati_n")
         parts = []
         if n is not None and not pd.isna(n):
             parts.append(f"attacchi alzati da R#, R+, R! e free ball: p-e/m {int(row['alzati_pem']):+d} su {int(n)} "
                          f"(in media {row['alzati_attesi']:+.0f})")
+        good, bad = c("#") + c("+"), c("-")
+        if good:
+            parts.append(_n(good, "alzata meritevole", "alzate meritevoli"))
+        if bad:
+            parts.append(_n(bad, "alzata imprecisa", "alzate imprecise"))
         if c("="):
             parts.append(_n(c("="), "errore di alzata", "errori di alzata"))
         return ", ".join(parts)
@@ -193,12 +310,19 @@ def mvp_highlights(row, n=3, min_contribution=0.2):
     """I fondamentali che hanno pesato di più nel punteggio del giocatore:
     [(etichetta, contributo, testo)], prima i contributi positivi; quelli
     sotto `min_contribution` solo se non c'è altro da dire."""
-    contrib = sorted(((f, row[f]) for f in FUNDAMENTALS if abs(row[f]) >= 0.05), key=lambda x: -x[1])
+    # muro senza muri punto e battuta senza ace non si raccontano (i tocchi a
+    # muro e le battute difficili da soli non dicono niente a chi legge)
+    contrib = sorted(((f, row[f]) for f in FUNDAMENTALS + ["premio"] if abs(row.get(f, 0) or 0) >= 0.05
+                      and not (f == "muro" and _count(row, "muro #") == 0)
+                      and not (f == "battuta" and _count(row, "battuta #") == 0)), key=lambda x: -x[1])
     positive = [x for x in contrib if x[1] > 0]
     chosen = (positive or contrib)[:n]
     relevant = [x for x in chosen if abs(x[1]) >= min_contribution]
     chosen = relevant or chosen[:1]
-    return [(FUNDAMENTAL_LABELS[f], v, fundamental_text(row, f)) for f, v in chosen]
+    # gli ace ci sono sempre, anche uno solo (indicazione dell'utente)
+    if _count(row, "battuta #") and all(f != "battuta" for f, _ in chosen):
+        chosen = chosen[: n - 1] + [("battuta", row["battuta"])]
+    return [(FUNDAMENTAL_LABELS.get(f, "Miglior ricevitore"), v, fundamental_text(row, f)) for f, v in chosen]
 
 
 def _ranking_name(giocatore):
@@ -262,20 +386,66 @@ def mvp_by_match_long(per_match, players=None):
 ACTION_DESCRIPTIONS = {
     "battuta": {"#": "Ace (B#)", "+": "Battuta che mette in difficoltà la ricezione (B+)",
                 "!": "Battuta che toglie il primo tempo (B!)", "-": "Battuta facile da ricevere (B-)",
-                "/": "Battuta che fa tornare la palla di qua (B/)", "=": "Errore in battuta (B=)"},
+                "/": "Battuta che fa tornare la palla di qua (B/)", "=": "Errore in battuta, tipo non rilevato (B=)"},
     "ricezione": {"#": "Ricezione perfetta (R#)", "+": "Ricezione buona, si può giocare il primo tempo (R+)",
                   "!": "Ricezione senza primo tempo (R!)", "-": "Ricezione che permette solo la palla alta (R-)",
                   "/": "Ricezione che va di là (R/)", "=": "Ace subito (R=)"},
-    "attacco": {"#": "Attacco punto (A#)", "+": "Attacco che mette in difficoltà la difesa (A+)",
+    "attacco": {"#": "Attacco punto in altre situazioni: dopo R!, contrattacco su palla veloce (A#)",
+                "+": "Attacco che mette in difficoltà la difesa (A+)",
                 "!": "Attacco che torna nel nostro campo, rigiochiamo (A!)",
-                "-": "Attacco difeso dall'avversario (A-)", "/": "Attacco murato (A/)", "=": "Errore in attacco (A=)"},
+                "-": "Attacco difeso dall'avversario (A-)", "/": "Attacco murato in altre situazioni (A/)",
+                "=": "Errore in attacco in altre situazioni (A=)"},
     "muro": {"#": "Muro punto (M#)", "+": "Muro che ci fa rigiocare (M+)", "!": "Muro che fa rigiocare l'avversario (M!)",
              "-": "Muro toccato che lascia contrattaccare l'avversario (M-)", "/": "Invasione a muro (M/)",
              "=": "Mani-fuori subito (M=)"},
-    "difesa": {"#": "Difesa che fa contrattaccare (D#)", "-": "Difesa che tiene la palla senza contrattacco (D-)",
+    "difesa": {"#": "Difesa che fa la differenza, per esempio un tuffo (D#)",
+               "+": "Difesa nella giusta posizione (D+)",
+               "-": "Difesa che tiene la palla senza contrattacco (D-)",
                "=": "Difesa che dà il punto all'avversario (D=)"},
-    "alzata": {"=": "Errore di alzata (E=)"},
+    "alzata": {"#": "Alzata meritevole (E#)", "+": "Alzata che lascia l'attaccante contro muro a 1 (E+)",
+               "-": "Alzata imprecisa, mette in difficoltà l'attaccante (E-)", "=": "Errore di alzata (E=)"},
 }
+
+
+GRADE_CODES = {"battuta": "B", "ricezione": "R", "attacco": "A", "muro": "M", "difesa": "D", "alzata": "E"}
+SERVE_ERROR_LABELS = {"Q": "Errore in battuta salto spin (B= spin)", "M": "Errore in battuta salto float (B= float)"}
+# attacco per situazione (config attacco_per_situazione)
+SITUATION_LABELS = {
+    (sit, v): f"{what} {where} (A{v})"
+    for sit, where in (("R#/R+", "da R# o R+"), ("free ball", "da free ball"), ("palla alta", "su palla alta"))
+    for v, what in (("#", "Attacco punto"), ("=", "Errore in attacco"), ("/", "Attacco murato"))
+}
+BACK_ROW_LABEL = "Attacco punto da 2ª linea: in più"
+SET_POINT_LABEL = "Alzata # o + che porta a punto: in più"
+PREMIO_LABEL = "Miglior ricevitore della partita: premio meno i punti fatti in attacco, battuta e muro"
+RIGORE_LABEL = '"Rigore": punto sulla loro ricezione o difesa rimandata di qua (M# dopo R/ o D/), come un attacco punto'
+
+
+def player_mvp_detail(source, giocatore, config=None):
+    """
+    Da dove arriva il punteggio MVP di un giocatore ('<numero> <cognome>',
+    come in match_mvp): {"azioni": DataFrame [fondamentale, azione, volte,
+    valore, totale] per voce della tabella dei punti, dal fondamentale più
+    importante; "riga": la sua riga di match_mvp (quota del palleggiatore,
+    totale, set giocati, punteggio); "config"}.
+    """
+    cfg = config or load_mvp_config()
+    df, _, _ = _scored_actions(source, cfg)
+    numero = int(str(giocatore).split(" ", 1)[0])
+    mine = df[df["numero"] == numero]
+    table = (mine.groupby(["Tipo", "voce", "valore"]).size().reset_index(name="volte")
+             .assign(totale=lambda d: d["valore"] * d["volte"]))
+    table["ordine"] = table["Tipo"].map({f: i for i, f in enumerate(FUNDAMENTALS)})
+    table = table.sort_values(["ordine", "valore"], ascending=[True, False])
+    table = table.rename(columns={"Tipo": "fondamentale", "voce": "azione"})
+    table["fondamentale"] = table["fondamentale"].map(FUNDAMENTAL_LABELS)
+    rows = match_mvp(source, cfg)
+    row = rows[rows["giocatore"] == giocatore].iloc[0].to_dict()
+    if row.get("premio"):
+        table = pd.concat([table, pd.DataFrame([{"fondamentale": "Premio", "azione": PREMIO_LABEL, "volte": 1,
+                                                 "valore": row["premio"], "totale": row["premio"]}])])
+    return {"azioni": table[["fondamentale", "azione", "volte", "valore", "totale"]].reset_index(drop=True),
+            "riga": row, "config": cfg}
 
 
 def scoring_rules(config=None):
@@ -293,11 +463,19 @@ def scoring_rules(config=None):
             desc = ACTION_DESCRIPTIONS.get(fund, {}).get(grade)
             if desc:
                 items.append((value, desc, FUNDAMENTAL_LABELS[fund]))
-    items.append((cfg["attacco_punto_free_ball"], "Attacco punto dopo una free ball (A# da free ball)", "Attacco"))
-    items.append((cfg["errore_attacco_palla_alta"], "Errore in attacco su palla alta (A= su palla alta)", "Attacco"))
+    for sit, grades in cfg.get("attacco_per_situazione", {}).items():
+        for v, value in grades.items():
+            items.append((value, SITUATION_LABELS[(sit, v)], "Attacco"))
+    if cfg.get("attacco_seconda_linea"):
+        items.append((cfg["attacco_seconda_linea"], BACK_ROW_LABEL, "Attacco"))
+    items.append((cfg["azioni"]["attacco"]["#"], RIGORE_LABEL, "Attacco"))
+    if cfg.get("alzata_a_punto"):
+        items.append((cfg["alzata_a_punto"], SET_POINT_LABEL, "Alzata"))
+    for code, value in cfg.get("errore_battuta_per_tipo", {}).items():
+        items.append((value, SERVE_ERROR_LABELS.get(code, f"Errore in battuta (B=, tipo {code})"), "Battuta"))
     setter = cfg["palleggiatore"]
     by_fund = [(FUNDAMENTAL_LABELS[f], sorted([(v, d) for v, d, lab in items if lab == FUNDAMENTAL_LABELS[f]],
-                                              key=lambda x: -x[0]))
+                                              key=lambda x: (-x[0], "non rilevato" in x[1])))
                for f in FUNDAMENTALS]
     return {
         "per_fondamentale": [(lab, rows) for lab, rows in by_fund if rows],
@@ -306,4 +484,9 @@ def scoring_rules(config=None):
         "zero": [d for v, d, _ in items if v == 0],
         "quota": setter["quota"], "media": setter["pem_medio_per_attacco"],
         "solo_veloci": setter.get("solo_alzate_veloci", False), "set_fittizi": cfg["set_fittizi"],
+        "situazioni": {sit: grades for sit, grades in cfg.get("attacco_per_situazione", {}).items()},
+        "attacco_altro": {v: cfg["azioni"]["attacco"][v] for v in ("#", "=", "/")},
+        "seconda_linea": cfg.get("attacco_seconda_linea", 0.0),
+        "premio": cfg.get("miglior_ricevitore", {}).get("premio"),
+        "min_ricezioni_per_set": cfg.get("miglior_ricevitore", {}).get("min_ricezioni_per_set"),
     }

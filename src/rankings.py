@@ -1,7 +1,7 @@
 # src/rankings.py
 """
 Funzioni core per il calcolo delle classifiche giocatori:
-Ace Man, Spike Leader, Spike Guarantee, Block Monster,
+Ace Man, Spike Leader, Spike Guarantee, Block Monster, Rigoristi,
 Miglior Ricevitore, Muro della vergogna (battute sbagliate).
 
 Estratto da notebooks/classifiche.ipynb per riuso (cross-stagione, test, altri notebook).
@@ -97,9 +97,26 @@ def build_spike_guarantee(attacco_scores, min_attacchi=50):
     return result[['Pos', 'Giocatore', 'Eff%', 'Attacchi']]
 
 
+def rigore_mask(df):
+    """True sui "rigori" (muro punto dopo una ricezione o difesa '/' avversaria,
+    colonna 'Rigore' di src.dvw, dove il Tipo diventa 'rigore'); tutto False se
+    la colonna manca (Excel 2025-2026)."""
+    if 'Rigore' not in df.columns:
+        return pd.Series(False, index=df.index)
+    return df['Rigore'].eq(True)
+
+
+def without_rigori(df):
+    """Le azioni senza i rigori: per Block Monster contano solo i muri veri
+    (richiesta dell'utente, 2026-11-02). Dal 2026-11-09 i rigori hanno già
+    Tipo 'rigore' e non sono tra i muri: il filtro resta per sicurezza."""
+    return df[~rigore_mask(df)]
+
+
 def build_best_block(blk_scores):
     """
-    BLOCK MONSTER — classifica per muri punto '#'.
+    BLOCK MONSTER — classifica per muri punto '#'. Calcolare `blk_scores` su
+    without_rigori(df): i rigori hanno la loro classifica (build_rigoristi).
     """
     result = blk_scores.sort_values(by='#', ascending=False).reset_index()
     result['Pos'] = result.index + 1
@@ -148,3 +165,18 @@ def build_srv_shame(srv_scores):
     result['Battute'] = result['Totale']
     result['Err%'] = result['Err%_sort'].apply(format_percent)
     return result[['Pos', 'Giocatore', '=', 'Battute', 'Err%']]
+
+
+def build_rigoristi(df, ignore_list=None):
+    """
+    RIGORISTI — classifica per "rigori" (muro punto subito dopo una ricezione
+    o difesa '/' avversaria, vedi rigore_mask), richiesta dell'utente del 2026-11-02.
+    Entra chi ne ha fatto almeno uno. Rigori segnati dalla G1 2026-2027 (prima
+    l'utente li segnava come attacco punto).
+    """
+    work = df[rigore_mask(df) & ~df['Cognome'].isin(ignore_list or [])]
+    work = work.assign(Giocatore=work['Cognome'] + ' ' + work['Numero'].astype(str))
+    counts = work.groupby('Giocatore').size().rename('#').sort_values(ascending=False, kind='stable')
+    result = counts.reset_index()
+    result['Pos'] = result.index + 1
+    return result[['Pos', 'Giocatore', '#']]

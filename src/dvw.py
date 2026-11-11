@@ -188,7 +188,7 @@ def parse_dvw(file_path):
         "teams": teams,
         "players": players,
         "sets": _parse_sets(sections.get("SET", [])),
-        "actions": _infer_ball_type(_middle_attacks_quick(actions, players)),
+        "actions": _mark_rigori(_infer_ball_type(_middle_attacks_quick(actions, players))),
         "rallies": rallies,
     }
 
@@ -231,6 +231,30 @@ def previous_touch(actions, i):
             continue
         return j
     return None
+
+
+def _mark_rigori(actions):
+    """
+    "Rigori": muro punto subito dopo una ricezione o una difesa '/' dell'altra
+    squadra (la palla rimandata di qua e schiacciata giù). Dalla G1 2026-2027
+    l'utente lo segna come muro, come indica la federazione (qualunque
+    intervento che rispedisce di là una palla appena toccata dall'avversario);
+    prima lo segnava come attacco punto, e quei rigori restano attacchi
+    (decisione dell'utente, 2026-11-02).
+    Per l'utente non è un muro punto (2026-11-09): il Tipo diventa 'rigore',
+    così esce da tutti i conteggi del muro (muri punto, Block Monster, KPI) e
+    compare a parte come "Rigori" (punti per causa, tabellini, Rigoristi);
+    nell'MVP vale come un attacco punto. Colonna 'Rigore' = True sulle stesse
+    righe; il codice originale resta in 'Codice'.
+    """
+    actions["Rigore"] = False
+    for i in actions.index[(actions["Tipo"] == "muro") & (actions["Voto"] == "#")]:
+        j = previous_touch(actions, i)
+        if (j is not None and actions.at[j, "squadra"] != actions.at[i, "squadra"]
+                and actions.at[j, "Tipo"] in ("ricezione", "difesa") and actions.at[j, "Voto"] == "/"):
+            actions.at[i, "Rigore"] = True
+    actions.loc[actions["Rigore"], "Tipo"] = "rigore"
+    return actions
 
 
 def _infer_ball_type(actions):
@@ -516,3 +540,44 @@ def dvw_official_result(parsed):
         "sets_a": sets_a, "sets_b": sets_b,
         "parziali": [(s["punti_casa"], s["punti_ospiti"]) for s in sets],
     }
+
+
+ROLE_BASE = {1: "L", 2: "M", 3: "O", 4: "C", 5: "P"}
+
+
+def role_codes(players, side):
+    """
+    {cognome: (numero, sigla)} della squadra `side` di un .dvw: L, O, P dal
+    ruolo della rosa; martelli e centrali M1/C1 se nella formazione di
+    partenza sono accanto al palleggiatore nell'ordine di rotazione (zone
+    che differiscono di 1, es. palleggiatore in 1 e giocatore in 2 o 6),
+    altrimenti M2/C2 (criterio confermato dall'utente il 2026-10-31). Si usa
+    il primo set in cui il palleggiatore è in formazione; chi non ha ruolo
+    nella rosa resta senza sigla.
+    """
+    pl = players[players["squadra"] == side]
+
+    def zone(zs, i):
+        try:
+            return int(zs[i])
+        except (TypeError, ValueError, IndexError):
+            return None
+    setters = pl[pl["ruolo"] == 5]
+    set_idx, setter_zone = None, None
+    for i in range(5):
+        for zs in setters["zone_partenza"]:
+            if zone(zs, i):
+                set_idx, setter_zone = i, zone(zs, i)
+                break
+        if set_idx is not None:
+            break
+    out = {}
+    for r in pl.itertuples():
+        cognome = str(r.cognome).strip().replace("\u2019", "'")
+        base = ROLE_BASE.get(int(r.ruolo)) if pd.notna(r.ruolo) else None
+        code = base
+        if base in ("M", "C"):
+            z = zone(r.zone_partenza, set_idx) if set_idx is not None else None
+            code = f"{base}{1 if (z - setter_zone) % 6 in (1, 5) else 2}" if z and setter_zone else base
+        out[cognome] = (int(r.numero), code)
+    return out

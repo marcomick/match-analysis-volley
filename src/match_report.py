@@ -23,21 +23,24 @@ from src.dvw import decimo_side, parse_dvw, side_actions, team_side
 from src.efficiency import compute_set_metrics, eff_from_calcola, error_mask, separate_attack_types
 from src.leg_comparison import TIPO_POS_NEG
 
-POINT_SOURCES = ["Attacco", "Muro", "Ace", "Errori avversari", "Punti generici", "Non rilevato"]
+# "Rigori" (muro punto dopo una ricezione o difesa / avversaria, src.dvw._mark_rigori): causa a sé, non muro
+# (indicazione dell'utente, 2026-11-09), scritta col virgolettato
+RIGORI = '"Rigori"'
+POINT_SOURCES = ["Attacco", "Muro", RIGORI, "Ace", "Errori avversari", "Punti generici", "Non rilevato"]
 # Colori delle cause dei punti (dashboard e PDF): tinte della palette diverse
 # dal blu/arancio delle squadre, validate con lo script della dataviz skill in
 # entrambi i temi; contrasto basso col fondo chiaro -> il numero è sempre
 # scritto dentro il segmento.
-POINT_SOURCE_COLORS_LIGHT = {"Attacco": "#1baf7a", "Muro": "#4a3aa7", "Ace": "#eda100",
+POINT_SOURCE_COLORS_LIGHT = {"Attacco": "#1baf7a", "Muro": "#4a3aa7", RIGORI: "#9a8fe8", "Ace": "#eda100",
                              "Errori avversari": "#e87ba4", "Punti generici": "#898781", "Non rilevato": "#c3c2bb"}
-POINT_SOURCE_COLORS_DARK = {"Attacco": "#199e70", "Muro": "#9085e9", "Ace": "#c98500",
+POINT_SOURCE_COLORS_DARK = {"Attacco": "#199e70", "Muro": "#9085e9", RIGORI: "#5b4fbf", "Ace": "#c98500",
                             "Errori avversari": "#d55181", "Punti generici": "#898781", "Non rilevato": "#55554f"}
 # Il muro nel report si misura sui muri punto, non sull'efficienza (richiesta
 # dell'utente, 2026-10-30).
 SET_METRICS = ["Battuta%", "Ricezione%", "Attacco SO%", "Contrattacco%", "Muro punti", "Errori"]
 TOTAL_LABEL = "Tot"
 
-_WINNING_SKILL = {"attacco": "Attacco", "muro": "Muro", "battuta": "Ace"}
+_WINNING_SKILL = {"attacco": "Attacco", "muro": "Muro", "rigore": RIGORI, "battuta": "Ace"}
 
 
 def _lost_point(df):
@@ -192,6 +195,7 @@ def player_table_from_df(df, generici_pt, generici_err):
             "contr_eff": eff(contr_att, "attacco"), "contr_tot": len(contr_att) or None,
             "fb_eff": eff(fb_att, "attacco"), "fb_tot": len(fb_att) or None,
             "muro_pt": int((muro["Voto"] == "#").sum()) if len(muro) else None,
+            "rigori": int((sub["Tipo"] == "rigore").sum()) or None,
             # errori per fondamentale (le stesse voci di "err", error_mask)
             "err_bat": int((bat["Voto"] == "=").sum()), "err_att": int((att["Voto"] == "=").sum()),
             "err_alz": int(((sub["Tipo"] == "alzata") & (sub["Voto"] == "=")).sum()),
@@ -243,7 +247,7 @@ def point_sources_by_set(source):
 # 2026-10-30): il muro si misura sui muri punto. "p-e" = p-e/m (punti -
 # errori - attacchi murati).
 SET_KPI_PERCENT = ["Battuta%", "Ricezione%", "Attacco%", "Attacco SO%", "Contrattacco%", "Attacco FB%"]
-SET_KPI_COUNTS = ["Punti", "Errori", "p-e", "Muri punto"]
+SET_KPI_COUNTS = ["Punti", "Errori", "p-e", "Muri punto", RIGORI]
 SET_KPI_VOLUME = {
     "Battuta%": "Battute", "Ricezione%": "Ricezioni", "Attacco%": "Attacchi",
     "Attacco SO%": "Attacchi SO", "Contrattacco%": "Contrattacchi", "Attacco FB%": "Attacchi FB", "Muro%": "Muri",
@@ -292,6 +296,7 @@ def set_kpis(team_df):
                 "Attacchi FB": int((sub_fb["Tipo"] == "attacco").sum()),
                 "Muri": int((sub["Tipo"] == "muro").sum()),
                 "Muri punto": int(((sub["Tipo"] == "muro") & (sub["Voto"] == "#")).sum()),
+                RIGORI: int((sub["Tipo"] == "rigore").sum()),
             }
             rows += [{"entita": entity, "set": label, "kpi": k, "value": v} for k, v in values.items()]
     return pd.DataFrame(rows)
