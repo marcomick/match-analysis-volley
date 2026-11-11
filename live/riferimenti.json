@@ -1,0 +1,638 @@
+{
+ "generato": "2026-11-09",
+ "n_partite": 10,
+ "decimo": {
+  "partite": [
+   "26/04/2026 Decimo - Astrolabio",
+   "28/04/2026 Decimo - Poolstars",
+   "02/05/2026 Decimo - NMC",
+   "10/05/2026 Decimo - santa monica",
+   "17/05/2026 Decimo - Civita Castellana",
+   "23/05/2026 Decimo - Civita Castellana",
+   "18/10/2026 Decimo - San Paolo 27",
+   "25/10/2026 Decimo - Volley Prati",
+   "01/11/2026 Decimo - Genzano",
+   "07/11/2026 Decimo - Anguillara"
+  ],
+  "totali": {
+   "set": 37,
+   "scambi": 1618,
+   "ric": 815,
+   "so": 495,
+   "bat": 803,
+   "bp": 309,
+   "ric_gioco": 692,
+   "pt1": 250,
+   "err1": 67,
+   "mur1": 38,
+   "pts": 184,
+   "errs": 75,
+   "murs": 30,
+   "ace": 38,
+   "err_bat": 87,
+   "muri": 79,
+   "gratuiti": 50,
+   "punti": 804,
+   "subiti": 814,
+   "rot": {
+    "1": {
+     "ric": 144,
+     "so": 88,
+     "ric_gioco": 117,
+     "pt1": 41,
+     "err1": 10,
+     "mur1": 8
+    },
+    "2": {
+     "ric": 125,
+     "so": 70,
+     "ric_gioco": 101,
+     "pt1": 38,
+     "err1": 14,
+     "mur1": 6
+    },
+    "3": {
+     "ric": 130,
+     "so": 79,
+     "ric_gioco": 107,
+     "pt1": 37,
+     "err1": 5,
+     "mur1": 6
+    },
+    "4": {
+     "ric": 131,
+     "so": 77,
+     "ric_gioco": 116,
+     "pt1": 42,
+     "err1": 11,
+     "mur1": 6
+    },
+    "5": {
+     "ric": 130,
+     "so": 92,
+     "ric_gioco": 112,
+     "pt1": 47,
+     "err1": 9,
+     "mur1": 6
+    },
+    "6": {
+     "ric": 154,
+     "so": 89,
+     "ric_gioco": 138,
+     "pt1": 45,
+     "err1": 18,
+     "mur1": 6
+    }
+   }
+  }
+ },
+ "squadre": {
+  "anguillara": {
+   "nome": "Anguillara",
+   "partite": [
+    "01/11/2026 Anguillara - Roman",
+    "07/11/2026 Anguillara - Decimo"
+   ],
+   "totali": {
+    "set": 6,
+    "scambi": 272,
+    "ric": 124,
+    "so": 83,
+    "bat": 148,
+    "bp": 67,
+    "ric_gioco": 113,
+    "pt1": 35,
+    "err1": 11,
+    "mur1": 7,
+    "pts": 42,
+    "errs": 8,
+    "murs": 5,
+    "ace": 5,
+    "err_bat": 14,
+    "muri": 17,
+    "gratuiti": 13,
+    "punti": 150,
+    "subiti": 122
+   }
+  },
+  "appio": {
+   "nome": "Appio D",
+   "partite": [
+    "12/10/2025 Appio D - pqp D",
+    "18/10/2025 Appio D - NMC D",
+    "26/10/2025 Appio - Decimo",
+    "06/12/2025 Appio - Civita Castellana",
+    "11/01/2026 Appio - Lazio",
+    "15/02/2026 Appio - NMC",
+    "22/02/2026 Appio - Decimo"
+   ],
+   "totali": {
+    "set": 27,
+    "scambi": 1148,
+    "ric": 533,
+    "so": 330,
+    "bat": 615,
+    "bp": 293,
+    "ric_gioco": 447,
+    "pt1": 162,
+    "err1": 42,
+    "mur1": 19,
+    "pts": 179,
+    "errs": 56,
+    "murs": 26,
+    "ace": 41,
+    "err_bat": 74,
+    "muri": 54,
+    "gratuiti": 31,
+    "punti": 623,
+    "subiti": 525
+   }
+  },
+  "astrolabio": {
+   "nome": "Astrolabio",
+   "partite": [
+    "15/11/2025 Astrolabio - NMC",
+    "13/12/2025 Astrolabio - Civitavecchia",
+    "21/12/2025 Astrolabio - Decimo",
+    "21/02/2026 Astrolabio - santa monica",
+    "26/04/2026 Astrolabio - Decimo"
+   ],
+   "totali": {
+    "set": 19,
+    "scambi": 842,
+    "ric": 429,
+    "so": 242,
+    "bat": 413,
+    "bp": 170,
+    "ric_gioco": 346,
+    "pt1": 103,
+    "err1": 38,
+    "mur1": 16,
+    "pts": 97,
+    "errs": 36,
+    "murs": 14,
+    "ace": 20,
+    "err_bat": 54,
+    "muri": 36,
+    "gratuiti": 16,
+    "punti": 412,
+    "subiti": 430
+   }
+  },
+  "civita castellana": {
+   "nome": "Civita Castellana",
+   "partite": [
+    "18/10/2025 Civita Castellana - Roman",
+    "06/12/2025 Civita Castellana - Appio",
+    "14/12/2025 Civita Castellana - Decimo",
+    "28/03/2026 Civita Castellana - pqp",
+    "18/04/2026 Civita Castellana - Decimo",
+    "17/05/2026 Civita Castellana - Decimo",
+    "23/05/2026 Civita Castellana - Decimo"
+   ],
+   "totali": {
+    "set": 28,
+    "scambi": 1187,
+    "ric": 602,
+    "so": 351,
+    "bat": 585,
+    "bp": 229,
+    "ric_gioco": 513,
+    "pt1": 166,
+    "err1": 35,
+    "mur1": 29,
+    "pts": 151,
+    "errs": 39,
+    "murs": 24,
+    "ace": 16,
+    "err_bat": 91,
+    "muri": 62,
+    "gratuiti": 21,
+    "punti": 580,
+    "subiti": 607
+   }
+  },
+  "civitavecchia": {
+   "nome": "Civitavecchia",
+   "partite": [
+    "29/11/2025 Civitavecchia - Monterotondo",
+    "06/12/2025 Civitavecchia - Decimo",
+    "13/12/2025 Civitavecchia - Astrolabio",
+    "28/03/2026 Civitavecchia - Monterotondo",
+    "12/04/2026 Civitavecchia - Decimo"
+   ],
+   "totali": {
+    "set": 20,
+    "scambi": 872,
+    "ric": 440,
+    "so": 248,
+    "bat": 432,
+    "bp": 183,
+    "ric_gioco": 349,
+    "pt1": 106,
+    "err1": 40,
+    "mur1": 22,
+    "pts": 108,
+    "errs": 45,
+    "murs": 20,
+    "ace": 21,
+    "err_bat": 63,
+    "muri": 32,
+    "gratuiti": 14,
+    "punti": 431,
+    "subiti": 441
+   }
+  },
+  "genzano": {
+   "nome": "Genzano",
+   "partite": [
+    "01/11/2026 Genzano - Decimo"
+   ],
+   "totali": {
+    "set": 3,
+    "scambi": 140,
+    "ric": 74,
+    "so": 46,
+    "bat": 66,
+    "bp": 19,
+    "ric_gioco": 63,
+    "pt1": 24,
+    "err1": 5,
+    "mur1": 4,
+    "pts": 13,
+    "errs": 4,
+    "murs": 5,
+    "ace": 2,
+    "err_bat": 7,
+    "muri": 3,
+    "gratuiti": 8,
+    "punti": 65,
+    "subiti": 75
+   }
+  },
+  "lazio": {
+   "nome": "Lazio",
+   "partite": [
+    "11/01/2026 Lazio - Appio",
+    "07/02/2026 Lazio - Decimo"
+   ],
+   "totali": {
+    "set": 6,
+    "scambi": 249,
+    "ric": 145,
+    "so": 68,
+    "bat": 104,
+    "bp": 32,
+    "ric_gioco": 107,
+    "pt1": 19,
+    "err1": 11,
+    "mur1": 3,
+    "pts": 20,
+    "errs": 7,
+    "murs": 7,
+    "ace": 4,
+    "err_bat": 15,
+    "muri": 5,
+    "gratuiti": 9,
+    "punti": 100,
+    "subiti": 149
+   }
+  },
+  "monterotondo": {
+   "nome": "Monterotondo",
+   "partite": [
+    "12/10/2025 Monterotondo - Stella Mantus",
+    "26/10/2025 Monterotondo - NMC",
+    "02/11/2025 Monterotondo - Decimo",
+    "29/11/2025 Monterotondo - Civitavecchia",
+    "28/02/2026 Monterotondo - Decimo",
+    "28/03/2026 Monterotondo - Civitavecchia"
+   ],
+   "totali": {
+    "set": 20,
+    "scambi": 898,
+    "ric": 409,
+    "so": 263,
+    "bat": 489,
+    "bp": 232,
+    "ric_gioco": 339,
+    "pt1": 133,
+    "err1": 37,
+    "mur1": 17,
+    "pts": 119,
+    "errs": 38,
+    "murs": 13,
+    "ace": 30,
+    "err_bat": 71,
+    "muri": 56,
+    "gratuiti": 22,
+    "punti": 495,
+    "subiti": 403
+   }
+  },
+  "nmc": {
+   "nome": "NMC D",
+   "partite": [
+    "18/10/2025 NMC D - Appio D",
+    "26/10/2025 NMC - Monterotondo",
+    "09/11/2025 NMC - Roman",
+    "15/11/2025 NMC - Astrolabio",
+    "29/11/2025 NMC - santa monica",
+    "20/12/2025 NMC - Stella Mantus",
+    "11/01/2026 NMC - Decimo",
+    "15/02/2026 NMC - Appio",
+    "02/05/2026 NMC - Decimo"
+   ],
+   "totali": {
+    "set": 34,
+    "scambi": 1535,
+    "ric": 753,
+    "so": 450,
+    "bat": 782,
+    "bp": 335,
+    "ric_gioco": 624,
+    "pt1": 182,
+    "err1": 60,
+    "mur1": 35,
+    "pts": 205,
+    "errs": 62,
+    "murs": 44,
+    "ace": 36,
+    "err_bat": 83,
+    "muri": 75,
+    "gratuiti": 29,
+    "punti": 785,
+    "subiti": 750
+   }
+  },
+  "poolstars": {
+   "nome": "Poolstars",
+   "partite": [
+    "08/11/2025 Poolstars - Stella Mantus",
+    "30/11/2025 Poolstars - Decimo",
+    "07/02/2026 Poolstars - Roman",
+    "07/03/2026 Poolstars - Stella Mantus",
+    "28/04/2026 Poolstars - Decimo"
+   ],
+   "totali": {
+    "set": 18,
+    "scambi": 742,
+    "ric": 330,
+    "so": 223,
+    "bat": 412,
+    "bp": 194,
+    "ric_gioco": 265,
+    "pt1": 109,
+    "err1": 19,
+    "mur1": 14,
+    "pts": 123,
+    "errs": 29,
+    "murs": 11,
+    "ace": 13,
+    "err_bat": 45,
+    "muri": 44,
+    "gratuiti": 17,
+    "punti": 417,
+    "subiti": 325
+   }
+  },
+  "pqp": {
+   "nome": "pqp D",
+   "partite": [
+    "12/10/2025 pqp D - Appio D",
+    "19/10/2025 pqp D - decimo D",
+    "06/12/2025 pqp - Stella Mantus",
+    "15/02/2026 pqp - Decimo",
+    "28/03/2026 pqp - Civita Castellana"
+   ],
+   "totali": {
+    "set": 15,
+    "scambi": 683,
+    "ric": 338,
+    "so": 202,
+    "bat": 345,
+    "bp": 145,
+    "ric_gioco": 272,
+    "pt1": 67,
+    "err1": 19,
+    "mur1": 20,
+    "pts": 94,
+    "errs": 30,
+    "murs": 18,
+    "ace": 15,
+    "err_bat": 31,
+    "muri": 28,
+    "gratuiti": 12,
+    "punti": 347,
+    "subiti": 336
+   }
+  },
+  "roma7": {
+   "nome": "Roma7",
+   "partite": [
+    "18/10/2025 Roma7 - santa monica",
+    "08/11/2025 Roma7 - Decimo",
+    "08/03/2026 Roma7 - Decimo"
+   ],
+   "totali": {
+    "set": 12,
+    "scambi": 481,
+    "ric": 263,
+    "so": 121,
+    "bat": 218,
+    "bp": 94,
+    "ric_gioco": 203,
+    "pt1": 39,
+    "err1": 18,
+    "mur1": 10,
+    "pts": 54,
+    "errs": 9,
+    "murs": 14,
+    "ace": 17,
+    "err_bat": 25,
+    "muri": 14,
+    "gratuiti": 15,
+    "punti": 215,
+    "subiti": 266
+   }
+  },
+  "roman": {
+   "nome": "Roman",
+   "partite": [
+    "18/10/2025 Roman - Civita Castellana",
+    "09/11/2025 Roman - NMC",
+    "23/11/2025 Roman - Decimo",
+    "07/02/2026 Roman - Poolstars",
+    "22/03/2026 Roman - Decimo",
+    "01/11/2026 Roman - Anguillara"
+   ],
+   "totali": {
+    "set": 21,
+    "scambi": 901,
+    "ric": 441,
+    "so": 268,
+    "bat": 460,
+    "bp": 191,
+    "ric_gioco": 366,
+    "pt1": 128,
+    "err1": 33,
+    "mur1": 28,
+    "pts": 123,
+    "errs": 31,
+    "murs": 20,
+    "ace": 18,
+    "err_bat": 51,
+    "muri": 36,
+    "gratuiti": 24,
+    "punti": 459,
+    "subiti": 442
+   }
+  },
+  "san paolo 27": {
+   "nome": "San Paolo 27",
+   "partite": [
+    "18/10/2026 San Paolo 27 - Decimo"
+   ],
+   "totali": {
+    "set": 5,
+    "scambi": 201,
+    "ric": 100,
+    "so": 67,
+    "bat": 101,
+    "bp": 34,
+    "ric_gioco": 86,
+    "pt1": 28,
+    "err1": 9,
+    "mur1": 3,
+    "pts": 21,
+    "errs": 11,
+    "murs": 8,
+    "ace": 4,
+    "err_bat": 9,
+    "muri": 10,
+    "gratuiti": 7,
+    "punti": 101,
+    "subiti": 100
+   }
+  },
+  "santa monica": {
+   "nome": "santa monica",
+   "partite": [
+    "18/10/2025 santa monica - Roma7",
+    "29/11/2025 santa monica - NMC",
+    "17/01/2026 santa monica - Decimo",
+    "21/02/2026 santa monica - Astrolabio",
+    "10/05/2026 santa monica - Decimo"
+   ],
+   "totali": {
+    "set": 18,
+    "scambi": 738,
+    "ric": 397,
+    "so": 195,
+    "bat": 341,
+    "bp": 142,
+    "ric_gioco": 309,
+    "pt1": 75,
+    "err1": 41,
+    "mur1": 15,
+    "pts": 94,
+    "errs": 45,
+    "murs": 17,
+    "ace": 20,
+    "err_bat": 48,
+    "muri": 23,
+    "gratuiti": 15,
+    "punti": 337,
+    "subiti": 401
+   }
+  },
+  "stella mantus": {
+   "nome": "Stella Mantus",
+   "partite": [
+    "12/10/2025 Stella Mantus - Monterotondo",
+    "08/11/2025 Stella Mantus - Poolstars",
+    "16/11/2025 Stella Mantus - Decimo",
+    "06/12/2025 Stella Mantus - pqp",
+    "20/12/2025 Stella Mantus - NMC",
+    "07/03/2026 Stella Mantus - Poolstars",
+    "14/03/2026 Stella Mantus - Decimo"
+   ],
+   "totali": {
+    "set": 25,
+    "scambi": 1111,
+    "ric": 578,
+    "so": 319,
+    "bat": 533,
+    "bp": 209,
+    "ric_gioco": 472,
+    "pt1": 121,
+    "err1": 39,
+    "mur1": 29,
+    "pts": 135,
+    "errs": 54,
+    "murs": 30,
+    "ace": 24,
+    "err_bat": 71,
+    "muri": 42,
+    "gratuiti": 33,
+    "punti": 528,
+    "subiti": 583
+   }
+  },
+  "valsugana": {
+   "nome": "Valsugana",
+   "partite": [
+    "18/10/2026 Valsugana - Volley Prati"
+   ],
+   "totali": {
+    "set": 5,
+    "scambi": 200,
+    "ric": 101,
+    "so": 62,
+    "bat": 99,
+    "bp": 37,
+    "ric_gioco": 87,
+    "pt1": 32,
+    "err1": 1,
+    "mur1": 6,
+    "pts": 21,
+    "errs": 8,
+    "murs": 2,
+    "ace": 7,
+    "err_bat": 9,
+    "muri": 6,
+    "gratuiti": 14,
+    "punti": 99,
+    "subiti": 101
+   }
+  },
+  "volley prati": {
+   "nome": "Volley Prati",
+   "partite": [
+    "18/10/2026 Volley Prati - Valsugana",
+    "25/10/2026 Volley Prati - Decimo"
+   ],
+   "totali": {
+    "set": 9,
+    "scambi": 375,
+    "ric": 178,
+    "so": 113,
+    "bat": 197,
+    "bp": 85,
+    "ric_gioco": 153,
+    "pt1": 59,
+    "err1": 9,
+    "mur1": 11,
+    "pts": 47,
+    "errs": 19,
+    "murs": 7,
+    "ace": 15,
+    "err_bat": 18,
+    "muri": 12,
+    "gratuiti": 11,
+    "punti": 198,
+    "subiti": 177
+   }
+  }
+ }
+}

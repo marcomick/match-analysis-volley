@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MOCKUP — Scambi live</title>
+<!-- Mockup statico con dati inventati (set 2, Decimo 16 - Volley Prati 20) per decidere cosa tenere.
+     Non è collegato all'app: index.html resta invariata. Apri con #stats o #alerts per andare a una tab. -->
+<style>
+  :root {
+    --bg: #0f1117; --card: #1a1d27; --card2: #222634; --line: #2b2f3d; --text: #eef0f5; --muted: #9aa0b0;
+    --noi: #3b82f6; --loro: #f97316;
+    --pt: #15803d; --pt-hi: #22c55e; --err: #b91c1c; --err-hi: #ef4444; --warn: #facc15;
+    --bad-bg: rgba(239,68,68,.16); --good-bg: rgba(34,197,94,.14);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; }
+  body { padding: 0 12px 40px; max-width: 1180px; margin: 0 auto; }
+  button { font: inherit; color: inherit; border: 0; cursor: pointer; }
+  .hidden { display: none !important; }
+  svg.ic { width: 22px; height: 22px; flex: none; fill: none; stroke: currentColor; stroke-width: 2;
+    stroke-linecap: round; stroke-linejoin: round; }
+
+  .mock { position: sticky; top: 0; z-index: 30; background: #3a2f00; border-bottom: 2px dashed var(--warn);
+    color: var(--warn); font-size: 13px; padding: 8px 12px; margin: 0 -12px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .mock b { color: #fff; }
+  .mock button { background: var(--warn); color: #000; padding: 6px 10px; border-radius: 8px; font-weight: 600; font-size: 13px; }
+  .tag { display: inline-block; font-size: 10px; font-weight: 800; letter-spacing: .06em; background: var(--warn); color: #000;
+    padding: 2px 7px; border-radius: 999px; vertical-align: middle; margin-left: 6px; }
+
+  header { display: flex; align-items: center; gap: 8px; padding: 10px 0; }
+  header .title { flex: 1; font-size: 14px; color: var(--muted); }
+  .tab { background: var(--card); padding: 8px 14px; border-radius: 10px; font-size: 15px; }
+  .tab.active { background: var(--text); color: var(--bg); font-weight: 600; }
+  .bell { position: relative; background: var(--card); padding: 8px 12px; border-radius: 10px; }
+  .bell i { position: absolute; top: -5px; right: -5px; background: var(--err-hi); font-style: normal; font-size: 11px;
+    font-weight: 700; border-radius: 999px; padding: 1px 6px; }
+
+  /* ---------- partita ---------- */
+  .court { display: grid; grid-template-columns: 290px 1fr 290px; gap: 12px; align-items: start; }
+  .panel { border-radius: 16px; padding: 10px; background: var(--card); border: 3px solid var(--team); }
+  .panel.noi { --team: var(--noi); } .panel.loro { --team: var(--loro); }
+  .panel h2 { margin: 0 0 4px; font-size: 19px; color: var(--team); }
+  .status { font-size: 12px; font-weight: 700; letter-spacing: .05em; color: var(--muted); margin-bottom: 4px; }
+  .status.serve { color: var(--warn); }
+  .zl { font-size: 11px; font-weight: 700; letter-spacing: .08em; margin: 8px 2px 5px; }
+  .zl.pt { color: var(--pt-hi); } .zl.err { color: var(--err-hi); }
+  .zone.err { border-top: 2px dashed var(--line); margin-top: 10px; }
+  .g2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .act { display: flex; gap: 8px; align-items: center; min-height: 52px; border-radius: 10px; padding: 6px 9px;
+    font-size: 14.5px; font-weight: 700; text-align: left; width: 100%; line-height: 1.15; }
+  .act small { display: block; font-size: 11px; font-weight: 500; opacity: .85; margin-top: 2px; }
+  .act.pt { background: var(--pt); } .act.err { background: var(--err); }
+  .act.mur { background: #7f1d1d; border: 2px solid var(--err-hi); }   /* murato: rosso scuro bordato, icona del muro */
+  .act:disabled { opacity: .15; }
+  .act.full { grid-column: 1 / -1; }
+  /* 1° attacco e successivo: colonne con intestazione, contrassegno grande e trama diversa */
+  .lanes { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 4px; }
+  .lane-h { text-align: center; font-size: 12px; font-weight: 800; letter-spacing: .04em; padding: 4px 0; border-radius: 7px; line-height: 1.15; }
+  .lane-h small { display: block; font-size: 10px; font-weight: 600; letter-spacing: 0; text-transform: none; opacity: .75; }
+  .lane-h.first { background: var(--text); color: var(--bg); }
+  .lane-h.next { border: 2px dashed var(--muted); color: var(--text); display: flex; align-items: center; justify-content: center; }
+  /* dentro il pulsante: etichetta della situazione sopra, cosa si segna sotto */
+  .act.first, .act.next { flex-direction: column; align-items: flex-start; justify-content: center; gap: 3px; min-height: 58px; }
+  .sit { font-size: 9.5px; font-weight: 800; letter-spacing: .04em; padding: 2px 6px; border-radius: 5px; line-height: 1.2; }
+  .sit small { font-size: 9px; font-weight: 600; letter-spacing: 0; opacity: .8; }
+  .act.first .sit { background: var(--text); color: var(--bg); }
+  .act.next .sit { border: 1.5px dashed currentColor; }
+  .act.next { background-image: repeating-linear-gradient(135deg, rgba(0,0,0,.22) 0 7px, transparent 7px 14px); }
+
+  .center { display: flex; flex-direction: column; gap: 10px; }
+  .score { background: var(--card); border-radius: 16px; padding: 10px 14px; text-align: center; }
+  .names { display: grid; grid-template-columns: 1fr 1fr; font-size: 15px; font-weight: 600; }
+  .pts { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; font-variant-numeric: tabular-nums; }
+  .pts .n { font-size: 60px; font-weight: 700; line-height: 1.05; }
+  .pts .sep { font-size: 26px; color: var(--muted); }
+  .ball { display: inline-block; width: 11px; height: 11px; border-radius: 50%; background: var(--warn); margin: 0 6px; }
+  .setinfo { font-size: 13px; color: var(--muted); }
+  .strip { background: var(--card); border-radius: 14px; padding: 8px 10px; }
+  .strip .l { font-size: 11px; font-weight: 700; letter-spacing: .06em; color: var(--muted); margin-bottom: 6px; }
+  .pills { display: flex; gap: 6px; flex-wrap: wrap; }
+  .pill { border-radius: 999px; padding: 5px 11px; font-size: 14px; font-weight: 600; }
+  .pill.bad { background: var(--bad-bg); color: #fca5a5; border: 1px solid var(--err-hi); }
+  .pill.good { background: var(--good-bg); color: #86efac; border: 1px solid var(--pt-hi); }
+  .pill.neu { background: var(--card2); color: var(--muted); }
+  .rot { background: var(--card); border-radius: 14px; padding: 8px 10px; }
+  .rot .l { font-size: 12px; color: var(--muted); margin: 0 2px 6px; }
+  .rot .btns { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+  .rot button { background: var(--card2); padding: 9px 0; border-radius: 9px; font-size: 16px; font-weight: 600; }
+  .rot button.on { background: var(--noi); }
+  .tools { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .tools button { background: var(--card2); padding: 11px 10px; border-radius: 11px; font-size: 15px; }
+  /* timeout: due pallini per set, pieno = tempo già chiamato; finiti i due il pulsante si spegne */
+  .tools button.to { display: flex; align-items: center; justify-content: center; gap: 8px; border-bottom: 3px solid var(--team); }
+  .tools button.to:disabled { opacity: .35; }
+  .tod { display: inline-flex; gap: 4px; }
+  .tod i { width: 11px; height: 11px; border-radius: 50%; border: 2px solid var(--team); }
+  .tod i.on { background: var(--team); }
+  .log { font-size: 13px; color: var(--muted); }
+  .log div { padding: 5px 2px; border-bottom: 1px solid var(--line); display: flex; gap: 8px; align-items: center; }
+  .log .sc { width: 46px; color: var(--text); font-variant-numeric: tabular-nums; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+
+  /* avvisi: in basso al centro, restano finché non si chiudono con la X; al massimo 3 visibili */
+  .toast-wrap { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); width: min(540px, 46vw); z-index: 20;
+    display: flex; flex-direction: column; gap: 8px; }
+  .toast { background: #12151d; border-radius: 14px; padding: 10px 6px 10px 14px; border-left: 6px solid var(--c);
+    box-shadow: 0 10px 30px rgba(0,0,0,.6); display: flex; gap: 10px; align-items: center; animation: up .25s ease-out; }
+  .toast.bad { --c: var(--err-hi); } .toast.good { --c: var(--pt-hi); }
+  .toast .ico { font-size: 20px; }
+  .toast .t { font-size: 15px; font-weight: 700; }
+  .toast .d { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  .toast .x { margin-left: auto; width: 46px; height: 46px; border-radius: 10px; background: var(--card2); font-size: 20px; flex: none; }
+  .toast-more { align-self: center; background: var(--card2); color: var(--muted); font-size: 12px; padding: 4px 10px; border-radius: 999px; }
+  @keyframes up { from { transform: translateY(20px); opacity: 0; } }
+
+  /* ---------- riepilogo ---------- */
+  .chips { display: flex; gap: 8px; margin: 4px 0 12px; }
+  .chip { background: var(--card); padding: 8px 14px; border-radius: 999px; }
+  .chip.active { background: var(--text); color: var(--bg); font-weight: 600; }
+  .card { background: var(--card); border-radius: 16px; padding: 12px 14px; margin-bottom: 12px; }
+  .q { font-size: 20px; font-weight: 800; margin: 0 0 2px; }            /* la domanda a cui risponde il blocco */
+  .q small { font-size: 13px; font-weight: 500; color: var(--muted); margin-left: 6px; }
+  .sub { font-size: 13px; color: var(--muted); margin-bottom: 10px; }
+
+  .hero { display: grid; grid-template-columns: 210px 1fr 1fr; gap: 12px; align-items: stretch; }
+  .hero .sc { background: var(--card2); border-radius: 14px; padding: 12px; text-align: center; }
+  .hero .sc .s { font-size: 13px; color: var(--muted); }
+  .hero .sc .p { font-size: 40px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .hero .sc .d { font-size: 22px; font-weight: 800; color: #fca5a5; }
+  .side h4 { margin: 0 0 6px; font-size: 13px; letter-spacing: .08em; }
+  .side.bad h4 { color: var(--err-hi); } .side.good h4 { color: var(--pt-hi); }
+  .big { display: flex; justify-content: space-between; align-items: center; border-radius: 12px; padding: 10px 14px; margin-bottom: 6px; }
+  .side.bad .big { background: var(--bad-bg); border: 1px solid var(--err-hi); }
+  .side.good .big { background: var(--good-bg); border: 1px solid var(--pt-hi); }
+  .big .n { font-size: 17px; font-weight: 700; }
+  .big .n small { display: block; font-size: 12px; font-weight: 500; color: var(--muted); }
+  .big .v { font-size: 30px; font-weight: 800; }
+  .side.bad .v { color: #fca5a5; } .side.good .v { color: #86efac; }
+
+  table.bal { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .bal th { font-size: 12px; color: var(--muted); font-weight: 600; text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--line); }
+  .bal td { padding: 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  .bal .v { font-weight: 600; }
+  .bal .det { font-size: 12px; color: var(--muted); }
+  .bal .s { font-weight: 700; font-size: 16px; }
+  .bal th.noi { color: var(--noi); } .bal th.loro { color: var(--loro); }
+  .div { position: relative; height: 22px; width: 200px; }
+  .div::before { content: ''; position: absolute; left: 50%; top: -4px; bottom: -4px; width: 2px; background: var(--muted); }
+  .div span { position: absolute; top: 3px; height: 16px; border-radius: 3px; }
+  .div span.neg { right: 50%; background: var(--err-hi); } .div span.pos { left: 50%; background: var(--pt-hi); }
+  .net { font-weight: 800; font-size: 18px; width: 44px; text-align: right; }
+  .net.neg { color: #fca5a5; } .net.pos { color: #86efac; }
+
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .kpi { background: var(--card2); border-radius: 12px; padding: 10px 12px; border-top: 3px solid var(--team); }
+  .kpi .l { font-size: 13px; color: var(--muted); }
+  .kpi .v { font-size: 28px; font-weight: 700; }
+  .kpi .s { font-size: 12px; color: var(--muted); }
+  .verdict-tag { display: inline-block; font-size: 10.5px; font-weight: 800; letter-spacing: .06em; padding: 3px 8px; border-radius: 6px; margin: 2px 0 4px; }
+  .verdict-tag.bad { background: var(--bad-bg); color: #fca5a5; } .verdict-tag.good { background: var(--good-bg); color: #86efac; }
+  .verdict-tag.eq { background: var(--line); color: var(--muted); }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .seq { display: flex; gap: 3px; margin: 8px 0; }
+  .seq i { flex: 1; height: 26px; border-radius: 4px; }
+  .mini { font-size: 14px; line-height: 1.6; }
+  .mini .k { color: var(--muted); }
+  .runs div { padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+
+  .rots { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+  .rtile { background: var(--card2); border-radius: 12px; padding: 10px; border: 2px solid transparent; font-size: 13px; }
+  .rtile.bad { border-color: var(--err-hi); } .rtile.good { border-color: var(--pt-hi); }
+  .rtile .p { font-size: 18px; font-weight: 800; display: flex; justify-content: space-between; align-items: center; }
+  .rtile .p span { font-size: 10px; letter-spacing: .05em; color: var(--muted); font-weight: 700; }
+  .rtile .lab { font-size: 11px; font-weight: 700; letter-spacing: .06em; color: var(--muted); margin-top: 6px; }
+  .rtile .v { font-size: 30px; font-weight: 800; }
+  .rtile.bad .v.main { color: #fca5a5; } .rtile.good .v.main { color: #86efac; }
+  .rtile .u { font-size: 12px; color: var(--muted); }
+  .rtile .perm { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--line); }
+  .rtile .perm .v { font-size: 20px; }
+
+  .gauge { height: 18px; border-radius: 9px; background: var(--card2); overflow: hidden; margin: 10px 0 6px; }
+  .gauge div { height: 100%; background: var(--noi); }
+
+  table.rules { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  .rules th { text-align: left; color: var(--muted); font-size: 12px; padding: 5px 8px; border-bottom: 1px solid var(--line); }
+  .rules td { padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .rules td:first-child { white-space: nowrap; }
+  .rules tr.grp td { color: var(--warn); font-weight: 700; font-size: 12px; letter-spacing: .06em; padding-top: 14px; }
+  .settings { display: flex; gap: 10px; flex-wrap: wrap; font-size: 14px; margin-bottom: 10px; }
+  .settings span { background: var(--card2); border-radius: 10px; padding: 7px 12px; }
+</style>
+</head>
+<body>
+
+<div class="mock">
+  <span><b>MOCKUP v5</b> · dati inventati · set 2, Decimo 16 – 20 Volley Prati, noi in ricezione in P2.</span>
+  <button id="demo">Aggiungi un avviso ▶</button>
+</div>
+
+<header>
+  <div class="title">Decimo – Volley Prati · 07/11/2026</div>
+  <button class="tab active" data-v="live">Partita</button>
+  <button class="tab" data-v="stats">Riepilogo</button>
+  <button class="tab" data-v="alerts">Avvisi</button>
+  <button class="bell" data-v="alerts" title="Avvisi della partita">🔔<i id="bell-n">0</i></button>
+</header>
+
+<!-- =================== PARTITA =================== -->
+<section id="v-live">
+<div class="court">
+  <div id="panel-noi"></div>
+
+  <div class="center">
+    <div class="score">
+      <div class="names"><span style="color:var(--noi)">Decimo</span><span style="color:var(--loro)">Volley Prati<span class="ball"></span></span></div>
+      <div class="pts"><span class="n">16</span><span class="sep">–</span><span class="n">20</span></div>
+      <div class="setinfo">Set 2 · set 1-0 · 25-22</div>
+    </div>
+    <div class="strip">
+      <div class="l">SET 2 · DOVE PERDIAMO / GUADAGNIAMO</div>
+      <div class="pills">
+        <span class="pill bad">1° attacco −4</span><span class="pill bad">Battuta −3</span>
+        <span class="pill good">Successivi +2</span><span class="pill neu">Ultimi 10: 3-7</span>
+      </div>
+    </div>
+    <div class="rot"><div class="l">Rotazione Decimo (zona del palleggiatore) · tocca per correggere</div>
+      <div class="btns"><button>P1</button><button class="on">P2</button><button>P3</button><button>P4</button><button>P5</button><button>P6</button></div></div>
+    <div class="tools">
+      <button>↶ Annulla ultimo</button><button>⇄ Cambia campo</button>
+      <button class="to" style="--team:var(--noi)">⏱ Timeout Decimo <span class="tod"><i class="on"></i><i></i></span></button>
+      <button class="to" style="--team:var(--loro)">⏱ Timeout Prati <span class="tod"><i></i><i></i></span></button>
+      <button>Cambia battuta</button><button>Chiudi set</button>
+    </div>
+    <div class="log">
+      <div><span class="dot" style="background:var(--loro)"></span><span class="sc">16-20</span><span>P2</span><span>Ace Volley Prati</span></div>
+      <div><span class="dot" style="background:var(--noi)"></span><span class="sc">16-19</span><span>P2</span><span>Decimo: attacco punto (successivo)</span></div>
+      <div><span class="dot" style="background:var(--loro)"></span><span class="sc">15-19</span><span>P3</span><span>Decimo: errore in battuta</span></div>
+      <div><span class="dot" style="background:var(--noi)"></span><span class="sc">15-18</span><span>P3</span><span>Volley Prati: contrattacco murato</span></div>
+      <div style="color:var(--warn)"><span class="dot" style="background:var(--warn)"></span><span class="sc">12-17</span><span>⏱ Timeout Decimo</span></div>
+    </div>
+  </div>
+
+  <div id="panel-loro"></div>
+</div>
+</section>
+
+<!-- =================== RIEPILOGO =================== -->
+<section id="v-stats" class="hidden">
+  <div class="chips"><button class="chip">Partita</button><button class="chip">Set 1</button><button class="chip active">Set 2</button></div>
+
+  <!-- colpo d'occhio: punteggio + dove perdiamo + dove guadagniamo -->
+  <div class="card">
+    <div class="q">Dove stiamo perdendo il set, e dove compensiamo?</div>
+    <div class="sub">Punti fatti meno punti concessi, voce per voce. La somma è lo scarto nel punteggio.</div>
+    <div class="hero">
+      <div class="sc"><div class="s">SET 2</div><div class="p">16-20</div><div class="d">−4</div></div>
+      <div class="side bad"><h4>▼ PERDIAMO PUNTI</h4>
+        <div class="big"><div class="n">1° attacco dopo ricezione<small>2 errori e 2 murate nostre; loro 6 punti</small></div><div class="v">−4</div></div>
+        <div class="big"><div class="n">Battuta<small>3 errori nostri, 2 ace loro</small></div><div class="v">−3</div></div></div>
+      <div class="side good"><h4>▲ COMPENSIAMO</h4>
+        <div class="big"><div class="n">Attacchi successivi e contrattacco<small>4 punti, 1 errore; 1 loro contrattacco murato</small></div><div class="v">+2</div></div>
+        <div class="big"><div class="n">Errori gratuiti<small>loro 2 (invasione, doppia), noi 1</small></div><div class="v">+1</div></div></div>
+    </div>
+    <details style="margin-top:10px"><summary style="color:var(--muted);font-size:13px;cursor:pointer">Il dettaglio, squadra per squadra</summary>
+    <table class="bal" style="margin-top:6px">
+      <tr><th>Voce</th><th class="noi">Decimo</th><th class="loro">Volley Prati</th><th></th><th style="text-align:right">Saldo</th></tr>
+      <tr><td class="v">1° attacco dopo ricezione<div class="det">punti − errori − murate</div></td>
+        <td><span class="s">0</span> <span class="det">4 pt · 2 err · 2 murate</span></td><td><span class="s">+4</span> <span class="det">6 pt · 2 err · 0 murate</span></td>
+        <td><div class="div"><span class="neg" style="width:66px"></span></div></td><td class="net neg">−4</td></tr>
+      <tr><td class="v">Battuta<div class="det">ace − errori</div></td>
+        <td><span class="s">−2</span> <span class="det">1 ace · 3 err</span></td><td><span class="s">+1</span> <span class="det">2 ace · 1 err</span></td>
+        <td><div class="div"><span class="neg" style="width:50px"></span></div></td><td class="net neg">−3</td></tr>
+      <tr><td class="v">Errori gratuiti</td>
+        <td><span class="s">−1</span> <span class="det">1 invasione</span></td><td><span class="s">−2</span> <span class="det">1 invasione · 1 altro</span></td>
+        <td><div class="div"><span class="pos" style="width:17px"></span></div></td><td class="net pos">+1</td></tr>
+      <tr><td class="v">Attacchi successivi e contrattacco<div class="det">punti − errori − murate</div></td>
+        <td><span class="s">+3</span> <span class="det">4 pt · 1 err · 0 murate</span></td><td><span class="s">+1</span> <span class="det">3 pt · 1 err · 1 murata</span></td>
+        <td><div class="div"><span class="pos" style="width:33px"></span></div></td><td class="net pos">+2</td></tr>
+    </table></details>
+  </div>
+
+  <div class="card">
+    <div class="q">Stiamo giocando come al solito? <small>confronto con le ultime 10 partite (noi) e con le partite scoutizzate di Volley Prati</small></div>
+    <div class="sub">Etichetta colorata solo quando lo scarto dal solito è grande (oltre 8 punti percentuali, o il doppio per i conteggi).</div>
+    <div class="kpis">
+      <div class="kpi" style="--team:var(--noi)"><div class="l">1° attacco Decimo · efficienza stimata</div><div class="verdict-tag bad">PEGGIO DEL SOLITO</div>
+        <div class="v">0%</div><div class="s">di solito 18% · (4 − 2 − 2) su 16 ricezioni in gioco</div></div>
+      <div class="kpi" style="--team:var(--noi)"><div class="l">Side-out Decimo</div><div class="verdict-tag eq">COME AL SOLITO</div>
+        <div class="v">53%</div><div class="s">di solito 55% · 10 su 19</div></div>
+      <div class="kpi" style="--team:var(--noi)"><div class="l">Break-point Decimo</div><div class="verdict-tag eq">COME AL SOLITO</div>
+        <div class="v">35%</div><div class="s">di solito 40% · 6 su 17</div></div>
+      <div class="kpi" style="--team:var(--noi)"><div class="l">Errori in battuta Decimo</div><div class="verdict-tag eq">COME AL SOLITO</div>
+        <div class="v">3</div><div class="s">di solito 3,1 a set · ace 1 (di solito 1,6)</div></div>
+      <div class="kpi" style="--team:var(--loro)"><div class="l">1° attacco Volley Prati · eff. stimata</div><div class="verdict-tag bad">MEGLIO DEL LORO SOLITO</div>
+        <div class="v">31%</div><div class="s">di solito 19% · (6 − 2 − 0) su 13</div></div>
+      <div class="kpi" style="--team:var(--loro)"><div class="l">Side-out Volley Prati</div><div class="verdict-tag bad">MEGLIO DEL LORO SOLITO</div>
+        <div class="v">65%</div><div class="s">di solito 56% · 11 su 17</div></div>
+      <div class="kpi" style="--team:var(--loro)"><div class="l">Break-point Volley Prati</div><div class="verdict-tag bad">MEGLIO DEL LORO SOLITO</div>
+        <div class="v">47%</div><div class="s">di solito 37% · 9 su 19</div></div>
+      <div class="kpi" style="--team:var(--noi)"><div class="l">Muri punto Decimo</div><div class="verdict-tag eq">COME AL SOLITO</div>
+        <div class="v">1</div><div class="s">di solito 1,9 a set</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="q">In quale rotazione soffriamo? <small>prima il 1° attacco, poi quanto ci restiamo</small></div>
+    <div class="sub">1° attacco = (punti − errori − murate) sulle ricezioni rimaste in gioco, in quella rotazione; "di solito" = stessa rotazione nelle ultime 10 partite.
+      Bordo rosso/verde = 1° attacco molto sotto/sopra il solito (con almeno 4 ricezioni).</div>
+    <div class="rots">
+      <div class="rtile"><div class="p">P1</div><div class="lab">1° ATTACCO</div><div class="v main">25%</div>
+        <div class="u">1 pt · 0 err · 0 mur su 4 · di solito 22%</div>
+        <div class="perm"><div class="lab">PERMANENZA</div><div class="v">1,7</div><div class="u">ricezioni per cambio palla · side-out 3/5</div></div></div>
+      <div class="rtile bad"><div class="p">P2</div><div class="lab">1° ATTACCO</div><div class="v main">−40%</div>
+        <div class="u">1 pt · 1 err · 2 mur su 5 · di solito 19%</div>
+        <div class="perm"><div class="lab">PERMANENZA</div><div class="v">3,0</div><div class="u">ricezioni per cambio palla · side-out 2/6</div></div></div>
+      <div class="rtile"><div class="p">P3<span>POCHI DATI</span></div><div class="lab">1° ATTACCO</div><div class="v main">−50%</div>
+        <div class="u">0 pt · 1 err · 0 mur su 2 · di solito 15%</div>
+        <div class="perm"><div class="lab">PERMANENZA</div><div class="v">2,0</div><div class="u">ricezioni per cambio palla · side-out 1/2</div></div></div>
+      <div class="rtile"><div class="p">P4<span>POCHI DATI</span></div><div class="lab">1° ATTACCO</div><div class="v main">100%</div>
+        <div class="u">2 pt · 0 err · 0 mur su 2 · di solito 24%</div>
+        <div class="perm"><div class="lab">PERMANENZA</div><div class="v">1,0</div><div class="u">ricezioni per cambio palla · side-out 2/2</div></div></div>
+      <div class="rtile"><div class="p">P5<span>POCHI DATI</span></div><div class="lab">1° ATTACCO</div><div class="v main">0%</div>
+        <div class="u">0 pt · 0 err · 0 mur su 2 · di solito 18%</div>
+        <div class="perm"><div class="lab">PERMANENZA</div><div class="v">2,0</div><div class="u">ricezioni per cambio palla · side-out 1/2</div></div></div>
+      <div class="rtile"><div class="p">P6<span>POCHI DATI</span></div><div class="lab">1° ATTACCO</div><div class="v main">0%</div>
+        <div class="u">0 pt · 0 err · 0 mur su 1 · di solito 20%</div>
+        <div class="perm"><div class="lab">PERMANENZA</div><div class="v">2,0</div><div class="u">ricezioni per cambio palla · side-out 1/2</div></div></div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <div class="q">Com'è andata negli ultimi scambi?</div>
+      <div class="sub">Finestra: ultimi <b>10</b> ▾ (si allarga per vedere una tendenza). Blu = punto Decimo, arancio = Volley Prati.</div>
+      <div class="seq">
+        <i style="background:var(--loro)"></i><i style="background:var(--loro)"></i><i style="background:var(--loro)"></i><i style="background:var(--loro)"></i>
+        <i style="background:var(--noi)"></i><i style="background:var(--noi)"></i><i style="background:var(--loro)"></i><i style="background:var(--noi)"></i>
+        <i style="background:var(--loro)"></i><i style="background:var(--loro)"></i></div>
+      <div class="mini"><b>3-7</b> <span class="k">· side-out 2/6, break-point 1/4</span><br>
+        <span class="k">peggio:</span> 1° attacco −3 (2 errori, 1 murata)<br><span class="k">meglio:</span> attacchi successivi +1</div>
+      <div class="runs" style="margin-top:8px">
+        <div><b style="color:var(--loro)">0-5</b> da 12-12 a 12-17 · P3–P2 · <span style="color:var(--muted)">2 errori 1° attacco, 1 murata, 1 ace subito, 1 contrattacco loro</span></div>
+        <div><b style="color:var(--noi)">4-0</b> da 6-8 a 10-8 · P5 · <span style="color:var(--muted)">2 muri, 1 errore battuta loro, 1 contrattacco</span></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="q">Finale di set e timeout</div>
+      <div class="sub">Da 20 in poi (una delle due squadre) e i 5 scambi dopo ogni timeout.</div>
+      <div class="mini"><span class="k">Finale set 1:</span> <b>5-2</b> (da 20-20) · muro +2, battuta +1<br>
+        <span class="k">Finale set 2:</span> in corso, 0-1<br>
+        <span class="k">⏱ Timeout Prati</span> set 1, 14-11 → dopo <b>2-3</b><br>
+        <span class="k">⏱ Timeout Decimo</span> set 2, 12-17 → dopo <b>3-2</b></div>
+      <div class="q" style="font-size:16px;margin-top:14px">Probabilità di vincere il set <span class="tag">FACOLTATIVA</span></div>
+      <div style="font-size:30px;font-weight:700">9%</div><div class="gauge"><div style="width:9%"></div></div>
+      <div class="mini"><span class="k">dal punteggio e dai side-out della partita, avvicinati al solito finché gli scambi sono pochi</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- =================== AVVISI =================== -->
+<section id="v-alerts" class="hidden">
+  <div class="card">
+    <div class="q">Avvisi di questa partita</div>
+    <div class="sub">Tutti quelli comparsi, anche quelli già chiusi, dal più recente.</div>
+    <div id="history"></div>
+  </div>
+  <div class="card">
+    <div class="q">Come funzionano</div>
+    <div class="settings"><span>Tendenza: ultimi <b>10</b> scambi ▾</span><span>"Di solito" = <b>ultime 10 partite</b> ▾</span>
+      <span>Avvisi positivi: <b>sì</b></span></div>
+    <div class="sub">L'avviso resta in basso al centro finché non lo chiudi con la X, mai sopra i pannelli dei pulsanti.
+      Se ce ne sono più di 3 aperti si vedono i 3 più recenti e un "+N" che porta qui. Lo stesso avviso non si ripete finché la situazione non cambia.
+      Due tipi: <b>subito</b>, appena succede la cosa (bastano 2-3 scambi), e <b>tendenza</b>, sulla finestra lunga. Soglie indicative, da tarare sulle partite passate.</div>
+    <table class="rules">
+      <tr><th>Avviso</th><th>Quando</th><th>Esempio</th></tr>
+      <tr class="grp"><td colspan="3">SUBITO · appena succede</td></tr>
+      <tr><td>🔴 Break avversario</td><td>loro 3 punti di fila (si aggiorna a 4, 5…)</td><td>0-3 da 12-12: 2 errori al 1° attacco, 1 ace subito</td></tr>
+      <tr><td>🔴 1° attacco</td><td>2 errori o murate al 1° attacco in 3 ricezioni di fila</td><td>Murati al 1° attacco 2 volte di fila (P2)</td></tr>
+      <tr><td>🔴 Bloccati in rotazione</td><td>3 ricezioni nella stessa rotazione senza cambio palla</td><td>Ancora in P2: 3 ricezioni, nessun cambio palla</td></tr>
+      <tr><td>🔴 Battuta</td><td>2 errori in battuta in 3 nostri turni</td><td>2 errori in battuta negli ultimi 3 turni</td></tr>
+      <tr><td>🔴 Ace subiti</td><td>2 ace subiti in 4 ricezioni</td><td>2 ace subiti nelle ultime 4 ricezioni</td></tr>
+      <tr><td>🟢 Break nostro</td><td>noi 3 punti di fila</td><td>3-0 da 6-8: 2 muri, 1 contrattacco</td></tr>
+      <tr><td>🟢 Rimonta</td><td>recuperati 3 punti di svantaggio</td><td>Da 12-17 a 15-17 dopo il timeout</td></tr>
+      <tr class="grp"><td colspan="3">TENDENZA · ultimi 10 scambi, rispetto al solito</td></tr>
+      <tr><td>🔴 1° attacco in calo</td><td>efficienza stimata del 1° attacco ≥ 25 punti sotto il solito (almeno 5 ricezioni)</td><td>1° attacco −20% nelle ultime 6 ricezioni (di solito 18%)</td></tr>
+      <tr><td>🔴 Side-out basso</td><td>side-out ≥ 25 punti sotto il solito (almeno 5 ricezioni)</td><td>Side-out 2 su 6 (di solito 55%)</td></tr>
+      <tr><td>🔴 Loro in break</td><td>loro break-point ≥ 25 punti sopra il loro solito</td><td>Volley Prati: break 4 su 5 in battuta</td></tr>
+      <tr><td>🔴 Errori gratuiti</td><td>3 invasioni o altri errori nella finestra</td><td>3 errori gratuiti negli ultimi 10 scambi</td></tr>
+      <tr><td>🟢 Break-point alto</td><td>nostro break ≥ 25 punti sopra il solito</td><td>Break 4 su 5: la battuta sta funzionando (di solito 40%)</td></tr>
+      <tr><td>🟢 Muro</td><td>3 muri punto nella finestra</td><td>3 muri punto negli ultimi 10 scambi (di solito 1)</td></tr>
+      <tr><td>🟢 1° attacco efficace</td><td>efficienza stimata ≥ 25 punti sopra il solito (almeno 5 ricezioni)</td><td>1° attacco 60% nelle ultime 5 ricezioni (di solito 18%)</td></tr>
+    </table>
+  </div>
+</section>
+
+<div class="toast-wrap" id="toasts"></div>
+
+<script>
+const ICONS = {
+  attack: '<path d="M4 3l9 9"/><path d="M13 6v6H7"/><circle cx="18" cy="18" r="3.5"/>',
+  block:  '<rect x="4" y="3" width="6" height="11" rx="3"/><rect x="14" y="3" width="6" height="11" rx="3"/><path d="M2 18h20M2 21.5h20"/>',
+  serve:  '<circle cx="6" cy="18" r="3.5"/><path d="M8.5 15C11 7 16 4 21 5"/><path d="M17.5 3l3.5 2-2 3.5"/>',
+  set:    '<circle cx="12" cy="4.5" r="2.8"/><path d="M9.5 9.5L7 13v8M14.5 9.5L17 13v8"/>',
+  net:    '<path d="M3 5h18M3 19h18M6 5v14M12 5v14M18 5v14M3 12h18"/>',
+};
+const ic = k => `<svg class="ic" viewBox="0 0 24 24">${ICONS[k]}</svg>`;
+// ogni pulsante dice per intero cosa si segna; quelli impossibili in questo scambio sono spenti
+const b = (cls, i, t, s, on) => `<button class="act ${cls}" ${on ? '' : 'disabled'}>${ic(i)}<span>${t}<small>${s}</small></span></button>`;
+// pulsante di attacco/muro: etichetta "1° attacco dopo ricezione" (piena) o "attacco successivo" (tratteggiata, trama a righe)
+const s = (cls, first, t, on) => `<button class="act ${cls} ${first ? 'first' : 'next'}" ${on ? '' : 'disabled'}>
+  <span class="sit">${first ? '1° ATTACCO <small>dopo ricezione</small>' : 'ATTACCO SUCCESSIVO'}</span><span>${t}</span></button>`;
+const lanes = `<div class="lanes"><div class="lane-h first">1° ATTACCO<small>dopo ricezione</small></div><div class="lane-h next">ATTACCO SUCCESSIVO</div></div>`;
+function panel(team, name, serving) {
+  const recv = !serving;
+  return `<div class="panel ${team}"><h2>${name}</h2>
+    <div class="status ${serving ? 'serve' : ''}">${serving ? '● IN BATTUTA · punto = break-point' : 'IN RICEZIONE · punto = side-out'}</div>
+    <div class="zl pt">PUNTI</div>
+    ${lanes}
+    <div class="g2">
+      ${s('pt', true, 'Attacco punto', recv)}
+      ${s('pt', false, 'Attacco punto', true)}
+      ${s('pt', true, 'Muro punto', serving)}
+      ${s('pt', false, 'Muro punto', true)}
+      ${b('pt full', 'serve', 'Ace', 'solo chi batte', serving)}
+    </div>
+    <div class="zone err"><div class="zl err">ERRORI · punto agli avversari</div>
+    ${lanes}
+    <div class="g2">
+      ${s('err', true, 'Errore attacco', recv)}
+      ${s('err', false, 'Errore attacco', true)}
+      ${s('mur', true, 'Attacco murato', recv)}
+      ${s('mur', false, 'Attacco murato', true)}
+      ${b('err', 'serve', 'Errore battuta', 'solo chi batte', serving)}
+      ${b('err', 'net', 'Invasione', 'rete a muro', true)}
+      ${b('err full', 'set', 'Altro errore', 'alzata, doppia, fallo di posizione, rete in difesa', true)}
+    </div></div></div>`;
+}
+document.getElementById('panel-noi').innerHTML = panel('noi', 'Decimo', false);
+document.getElementById('panel-loro').innerHTML = panel('loro', 'Volley Prati', true);
+
+const ALERTS = [
+  { k: 'bad',  ico: '🔴', t: 'Break di Volley Prati: 0-3', d: 'da 12-12 · 2 errori al 1° attacco, 1 ace subito', at: '12-15' },
+  { k: 'bad',  ico: '🔴', t: 'Murati al 1° attacco 2 volte di fila', d: 'in P2 · di solito 1 murata ogni 9 ricezioni', at: '12-16' },
+  { k: 'bad',  ico: '🔴', t: 'Ancora in P2: 3 ricezioni senza cambio palla', d: 'di solito in P2 ce ne servono 1,9', at: '12-17' },
+  { k: 'good', ico: '🟢', t: 'Rimonta: da 12-17 a 15-17', d: 'dopo il timeout · 2 contrattacchi, 1 muro', at: '15-17' },
+  { k: 'bad',  ico: '🔴', t: '2 errori in battuta in 3 turni', d: 'di solito 1 ogni 6 turni', at: '15-19' },
+  { k: 'good', ico: '🟢', t: 'Il muro sta funzionando', d: '3 muri punto negli ultimi 10 scambi (di solito 1)', at: '8-8' },
+];
+let shown = [], open = [];
+function renderToasts() {
+  const vis = open.slice(-3).reverse(), more = open.length - vis.length;
+  document.getElementById('toasts').innerHTML = vis.map(a => `<div class="toast ${a.k}"><div class="ico">${a.ico}</div>
+    <div style="flex:1"><div class="t">${a.t}</div><div class="d">${a.d}</div></div>
+    <button class="x" data-id="${a.id}" aria-label="Chiudi">✕</button></div>`).join('')
+    + (more > 0 ? `<button class="toast-more" data-v="alerts">+${more} altri avvisi aperti</button>` : '');
+  document.querySelectorAll('.toast .x').forEach(x => x.onclick = () => { open = open.filter(a => a.id != x.dataset.id); renderToasts(); });
+  document.getElementById('bell-n').textContent = shown.length;
+  document.getElementById('history').innerHTML = shown.slice().reverse().map(a =>
+    `<div class="toast ${a.k}" style="animation:none;box-shadow:none;margin-bottom:8px;background:var(--card2)"><div class="ico">${a.ico}</div>
+     <div><div class="t">${a.t}</div><div class="d">${a.d} · set 2, ${a.at}${open.includes(a) ? '' : ' · chiuso'}</div></div></div>`).join('');
+  bindViews();
+}
+function addAlert() {
+  const a = { ...ALERTS[shown.length % ALERTS.length], id: shown.length };
+  shown.push(a); open.push(a); renderToasts();
+}
+document.getElementById('demo').onclick = addAlert;
+function bindViews() {
+  document.querySelectorAll('[data-v]').forEach(el => el.onclick = () => {
+    ['live', 'stats', 'alerts'].forEach(v => document.getElementById('v-' + v).classList.toggle('hidden', v !== el.dataset.v));
+    document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.v === el.dataset.v));
+  });
+}
+bindViews();
+addAlert(); addAlert();
+const h = location.hash.slice(1); if (h) document.querySelector(`.tab[data-v="${h}"]`)?.click();
+</script>
+</body>
+</html>
