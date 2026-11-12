@@ -182,6 +182,19 @@ def _attack_situation(row):
     return "CA"
 
 
+def _receiver_line(row, prefix):
+    """'davanti' se chi riceve è in P2-P4, 'dietro' in P1/P5/P6, 'libero' se non
+    è tra i sei della rotazione (il libero prende il posto di un centrale)."""
+    try:
+        num = int(row["Numero"])
+    except (TypeError, ValueError):
+        return None
+    pos = {int(row[f"{prefix} P{k}"]): k for k in range(1, 7) if pd.notna(row.get(f"{prefix} P{k}"))}
+    if num not in pos:
+        return "libero"
+    return "davanti" if pos[num] in (2, 3, 4) else "dietro"
+
+
 def build_dataset(config=None, progress=None):
     """
     (attacchi, battute, partite, scartati, rose). Attacchi: uno per riga (esclusi
@@ -228,14 +241,16 @@ def build_dataset(config=None, progress=None):
             d, od = actions[side], actions[other]
             own_pts, opp_pts = ("Punti Locali", "Punti Ospiti") if side == "*" else ("Punti Ospiti", "Punti Locali")
             receptions = od[od["Tipo"] == "ricezione"].drop_duplicates("Rally").set_index("Rally")
+            rot = "Casa" if other == "*" else "Ospiti"
             for b in d[d["Tipo"] == "battuta"].drop_duplicates("Rally").to_dict("records"):
                 rally = b["Rally"]
-                receiver = None
+                receiver, line = None, None
                 if b["Voto"] == "=":
                     outcome = "err"
                 elif rally in receptions.index and receptions.loc[rally, "Voto"] in SERVE_GRADES:
                     outcome = receptions.loc[rally, "Voto"]
                     receiver = _player_key(opp, receptions.loc[rally, "Cognome"])
+                    line = _receiver_line(receptions.loc[rally], rot)
                 elif b["Voto"] == "#":
                     outcome = "="  # ace senza ricezione rilevata
                 else:
@@ -243,7 +258,7 @@ def build_dataset(config=None, progress=None):
                 serves.append({
                     "partita": match_id, "stagione": m["stagione"], "set": int(b["Numero Set"]), "rally": rally,
                     "team": team, "opp": opp, "giocatore": _player_key(team, b["Cognome"]),
-                    "ricevitore": receiver, "esito": outcome,
+                    "ricevitore": receiver, "linea_ricevitore": line, "esito": outcome,
                     "finale": _is_final(int(b[own_pts]), int(b[opp_pts]), b["Numero Set"]),
                     "vinto": winner.get(rally) == side,
                 })
@@ -425,7 +440,14 @@ def _team_effect(name, teams, shape_tail, scale=0.5):
     return numpyro.deterministic(name, beta * z + club[teams["gruppo"]] + season)
 
 
-def attack_model(teams, cell, sit, team, opp, player, final, n_cells, n_sit, n_players, y=None):
+# palla buona (side-out da R#/R+ e da R!, free ball) e palla difficile (side-out da R-, contrattacco): ogni
+# attaccante ha un effetto suo più uno scostamento sulla palla difficile, così un punto di forza o un punto
+# debole in una delle due situazioni si vede (richiesta dell'utente del 2026-11-11)
+HARD_SITUATIONS = ("R-", "CA")
+SIT_GROUP_LABELS = {0: "palla buona (R#/R+, R!, free ball)", 1: "palla difficile (R-, contrattacco)"}
+
+
+def attack_model(teams, cell, sit, team, opp, player, final, n_cells, n_sit, n_players, hard, y=None):
     k = len(ATTACK_OUTCOMES) - 1
     mu = numpyro.sample("mu", dist.Normal(0, 1.5).expand([n_cells, k]).to_event(2))
     team_att = _team_effect("team_att", teams, (n_sit, k))
@@ -433,12 +455,14 @@ def attack_model(teams, cell, sit, team, opp, player, final, n_cells, n_sit, n_p
     pl = _scaled("player", (n_players, k), 0.5)
     g_final = numpyro.sample("g_final", dist.Normal(0, 0.5).expand([k]).to_event(1))
     clutch = _scaled("clutch", (n_players, k), 0.2)
-    eta = mu[cell] + team_att[team, sit] + team_def[opp] + pl[player] + final[:, None] * (g_final + clutch[player])
+    pl_hard = _scaled("player_hard", (n_players, k), 0.3)
+    eta = (mu[cell] + team_att[team, sit] + team_def[opp] + pl[player] + hard[:, None] * pl_hard[player]
+           + final[:, None] * (g_final + clutch[player]))
     with numpyro.plate("attacchi", len(cell)):
         numpyro.sample("y", dist.Categorical(logits=_insert_ref(eta, ATTACK_REF)), obs=y)
 
 
-def serve_model(teams, team, opp, server, receiver, final, inplay_idx, n_servers, n_receivers,
+def serve_model(teams, team, opp, server, receiver, final, front, inplay_idx, n_servers, n_receivers,
                 err=None, grade=None):
     k = len(SERVE_GRADES) - 1
     a = numpyro.sample("a_err", dist.Normal(-2, 1))
@@ -453,8 +477,13 @@ def serve_model(teams, team, opp, server, receiver, final, inplay_idx, n_servers
     r_rec_raw = _scaled("receiver_rec_raw", (n_receivers, k), 0.5)
     r_rec = jnp.concatenate([jnp.zeros((1, k)), r_rec_raw], axis=0)  # 0 = ricevitore ignoto
     g_final = numpyro.sample("g_final_srv", dist.Normal(0, 0.5).expand([k]).to_event(1))
+    # ricevitore in prima linea (P2-P4): effetto comune più uno scostamento per ricevitore
+    g_front = numpyro.sample("g_front", dist.Normal(0, 0.5).expand([k]).to_event(1))
+    r_front_raw = _scaled("receiver_front_raw", (n_receivers, k), 0.3)
+    r_front = jnp.concatenate([jnp.zeros((1, k)), r_front_raw], axis=0)
     i = inplay_idx
-    eta = b + t_srv[team[i]] + s_srv[server[i]] + t_rec[opp[i]] + r_rec[receiver[i]] + final[i][:, None] * g_final
+    eta = (b + t_srv[team[i]] + s_srv[server[i]] + t_rec[opp[i]] + r_rec[receiver[i]] + final[i][:, None] * g_final
+           + front[i][:, None] * (g_front + r_front[receiver[i]]))
     with numpyro.plate("in_gioco", len(i)):
         numpyro.sample("grade", dist.Categorical(logits=_insert_ref(eta, SERVE_REF)), obs=grade)
 
@@ -522,8 +551,9 @@ def fit_attack_model(attacks, mcmc_cfg, ts, players):
     kwargs = dict(teams=_teams_arg(ts), cell=jnp.asarray(sit * len(ZONES) + zone), sit=jnp.asarray(sit),
                   team=jnp.asarray(team), opp=jnp.asarray(opp), player=jnp.asarray(player),
                   final=jnp.asarray(attacks["finale"].to_numpy(float)), n_cells=len(SITUATIONS) * len(ZONES),
-                  n_sit=len(SITUATIONS), n_players=len(players), y=jnp.asarray(y))
-    keep = {"mu", "team_att", "team_def", "player", "g_final", "clutch"}
+                  n_sit=len(SITUATIONS), n_players=len(players),
+                  hard=jnp.asarray(attacks["situazione"].isin(HARD_SITUATIONS).to_numpy(float)), y=jnp.asarray(y))
+    keep = {"mu", "team_att", "team_def", "player", "g_final", "clutch", "player_hard"}
     return _run(attack_model, kwargs, mcmc_cfg, keep)
 
 
@@ -539,10 +569,11 @@ def fit_serve_model(serves, mcmc_cfg, ts, servers, receivers):
     grade, _ = _codes(serves["esito"].iloc[inplay], SERVE_GRADES)
     kwargs = dict(teams=_teams_arg(ts), team=jnp.asarray(team), opp=jnp.asarray(opp), server=jnp.asarray(server),
                   receiver=jnp.asarray(receiver), final=jnp.asarray(serves["finale"].to_numpy(float)),
+                  front=jnp.asarray((serves["linea_ricevitore"] == "davanti").to_numpy(float)),
                   inplay_idx=jnp.asarray(inplay), n_servers=len(servers), n_receivers=len(receivers),
                   err=jnp.asarray(is_err.astype(int)), grade=jnp.asarray(grade))
     keep = {"a_err", "team_err", "server_err", "b", "team_srv", "server_srv", "team_rec", "receiver_rec_raw",
-            "g_final_srv"}
+            "g_final_srv", "g_front", "receiver_front_raw"}
     return _run(serve_model, kwargs, mcmc_cfg, keep)
 
 
@@ -698,24 +729,8 @@ def summarize(attacks, serves, sets_played, ts, att_s, srv_s, tr_s, players, ser
                          **_stats(inplay, "in_gioco_"), **_stats((1 - err) * inplay, "totale_")})
     servers_df = pd.DataFrame(srv_rows)
 
-    # --- ricezione: nostri ricevitori ---------------------------------------
-    rec_rows = []
-    rcount = serves.groupby("ricevitore").size()
-    ri = {r: i for i, r in enumerate(receivers)}
-    for r in receivers:
-        if (not r.startswith(fam_us + "|") or rcount.get(r, 0) < config["min_ricezioni_giocatore"]
-                or r.rsplit("|", 1)[1] in out_of_team):
-            continue
-        q = _softmax_ref(b + t_rec[:, u] + r_rec[:, ri[r]], SERVE_REF)
-        so = 1 - (q * w[0]).sum(-1)
-        part = serves[serves["ricevitore"] == r]
-        rec_rows.append({"giocatore": r.rsplit("|", 1)[1], "n": len(part),
-                         "positiva_oss": part["esito"].isin(["#", "+"]).mean(),
-                         **_stats(so, "so_"), "p_meglio_media": float((so > league_rec).mean())})
-    receivers_df = pd.DataFrame(rec_rows)
-
     # --- attacco: nostri attaccanti per situazione e zona -------------------
-    team_att, team_def, pl = att_s["team_att"], att_s["team_def"], att_s["player"]
+    team_att, team_def, pl, pl_hard = att_s["team_att"], att_s["team_def"], att_s["player"], att_s["player_hard"]
     g_final, clutch = att_s["g_final"], att_s["clutch"]
     ours = attacks[attacks["team"].isin(ours_fam)]
     att_rows = []
@@ -727,7 +742,7 @@ def summarize(attacks, serves, sets_played, ts, att_s, srv_s, tr_s, players, ser
         evs = {}
         for (p, z), n in cand.items():
             zi = ZONES.index(z)
-            eta = mu[:, s, zi] + team_att[:, u, s] + pl[:, pi[p]]
+            eta = mu[:, s, zi] + team_att[:, u, s] + pl[:, pi[p]] + (pl_hard[:, pi[p]] if sit in HARD_SITUATIONS else 0)
             eta_f = eta + g_final + clutch[:, pi[p]]
             ev, ev_f = att_ev(s, eta), att_ev(s, eta_f)
             probs = _softmax_ref(eta, ATTACK_REF).mean(0)
@@ -799,23 +814,32 @@ def summarize(attacks, serves, sets_played, ts, att_s, srv_s, tr_s, players, ser
         add(f"Attacco: {SITUATION_LABELS[sit].split(' (')[0].lower()}", "Attacco", (q75 - ev_t[:, u]) * vol,
             ev_t[:, u], q75, league, "% scambi vinti", vol,
             "attacco come le squadre più brave in questa situazione, con la nostra distribuzione tra le zone")
-    gain_def = np.zeros(D)
-    ours_def, top_def, league_def = np.zeros(D), np.zeros(D), np.zeros(D)
-    opp_total = 0
-    for s, sit in enumerate(SITUATIONS):
-        part = attacks[(attacks["opp"].isin(ours_fam)) & (attacks["situazione"] == sit)]
-        mix = np.array([(part["zona"] == z).mean() for z in ZONES])
-        ev_t = sum(mix[zi] * att_ev(s, mu[:, s, zi][:, None] + team_def) for zi in range(len(ZONES)))
-        q25 = np.percentile(ev_t[:, comp_idx], 25, axis=1)
-        vol = len(part) / our_sets
-        gain_def += (ev_t[:, u] - q25) * vol
-        ours_def += ev_t[:, u] * vol; top_def += q25 * vol
-        league_def += sum(mix[zi] * att_ev(s, mu[:, s, zi]) for zi in range(len(ZONES))) * vol
-        opp_total += vol
-    add("Muro e difesa", "Muro e difesa", gain_def, ours_def / opp_total, top_def / opp_total,
-        league_def / opp_total, "% scambi vinti dagli avversari", opp_total,
-        "attacchi avversari contro di noi resi come contro le squadre più brave (muro, difesa, copertura)")
+    for label, long_label, sits in DEFENCE_GROUPS:
+        gain_def, ours_def, top_def, league_def = np.zeros(D), np.zeros(D), np.zeros(D), np.zeros(D)
+        opp_total = 0
+        for sit in sits:
+            s = SITUATIONS.index(sit)
+            part = attacks[(attacks["opp"].isin(ours_fam)) & (attacks["situazione"] == sit)]
+            if part.empty:
+                continue
+            mix = np.array([(part["zona"] == z).mean() for z in ZONES])
+            ev_t = sum(mix[zi] * att_ev(s, mu[:, s, zi][:, None] + team_def) for zi in range(len(ZONES)))
+            q25 = np.percentile(ev_t[:, comp_idx], 25, axis=1)
+            vol = len(part) / our_sets
+            gain_def += (ev_t[:, u] - q25) * vol
+            ours_def += ev_t[:, u] * vol; top_def += q25 * vol
+            league_def += sum(mix[zi] * att_ev(s, mu[:, s, zi]) for zi in range(len(ZONES))) * vol
+            opp_total += vol
+        add(f"Muro e difesa: {label}", "Muro e difesa", gain_def, ours_def / opp_total, top_def / opp_total,
+            league_def / opp_total, "% scambi vinti dagli avversari", opp_total,
+            f"muro, difesa e copertura {long_label} come le squadre più brave")
     areas_df = pd.DataFrame(areas).sort_values("punti_set_media", ascending=False)
+
+    # --- ricezione e punti di forza / deboli dei giocatori --------------------
+    playoff = playoff_teams(ts, sets_played, config, ti)
+    reception = reception_analysis(serves, sets_played, srv_s, tr_s, ti, u, playoff, ours_fam, fam_us, config)
+    profiles = player_profiles(attacks, serves, att_s, srv_s, v_srv_d[None], v_att, reception, players, servers, u,
+                               ours_fam, fam_us, config)
 
     # --- contro un avversario -----------------------------------------------
     opponents = opponent_strategies(attacks, serves, ts, att_s, srv_s, tr_s, us, ours_fam, attackers_df, config)
@@ -824,7 +848,7 @@ def summarize(attacks, serves, sets_played, ts, att_s, srv_s, tr_s, players, ser
 
     return {
         "squadra": us, "aree": areas_df, "attaccanti": attackers_df, "battitori": servers_df, "esempi": examples,
-        "ricevitori": receivers_df, "valori_attacco": att_values, "valori_battuta": srv_values,
+        "ricezione": reception, "profili": profiles, "valori_attacco": att_values, "valori_battuta": srv_values,
         "set_giocati": our_sets, "squadre_confronto": [names[t] for t in comparable],
         "avversari": opponents, "squadre": ts,
     }
@@ -844,6 +868,252 @@ def excluded_players(config):
         df = pd.read_csv(ids)
         out |= set(df.loc[(df["player_id"] == "IGNORED") & df["team"].str.lower().str.contains("decimo"), "cognome"])
     return {str(c).strip().replace("\u2019", "'") for c in out}
+
+
+# muro e difesa divisi per la situazione dell'attacco avversario ("Cosa allenare")
+DEFENCE_GROUPS = [("loro primo attacco (R#/R+, R!)", "sul loro primo attacco da ricezione buona", ["R#+", "R!"]),
+                  ("loro palla alta (R-)", "sul loro attacco da palla alta dopo ricezione -", ["R-"]),
+                  ("loro contrattacco e free ball", "sul loro contrattacco e sulla free ball", ["CA", "FB"])]
+STRONG = 0.8          # probabilità minima per parlare di punto di forza (o, sotto 1 - STRONG, di punto debole)
+TENDENCY_MIN = 2.0    # scarto minimo (su 100 ricezioni) per segnalare una tendenza su un voto
+
+
+def playoff_teams(ts, sets_played, config, ti):
+    """Squadre-stagione tra le prime PLAYOFF_POSITIONS in classifica con
+    almeno `min_partite_squadra_confronto` partite scoutate."""
+    scouted = sets_played.groupby("team")["partita"].nunique()
+    return [k for k in ts.loc[ts["posizione"].fillna(99) <= PLAYOFF_POSITIONS, "chiave"]
+            if scouted.get(k, 0) >= config["min_partite_squadra_confronto"] and k in ti]
+
+
+def _sets_by_player(attacks, serves, ours_fam):
+    """Set giocati da ogni nostro giocatore = set con almeno un suo attacco,
+    battuta o ricezione."""
+    parts = [attacks.loc[attacks["team"].isin(ours_fam), ["partita", "set", "giocatore"]],
+             serves.loc[serves["team"].isin(ours_fam), ["partita", "set", "giocatore"]],
+             serves.loc[serves["opp"].isin(ours_fam) & serves["ricevitore"].notna(), ["partita", "set", "ricevitore"]]
+             .rename(columns={"ricevitore": "giocatore"})]
+    return pd.concat(parts).drop_duplicates().groupby("giocatore").size()
+
+
+def reception_analysis(serves, sets_played, srv_s, tr_s, ti, u, playoff, ours_fam, fam_us, config):
+    """
+    Ricezione (richiesta dell'utente del 2026-11-11: conviene allenarla? come
+    vanno i singoli ricevitori, chi fa troppe !?).
+
+    Squadra: side-out sulle battute in gioco = somma sui voti di (quota del
+    voto) x (side-out dopo quel voto). Lo scarto dalle squadre playoff si
+    divide in due parti che sommate lo danno esattamente: ricezione = voti
+    diversi, a parità di side-out dopo ogni voto (quello delle playoff);
+    dopo la ricezione = side-out diverso a parità di voti (i nostri). Contro
+    un battitore medio, con la quota di ricezioni in prima linea del
+    campionato.
+
+    Ricevitori del Decimo: voti su 100 ricezioni stimati dal modello (effetto
+    del ricevitore, a parità di battitore) contro il ricevitore medio del
+    Decimo con la stessa quota di ricezioni in prima linea; side-out che ne
+    segue con il nostro side-out dopo ogni voto; in prima linea contro in
+    seconda linea.
+    """
+    D = srv_s["b"].shape[0]
+    b, t_rec, r_rec = srv_s["b"], srv_s["team_rec"], srv_s["receiver_rec_raw"]
+    g_front, r_front = srv_s["g_front"], srv_s["receiver_front_raw"]
+    w0, rec_side = tr_s["w0"], tr_s["rec_side"]
+    G = SERVE_GRADES
+    inplay = serves[serves["esito"] != "err"]
+    known = inplay["linea_ricevitore"].notna()
+    f_league = float((inplay.loc[known, "linea_ricevitore"] == "davanti").mean())
+
+    def q_team(t, f):
+        base = b + t_rec[:, t]
+        return (1 - f) * _softmax_ref(base, SERVE_REF) + f * _softmax_ref(base + g_front, SERVE_REF)
+
+    def so_team(t):
+        out = np.zeros((D, len(G)))
+        for j, g in enumerate(G):
+            if g in W_GRADES:
+                out[:, j] = 1 - _sigmoid(w0[:, W_GRADES.index(g)] + rec_side[:, t, REC_GROUPS[g]])
+        return out          # ace subito ("=") = 0
+    q_u, so_u = q_team(u, f_league), so_team(u)
+    ref = playoff or [u]
+    q_p = np.mean([q_team(ti[k], f_league) for k in ref], axis=0)
+    so_p = np.mean([so_team(ti[k]) for k in ref], axis=0)
+    ours_rec = inplay[inplay["opp"].isin(ours_fam)]
+    our_sets = len(sets_played[sets_played["team"].isin(ours_fam)])
+    per_set = len(ours_rec) / max(1, our_sets)
+    so_mean_p = (q_p * so_p).sum(-1, keepdims=True)
+    rec_part = ((q_u - q_p) * so_p).sum(-1) * per_set
+    after_part = (q_u * (so_u - so_p)).sum(-1) * per_set
+    team = {"ricezioni_per_set": per_set, "quota_prima_linea": f_league,
+            "so_noi": _stats((q_u * so_u).sum(-1)), "so_playoff": _stats((q_p * so_p).sum(-1)),
+            "totale": {**_stats(rec_part + after_part), "p_sotto": float((rec_part + after_part < 0).mean())},
+            "ricezione": {**_stats(rec_part), "p_sotto": float((rec_part < 0).mean())},
+            "dopo": {**_stats(after_part), "p_sotto": float((after_part < 0).mean())}}
+    grades = pd.DataFrame([{
+        "voto": g, "noi_100": float(100 * q_u[:, j].mean()), "playoff_100": float(100 * q_p[:, j].mean()),
+        "so_noi": float(so_u[:, j].mean()), "so_playoff": float(so_p[:, j].mean()),
+        # punti per set dovuti alla quota diversa di questo voto (le righe sommano la parte "ricezione")
+        "punti_set": float(((q_u[:, j] - q_p[:, j]) * (so_p[:, j] - so_mean_p[:, 0])).mean() * per_set),
+    } for j, g in enumerate(G)])
+
+    # --- ricevitori del Decimo --------------------------------------------
+    out_of_team = excluded_players(config)
+    receivers_idx = {r: i for i, r in enumerate(sorted(serves["ricevitore"].dropna().unique()))}
+    sets_rec = ours_rec[["ricevitore", "partita", "set"]].drop_duplicates().groupby("ricevitore").size()
+    rows, tendencies = [], []
+    for r, part in ours_rec[ours_rec["ricevitore"].notna()].groupby("ricevitore"):
+        name = r.rsplit("|", 1)[1]
+        if (not r.startswith(fam_us + "|") or len(part) < config["min_ricezioni_giocatore"]
+                or name in out_of_team):
+            continue
+        i = receivers_idx[r]
+        lines = part["linea_ricevitore"].value_counts()
+        n_front, n_back = int(lines.get("davanti", 0)), int(lines.get("dietro", 0) + lines.get("libero", 0))
+        f = n_front / max(1, n_front + n_back)
+        base = b + t_rec[:, u]
+        me_back = _softmax_ref(base + r_rec[:, i], SERVE_REF)
+        me_front = _softmax_ref(base + r_rec[:, i] + g_front + r_front[:, i], SERVE_REF)
+        avg_back, avg_front = _softmax_ref(base, SERVE_REF), _softmax_ref(base + g_front, SERVE_REF)
+        me = (1 - f) * me_back + f * me_front
+        avg = (1 - f) * avg_back + f * avg_front
+        po = np.mean([(1 - f) * _softmax_ref(b + t_rec[:, ti[k]], SERVE_REF)
+                      + f * _softmax_ref(b + t_rec[:, ti[k]] + g_front, SERVE_REF) for k in ref], axis=0)
+        so_me, so_avg = (me * so_u).sum(-1), (avg * so_u).sum(-1)
+        diff = so_me - so_avg
+        rps = len(part) / max(1, sets_rec.get(r, 1))
+        row = {"giocatore": name, "chiave": r, "n": len(part), "n_prima_linea": n_front, "n_seconda_linea": n_back,
+               "ricezioni_per_set": rps, **_stats(100 * so_me, "so_"), "so_rif": float(100 * so_avg.mean()),
+               **_stats(100 * diff, "diff_"), "p_meglio": float((diff > 0).mean()),
+               **_stats(diff * rps, "punti_set_"),
+               **{f"oss_{g}": int((part["esito"] == g).sum()) for g in G}}
+        for j, g in enumerate(G):
+            d = 100 * (me[:, j] - avg[:, j])
+            row[f"me_{g}"], row[f"rif_{g}"], row[f"po_{g}"] = (float(100 * me[:, j].mean()),
+                                                              float(100 * avg[:, j].mean()),
+                                                              float(100 * po[:, j].mean()))
+            row[f"p_piu_{g}"] = float((d > 0).mean())
+            pm = float(d.mean())
+            if abs(pm) >= TENDENCY_MIN and (row[f"p_piu_{g}"] >= STRONG or row[f"p_piu_{g}"] <= 1 - STRONG):
+                tendencies.append({"giocatore": name, "voto": g, "me_100": row[f"me_{g}"],
+                                   "rif_100": row[f"rif_{g}"], "scarto_100": pm, "p_piu": row[f"p_piu_{g}"],
+                                   "buona": (pm > 0) == (g in ("#", "+"))})
+        # prima linea: quanto cambia rispetto a come cambia per il ricevitore medio del Decimo
+        if n_front >= 15 and n_back >= 15:
+            d_front = ((me_front - me_back) * so_u).sum(-1) - ((avg_front - avg_back) * so_u).sum(-1)
+            row.update({"so_davanti": float(100 * (me_front * so_u).sum(-1).mean()),
+                        "so_dietro": float(100 * (me_back * so_u).sum(-1).mean()),
+                        **_stats(100 * d_front, "davanti_diff_"), "p_davanti_meglio": float((d_front > 0).mean())})
+        rows.append(row)
+    receivers = pd.DataFrame(rows)
+    if len(receivers):
+        receivers = receivers.sort_values("diff_media", ascending=False)
+    return {"squadra": team, "voti": grades, "ricevitori": receivers, "tendenze": pd.DataFrame(tendencies),
+            "squadre_playoff": ref}
+
+
+def player_profiles(attacks, serves, att_s, srv_s, v_srv, v_att, reception, players, servers, u, ours_fam,
+                    fam_us, config):
+    """
+    Punti di forza e punti deboli di ogni giocatore del Decimo (richiesta
+    dell'utente del 2026-11-11: "un giocatore magari scopro che ha un certo
+    punto di forza, o un punto debole, in una certa situazione, e mi comporto
+    di conseguenza"). Ogni voce confronta il giocatore con il giocatore medio
+    del Decimo nella stessa situazione (stessa zona per l'attacco, stessa
+    quota di ricezioni in prima linea per la ricezione), in scambi vinti su
+    100 azioni e in punti per set (con le sue azioni per set giocato).
+    Punto di forza: probabilità di fare meglio ≥ STRONG; punto debole: ≤ 1 - STRONG.
+    """
+    D = att_s["mu"].shape[0]
+    out_of_team = excluded_players(config)
+    sets_pl = _sets_by_player(attacks, serves, ours_fam)
+    items, detail = [], []
+
+    def item(key, area, dettaglio, n, diff100, per_set_actions, unita):
+        p = float((diff100 > 0).mean())
+        items.append({"giocatore": key.rsplit("|", 1)[1], "area": area, "dettaglio": dettaglio, "n": int(n),
+                      **_stats(diff100, "diff_"), "punti_set": float(diff100.mean() / 100 * per_set_actions),
+                      "azioni_set": per_set_actions, "unita": unita, "p_meglio": p,
+                      "giudizio": "forza" if p >= STRONG else ("debole" if p <= 1 - STRONG else None)})
+
+    # --- attacco ------------------------------------------------------------
+    mu = att_s["mu"].reshape(D, len(SITUATIONS), len(ZONES), -1)
+    team_att, pl, pl_hard = att_s["team_att"], att_s["player"], att_s["player_hard"]
+    g_final, clutch = att_s["g_final"], att_s["clutch"]
+    pi = {p: i for i, p in enumerate(players)}
+
+    def ev(sit, eta):
+        return (_softmax_ref(eta, ATTACK_REF) * v_att[sit]).sum(-1)
+    ours = attacks[attacks["team"].isin(ours_fam)]
+    for p, part in ours.groupby("giocatore"):
+        if (not p.startswith(fam_us + "|") or p.rsplit("|", 1)[1] in out_of_team
+                or len(part) < config["min_attacchi_giocatore"]):
+            continue
+        n_sets = max(1, sets_pl.get(p, 1))
+        groups = {0: [np.zeros(D), 0], 1: [np.zeros(D), 0]}
+        fin = [np.zeros(D), 0]
+        for (sit, z), cell in part.groupby(["situazione", "zona"]):
+            s, zi = SITUATIONS.index(sit), ZONES.index(z)
+            hard = sit in HARD_SITUATIONS
+            ref = mu[:, s, zi] + team_att[:, u, s]
+            me = ref + pl[:, pi[p]] + (pl_hard[:, pi[p]] if hard else 0)
+            d = ev(sit, me) - ev(sit, ref)
+            groups[int(hard)][0] += d * len(cell)
+            groups[int(hard)][1] += len(cell)
+            fin[0] += (ev(sit, me + g_final + clutch[:, pi[p]]) - ev(sit, me + g_final)) * len(cell)
+            fin[1] += len(cell)
+            detail.append({"giocatore": p.rsplit("|", 1)[1], "situazione": sit, "zona": z, "n": len(cell),
+                           **_stats(100 * d, "diff_"), "p_meglio": float((d > 0).mean())})
+        for g, (acc, n) in groups.items():
+            if n >= config["min_attacchi_giocatore"]:
+                item(p, "Attacco", SIT_GROUP_LABELS[g], n, 100 * acc / n, n / n_sets, "scambi vinti su 100 attacchi")
+        n_fin = int(part["finale"].sum())
+        if n_fin >= 5:
+            item(p, "Attacco nei finali di set", "una squadra a 20 (10 al quinto), scarto al massimo 3", n_fin,
+                 100 * fin[0] / fin[1], n_fin / n_sets, "scambi vinti su 100 attacchi nei finali")
+
+    # --- battuta ------------------------------------------------------------
+    a_err, t_err, s_err = srv_s["a_err"], srv_s["team_err"][..., 0], srv_s["server_err"][..., 0]
+    b, t_srv, s_srv = srv_s["b"], srv_s["team_srv"], srv_s["server_srv"]
+    si = {p: i for i, p in enumerate(servers)}
+    err_ref = _sigmoid(a_err + t_err[:, u])
+    press_ref = (_softmax_ref(b + t_srv[:, u], SERVE_REF) * v_srv).sum(-1)
+    for p, part in serves[serves["team"].isin(ours_fam)].groupby("giocatore"):
+        if (not p.startswith(fam_us + "|") or p.rsplit("|", 1)[1] in out_of_team
+                or len(part) < config["min_battute_giocatore"]):
+            continue
+        n_sets = max(1, sets_pl.get(p, 1))
+        err = _sigmoid(a_err + t_err[:, u] + s_err[:, si[p]])
+        press = (_softmax_ref(b + t_srv[:, u] + s_srv[:, si[p]], SERVE_REF) * v_srv).sum(-1)
+        per_set = len(part) / n_sets
+        # scambi vinti per battuta = (1 - errore) x valore della battuta in gioco: le due parti sommano lo scarto
+        item(p, "Battuta: errori", "quante battute sbaglia (meno errori = meglio)", len(part),
+             -100 * (err - err_ref) * press_ref, per_set, "scambi vinti su 100 battute")
+        item(p, "Battuta: pressione", "quanto mette in difficoltà la ricezione con le battute in gioco", len(part),
+             100 * (1 - err) * (press - press_ref), per_set, "scambi vinti su 100 battute")
+
+    # --- ricezione (dalla analisi dei ricevitori) ---------------------------
+    rec = reception["ricevitori"]
+    for _, x in rec.iterrows():
+        items.append({"giocatore": x["giocatore"], "area": "Ricezione", "dettaglio": "side-out dopo le sue ricezioni",
+                      "n": int(x["n"]), "diff_media": x["diff_media"], "diff_basso": x["diff_basso"],
+                      "diff_alto": x["diff_alto"], "punti_set": x["punti_set_media"],
+                      "azioni_set": x["ricezioni_per_set"], "unita": "side-out su 100 ricezioni",
+                      "p_meglio": x["p_meglio"],
+                      "giudizio": "forza" if x["p_meglio"] >= STRONG else ("debole" if x["p_meglio"] <= 1 - STRONG
+                                                                            else None)})
+        if pd.notna(x.get("p_davanti_meglio")):
+            p = x["p_davanti_meglio"]
+            items.append({"giocatore": x["giocatore"], "area": "Ricezione in prima linea",
+                          "dettaglio": "quanto cambia quando riceve in prima linea, rispetto a come cambia per "
+                                       "il ricevitore medio", "n": int(x["n_prima_linea"]),
+                          "diff_media": x["davanti_diff_media"], "diff_basso": x["davanti_diff_basso"],
+                          "diff_alto": x["davanti_diff_alto"],
+                          "punti_set": x["davanti_diff_media"] / 100 * x["ricezioni_per_set"]
+                          * x["n_prima_linea"] / x["n"],
+                          "azioni_set": x["ricezioni_per_set"] * x["n_prima_linea"] / x["n"],
+                          "unita": "side-out su 100 ricezioni in prima linea", "p_meglio": p,
+                          "giudizio": "forza" if p >= STRONG else ("debole" if p <= 1 - STRONG else None)})
+    return {"voci": pd.DataFrame(items), "attacco_dettaglio": pd.DataFrame(detail)}
 
 
 def attack_licence(attacks, att_s, att_values, ti, u, playoff, ours_fam, our_sets):
@@ -927,11 +1197,7 @@ def practical_examples(serves, srv_values, srv_s, servers, ti, u, fam_us, oppone
     ref = per100(_sigmoid(a_err + t_err[:, u]), _softmax_ref(b + t_srv[:, u], SERVE_REF))
     # livello playoff (indicazione dell'utente del 2026-11-11): il battitore medio delle squadre-stagione tra le
     # prime PLAYOFF_POSITIONS in classifica con almeno `min_partite_squadra_confronto` partite scoutate
-    scouted = sets_played.groupby("team")["partita"].nunique()
-    playoff = []
-    if ts is not None:
-        playoff = [k for k in ts.loc[ts["posizione"].fillna(99) <= PLAYOFF_POSITIONS, "chiave"]
-                   if scouted.get(k, 0) >= config["min_partite_squadra_confronto"] and k in ti]
+    playoff = playoff_teams(ts, sets_played, config, ti) if ts is not None else []
     playoff_draws = [per100(_sigmoid(a_err + t_err[:, ti[k]]), _softmax_ref(b + t_srv[:, ti[k]], SERVE_REF))
                      for k in playoff]
     ref_playoff = ({k: np.mean([d[k] for d in playoff_draws], axis=0) for k in ref} if playoff_draws else ref)
@@ -1350,6 +1616,10 @@ def fit_and_save(progress=None):
     results["calendario"] = [{"giornata": m["day"], "data": m["date"], "casa": m["team1"]["title"].strip(),
                               "ospite": m["team2"]["title"].strip(), "giocata": bool(m.get("played"))}
                              for m in calendar]
+    results["dati"] = {"attacchi": attacks, "battute": serves, "set": sets_played, "squadre": ts, "config": config,
+                       "data": datetime.now().strftime("%d/%m/%Y %H:%M")}
+    from src.identity import build_lineups
+    results["dati"]["prime_linee"] = build_lineups(config)
     results["meta"] = {
         "data_stima": datetime.now().strftime("%d/%m/%Y %H:%M"), "durata_s": round(time.time() - t0),
         "partite": sets_played.groupby("stagione")["partita"].nunique().to_dict(),
@@ -1362,6 +1632,29 @@ def fit_and_save(progress=None):
     with open(RESULTS_PATH, "wb") as f:
         pickle.dump(results, f)
     say(f"Fatto in {results['meta']['durata_s']} s.")
+    return results
+
+
+def refresh_data(progress=None):
+    """Rilegge i .dvw e aggiorna solo i dati salvati con i risultati
+    (results["dati"], usati dall'identità di gioco), senza ristimare il
+    modello: una partita nuova entra subito nell'analisi. Ritorna i risultati."""
+    config = load_config()
+    say = progress or (lambda t: print(t, flush=True))
+    results = load_results()
+    if results is None:
+        say("Modello mai stimato: stima completa.")
+        return fit_and_save(progress)
+    say("Lettura delle partite…")
+    attacks, serves, sets_played, _, rosters = build_dataset(config)
+    attacks, serves, sets_played, ts, _, rosters = attach_teams(attacks, serves, sets_played, config, rosters)
+    results["dati"] = {"attacchi": attacks, "battute": serves, "set": sets_played, "squadre": ts, "config": config,
+                       "data": datetime.now().strftime("%d/%m/%Y %H:%M")}
+    from src.identity import build_lineups
+    results["dati"]["prime_linee"] = build_lineups(config)
+    with open(RESULTS_PATH, "wb") as f:
+        pickle.dump(results, f)
+    say("Dati aggiornati.")
     return results
 
 

@@ -3876,7 +3876,9 @@ PM_REFERENCE_GREY = "#898781"
 
 
 def _it(x, dec=1, sign=False):
-    """Numero all'italiana (virgola decimale)."""
+    """Numero all'italiana (virgola decimale); mai "-0,00"."""
+    if round(x, dec) == 0:
+        x = 0.0
     s = f"{x:+.{dec}f}" if sign else f"{x:.{dec}f}"
     return s.replace(".", ",")
 
@@ -4649,47 +4651,705 @@ def _pm_final_section(r, sit):
     }))
 
 
+PM_GRADE_NAMES = {"#": "#", "+": "+", "!": "!", "-": "-", "/": "/", "=": "ace subito"}
+PM_GRADE_ORDER = ["#", "+", "!", "-", "/", "="]
+
+
 def _pm_reception_section(r):
-    st.subheader("5. Ricezione")
-    rec = r["ricevitori"].sort_values("so_media", ascending=False).rename(
-        columns={"so_media": "media", "so_basso": "basso", "so_alto": "alto"})
-    if rec.empty:
+    st.subheader("5. Ricezione: conviene allenarla?")
+    rec = r.get("ricezione")
+    if not rec:
+        st.info("Ristima il modello per vedere questa sezione.")
         return
-    league = float(r["aree"].set_index("area").loc["Ricezione", "media_campionato"])
-    rec["testo"] = rec.apply(lambda x: f"  {x['n']} ricezioni", axis=1)
-    rec["rif"] = league
-    v = r["valori_battuta"].set_index("esito")["media"]
+    t = rec["squadra"]
     st.caption(
-        "Side-out su 100 battute avversarie in gioco ricevute da ognuno (contro un battitore medio), con la "
-        "media del campionato come riferimento. Le differenze tra ricevitori in scambi vinti sono piccole: tra una "
-        f"ricezione # e una - il side-out cambia di {_it(100 * (v['-'] - v['#']), 0)} punti su 100.")
-    fig = _dot_interval_figure(rec, "giocatore", "Side-out su 100 ricezioni", theme_colors()["palette"][0],
-                               text_col="testo", ref_col="rif", ref_name="Media del campionato")
-    st.plotly_chart(fig, theme=None, key="pm_ric")
-    e = r.get("esempi", {}).get("ricezione")
-    if e:
-        per_set = float(r["aree"].set_index("area").loc["Ricezione", "volume_set"])
-        solid = rec[rec["n"] >= 100] if (rec["n"] >= 100).sum() >= 2 else rec  # esempio su chi riceve davvero
-        top = solid.sort_values("positiva_oss", ascending=False).iloc[0]
-        low = solid.sort_values("positiva_oss").iloc[0]
-        gap = top["positiva_oss"] - low["positiva_oss"]
-        _pm_example(
-            f"Dopo una nostra ricezione # o + facciamo side-out il **{_pct(e['so_facile'])}** delle volte, dopo una "
-            f"!, - o / il **{_pct(e['so_difficile'])}**: ogni ricezione portata da un gruppo all'altro vale "
-            f"{_it(e['guadagno'], 2)} punti. Riceviamo circa {_it(per_set, 0)} battute a set: "
-            f"**10 punti percentuali di ricezioni positive in più (2 ricezioni a set) valgono "
-            f"{_it(0.1 * per_set * e['guadagno'], 2)} punti per set**.  \nEsempio: tra **{top['giocatore']}** "
-            f"({_pct(top['positiva_oss'])} di positive) e **{low['giocatore']}** ({_pct(low['positiva_oss'])}) ci sono "
-            f"{_it(100 * gap, 0)} punti percentuali: se tutte le ricezioni di un set le facesse il primo, sarebbero "
-            f"{_it(gap * per_set * e['guadagno'], 2)} punti in più. Pesa di più l'ace subito: costa tutto lo scambio "
-            "invece di una parte.")
+        "Il side-out sulle battute avversarie in gioco dipende da due cose: **che voti prende la ricezione** e "
+        "**quanto bene giochiamo la palla dopo ogni voto**. Lo scarto dalle squadre in zona playoff (prime 4) si "
+        "divide esattamente in queste due parti, in punti per set, contro un battitore medio. Circa "
+        f"{_it(t['ricezioni_per_set'], 0)} ricezioni a set.")
+    c = st.columns(3)
+    c[0].metric("Scarto dalle playoff", f"{_it(t['totale']['media'], 2, sign=True)} punti per set",
+                help=f"Side-out sulle battute in gioco: noi {_pct(t['so_noi']['media'], 1)}, squadre playoff "
+                     f"{_pct(t['so_playoff']['media'], 1)}.")
+    c[1].metric("di cui ricezione (voti diversi)", f"{_it(t['ricezione']['media'], 2, sign=True)} punti per set",
+                help=f"Tra {_it(t['ricezione']['basso'], 2, sign=True)} e {_it(t['ricezione']['alto'], 2, sign=True)} "
+                     f"(80%). Probabilità che sia sotto le playoff: {_pct(t['ricezione']['p_sotto'])}.")
+    c[2].metric("di cui dopo la ricezione", f"{_it(t['dopo']['media'], 2, sign=True)} punti per set",
+                help=f"Tra {_it(t['dopo']['basso'], 2, sign=True)} e {_it(t['dopo']['alto'], 2, sign=True)} "
+                     f"(80%). Probabilità che sia sotto le playoff: {_pct(t['dopo']['p_sotto'])}.")
+    rp, ap = t["ricezione"]["media"], t["dopo"]["media"]
+    if rp >= 0 and ap >= 0:
+        verdict = "In ricezione e dopo la ricezione siamo già al livello delle squadre playoff."
+    elif abs(rp) >= 2 * abs(ap) or ap >= 0:
+        verdict = ("**Pesa la ricezione**: con gli stessi voti delle playoff recupereremmo "
+                   f"{_it(-rp, 2)} punti per set, mentre dopo la ricezione siamo "
+                   + ("al loro livello." if ap >= 0 else f"vicini ({_it(ap, 2, sign=True)})."))
+    elif abs(ap) >= 2 * abs(rp) or rp >= 0:
+        verdict = ("**Pesa quello che facciamo dopo la ricezione**, non la ricezione: a parità di voti le playoff "
+                   f"fanno più side-out di noi ({_it(-ap, 2)} punti per set), mentre la ricezione vale "
+                   f"{_it(rp, 2, sign=True)}. Il lavoro va sul primo attacco e sulla gestione della palla che "
+                   "ne segue, più che sul bagher.")
+    else:
+        verdict = (f"Pesano tutte e due: ricezione {_it(rp, 2, sign=True)} e dopo la ricezione "
+                   f"{_it(ap, 2, sign=True)} punti per set.")
+    st.markdown(verdict)
+    g = rec["voti"].set_index("voto").loc[PM_GRADE_ORDER].reset_index()
     _pm_table(pd.DataFrame({
-        "Ricevitore": rec["giocatore"], "Ricezioni": rec["n"],
-        "Positive (# o +)": rec["positiva_oss"].map(_pct),
-        "Side-out su 100": rec.apply(lambda x: f"{_it(100 * x['media'], 1)} ({_it(100 * x['basso'], 1)}–"
-                                               f"{_it(100 * x['alto'], 1)})", axis=1),
-        "Meglio della media (probabilità)": rec["p_meglio_media"].map(_pct),
+        "Voto": g["voto"].map(PM_GRADE_NAMES),
+        "Su 100 ricezioni: noi": g["noi_100"].map(lambda v: _it(v, 0)),
+        "Su 100: playoff": g["playoff_100"].map(lambda v: _it(v, 0)),
+        "Side-out dopo il voto: noi": g["so_noi"].map(_pct),
+        "Side-out: playoff": g["so_playoff"].map(_pct),
+        "Punti per set (quota diversa del voto)": g["punti_set"].map(lambda v: _it(v, 2, sign=True)),
     }))
+    st.caption("L'ultima colonna somma la parte \"ricezione\": un voto conta tanto più quanto più ne facciamo "
+               "di diversi dalle playoff e quanto più il side-out dopo quel voto si allontana dalla media.")
+
+    st.markdown("#### I nostri ricevitori")
+    d = rec["ricevitori"].copy()
+    if d.empty:
+        return
+    d = d.rename(columns={"diff_media": "media", "diff_basso": "basso", "diff_alto": "alto"})
+    d["testo"] = d.apply(lambda x: f"  {x['n']} ricezioni · {_it(x['ricezioni_per_set'], 1)} a set", axis=1)
+    d["hover"] = d.apply(lambda x: (
+        f"<b>{x['giocatore']}</b><br>{_it(x['media'], 1, sign=True)} side-out su 100 ricezioni rispetto al "
+        f"ricevitore medio del Decimo ({_it(x['basso'], 1, sign=True)} / {_it(x['alto'], 1, sign=True)})<br>"
+        f"{_it(x['punti_set_media'], 2, sign=True)} punti per set<br>probabilità di fare meglio: "
+        f"{_pct(x['p_meglio'])}"), axis=1)
+    st.caption(
+        "Side-out su 100 ricezioni in più o in meno rispetto al **ricevitore medio del Decimo** con la stessa "
+        "quota di ricezioni in prima linea, a parità di battitore. Le stime partono dalla media e se ne "
+        "allontanano solo quanto i dati lo giustificano.")
+    fig = _dot_interval_figure(d, "giocatore", "Side-out su 100 ricezioni rispetto al ricevitore medio del Decimo",
+                               theme_colors()["palette"][0], text_col="testo", scale=1, zero_line=0,
+                               hover_col="hover")
+    st.plotly_chart(fig, theme=None, key="pm_ric")
+    tend = rec["tendenze"]
+    lines = []
+    for _, x in d.iterrows():
+        bits = []
+        if len(tend):
+            for _, y in tend[tend["giocatore"] == x["giocatore"]].sort_values("scarto_100",
+                                                                              key=abs, ascending=False).iterrows():
+                more = "più" if y["scarto_100"] > 0 else "meno"
+                name = "ace subiti" if y["voto"] == "=" else f"ricezioni {y['voto']}"
+                icon = "🟢" if y["buona"] else "🔴"
+                prob = y["p_piu"] if y["scarto_100"] > 0 else 1 - y["p_piu"]
+                bits.append(f"{icon} {more} {name}: {_it(y['me_100'], 0)} su 100 contro {_it(y['rif_100'], 0)} "
+                            f"(probabilità {_pct(prob)})")
+        if pd.notna(x.get("p_davanti_meglio")) and (x["p_davanti_meglio"] >= 0.8 or x["p_davanti_meglio"] <= 0.2):
+            better = x["p_davanti_meglio"] >= 0.8
+            bits.append(f"{'🟢' if better else '🔴'} in prima linea riceve "
+                        f"{'meglio' if better else 'peggio'} di quanto ci si aspetta: side-out "
+                        f"{_it(x['so_davanti'], 0)} su 100 davanti, {_it(x['so_dietro'], 0)} dietro "
+                        f"({x['n_prima_linea']} ricezioni davanti)")
+        if bits:
+            lines.append(f"- **{x['giocatore']}**: " + "; ".join(bits) + ".")
+        else:
+            lines.append(f"- **{x['giocatore']}**: nessuna tendenza netta rispetto al ricevitore medio del Decimo.")
+    st.markdown("**Tendenze** (voti più o meno frequenti del ricevitore medio del Decimo, solo se lo scarto è "
+                "di almeno 2 su 100 con probabilità dell'80%):\n" + "\n".join(lines))
+    prof = {"Ricevitore": d["giocatore"], "Ricezioni": d["n"]}
+    for gr in PM_GRADE_ORDER:
+        prof[f"{PM_GRADE_NAMES[gr]} su 100 (medio Decimo)"] = d.apply(
+            lambda x, gr=gr: f"{_it(x[f'me_{gr}'], 0)} ({_it(x[f'rif_{gr}'], 0)})", axis=1)
+    prof["Side-out su 100"] = d.apply(lambda x: f"{_it(x['so_media'], 0)} ({_it(x['so_rif'], 0)})", axis=1)
+    prof["Punti per set"] = d["punti_set_media"].map(lambda v: _it(v, 2, sign=True))
+    _pm_table(pd.DataFrame(prof))
+    st.caption("Voti stimati dal modello su 100 ricezioni; tra parentesi il ricevitore medio del Decimo con la "
+               "stessa quota di ricezioni in prima linea.")
+
+
+PM_PROFILE_AREAS = [("Attacco", "palla buona (R#/R+, R!, free ball)", "Attacco palla buona"),
+                    ("Attacco", "palla difficile (R-, contrattacco)", "Attacco palla difficile"),
+                    ("Attacco nei finali di set", None, "Finali di set"),
+                    ("Battuta: errori", None, "Battuta: errori"),
+                    ("Battuta: pressione", None, "Battuta: pressione"),
+                    ("Ricezione", None, "Ricezione"),
+                    ("Ricezione in prima linea", None, "Ricezione in prima linea")]
+PM_PROFILE_REF = {"Attacco": "all'attaccante medio del Decimo nella stessa situazione e zona",
+                  "Attacco nei finali di set": "a come rende lui nel resto del set, al netto di come cambiano tutti "
+                                               "nei finali",
+                  "Battuta: errori": "al battitore medio del Decimo", "Battuta: pressione": "al battitore medio del Decimo",
+                  "Ricezione": "al ricevitore medio del Decimo",
+                  "Ricezione in prima linea": "al ricevitore medio del Decimo in prima linea"}
+
+
+def _pm_profile_sentence(x):
+    title = x["area"] + (f" su {x['dettaglio']}" if x["area"] == "Attacco" else "")
+    ref = PM_PROFILE_REF[x["area"]]
+    prob = x["p_meglio"] if x["diff_media"] > 0 else 1 - x["p_meglio"]
+    return (f"**{title}**: {_it(x['diff_media'], 1, sign=True)} {x['unita']} rispetto {ref} (probabilità "
+            f"{_pct(prob)}); con le sue {_it(x['azioni_set'], 1)} azioni a set sono "
+            f"**{_it(x['punti_set'], 2, sign=True)} punti per set** ({x['n']} azioni nei dati).")
+
+
+def _pm_profiles_section(r):
+    from src.performance_model import SITUATION_LABELS, ZONE_LABELS
+    st.subheader("6. Punti di forza e punti deboli dei giocatori")
+    prof = r.get("profili")
+    if not prof or prof["voci"].empty:
+        st.info("Ristima il modello per vedere questa sezione.")
+        return
+    v = prof["voci"]
+    st.caption(
+        "Per ogni giocatore, dove rende più o meno dei compagni nella stessa situazione, in scambi vinti e in punti "
+        "per set (con le azioni a set che fa di solito). 🟢 punto di forza e 🔴 punto debole solo con almeno l'80% "
+        "di probabilità; · = in linea con la squadra o dati non sufficienti. Il confronto è con il Decimo medio: "
+        "dice chi usare, proteggere o far lavorare in una situazione. Cosa deve migliorare la squadra intera è "
+        "nella sezione 1.")
+    players = sorted(v["giocatore"].unique())
+    table = {"Giocatore": players}
+    for area, det, col in PM_PROFILE_AREAS:
+        cells = []
+        for pl in players:
+            m = v[(v["giocatore"] == pl) & (v["area"] == area) & ((v["dettaglio"] == det) if det else True)]
+            if m.empty:
+                cells.append("")
+                continue
+            x = m.iloc[0]
+            icon = {"forza": "🟢", "debole": "🔴"}.get(x["giudizio"], "·")
+            cells.append(f"{icon} {_it(x['punti_set'], 2, sign=True)}")
+        table[col] = cells
+    _pm_table(pd.DataFrame(table))
+    st.caption("Valori in punti per set; casella vuota = meno azioni del minimo in quella voce.")
+    pl = st.selectbox("Giocatore", players, key="pm_profile_player")
+    mine = v[v["giocatore"] == pl].sort_values("punti_set", key=abs, ascending=False)
+    cols = st.columns(2)
+    for col, kind, title in ((cols[0], "forza", "🟢 Punti di forza"), (cols[1], "debole", "🔴 Punti deboli")):
+        with col:
+            st.markdown(f"**{title}**")
+            part = mine[mine["giudizio"] == kind]
+            if part.empty:
+                st.markdown("Nessuno netto.")
+            for _, x in part.iterrows():
+                st.markdown("- " + _pm_profile_sentence(x))
+    rest = mine[mine["giudizio"].isna()]
+    if len(rest):
+        st.markdown("**In linea con la squadra**: " + ", ".join(
+            (x["area"] + (f" su {x['dettaglio'].split(' (')[0]}" if x["area"] == "Attacco" else "")
+             + f" ({_it(x['punti_set'], 2, sign=True)})") for _, x in rest.iterrows()) + ".")
+    det = prof["attacco_dettaglio"]
+    det = det[det["giocatore"] == pl] if len(det) else det
+    if len(det):
+        det = det[det["n"] >= 5].sort_values("n", ascending=False)
+        if len(det):
+            st.markdown("**Attacco situazione per situazione** (almeno 5 attacchi)")
+            _pm_table(pd.DataFrame({
+                "Situazione": det["situazione"].map(lambda s: SITUATION_LABELS[s]),
+                "Zona": det["zona"].map(ZONE_LABELS), "Attacchi": det["n"],
+                "Scambi vinti su 100 rispetto al Decimo medio": det.apply(
+                    lambda x: f"{_it(x['diff_media'], 1, sign=True)} ({_it(x['diff_basso'], 1, sign=True)} / "
+                              f"{_it(x['diff_alto'], 1, sign=True)})", axis=1),
+                "Probabilità di fare meglio": det["p_meglio"].map(_pct),
+            }))
+            st.caption("Il modello distingue palla buona e palla difficile per ogni attaccante; dentro i due gruppi "
+                       "le differenze tra situazioni vengono dalla zona e dalla squadra, non dal giocatore.")
+
+
+# ---------------------------------------------------------------------------
+# Tab "Identità di gioco" (src/identity.py, src/identity_pdf.py)
+# ---------------------------------------------------------------------------
+ID_DOTS = {"certo": "●●●", "probabile": "●●○", "da verificare": "●○○"}
+ID_KIND_ICON = {"linee": "🔵", "scelta": "🟢", "evitare": "🔴", "costruire": "🟠", "rotazione": "🔴"}
+
+
+@st.cache_data(show_spinner=False)
+def cached_identity(mtime):
+    from src.identity import identity_analysis
+    from src.performance_model import load_results
+    r = load_results()
+    if r is None or "dati" not in r:
+        return None
+    prof = r.get("profili", {}).get("voci")
+    return identity_analysis(r["dati"], prof)
+
+
+def _id_certainty(level):
+    return f"`{ID_DOTS[level]}` *{level}*"
+
+
+def _id_situations_figure(t):
+    from src.performance_model import SITUATIONS
+    colors = theme_colors()
+    blue = colors["palette"][0]
+    t = t.set_index("situazione").loc[list(SITUATIONS)]
+    t = t[t["noi_n"] > 0]
+    labels = [f"{x['breve']}<br><sub>{_it(x['noi_per_set'], 0)} attacchi a set</sub>" for _, x in t.iterrows()]
+    fig = go.Figure()
+    for lab, (_, x) in zip(labels, t.iterrows()):
+        vals = [100 * v for v in (x["noi_vinti_pct"], x["playoff_vinti_pct"], x["prima_vinti_pct"]) if pd.notna(v)]
+        fig.add_trace(go.Scatter(x=[min(vals), max(vals)], y=[lab, lab], mode="lines", showlegend=False,
+                                 line=dict(color=colors["grid"], width=3), hoverinfo="skip"))
+    fig.add_trace(go.Scatter(x=100 * t["playoff_vinti_pct"], y=labels, mode="markers", name="Squadre in zona playoff",
+                             marker=dict(symbol="diamond", size=11, color=PM_REFERENCE_GREY,
+                                         line=dict(color=colors["surface"], width=2)),
+                             hovertemplate="Squadre playoff: %{x:.0f} scambi vinti su 100<extra></extra>"))
+    if t["prima_vinti_pct"].notna().any():
+        fig.add_trace(go.Scatter(x=100 * t["prima_vinti_pct"], y=labels, mode="markers", name="Noi l'anno scorso",
+                                 marker=dict(size=11, color=colors["surface"], line=dict(color=blue, width=2)),
+                                 hovertemplate="Noi l'anno scorso: %{x:.0f}<extra></extra>"))
+    fig.add_trace(go.Scatter(
+        x=100 * t["noi_vinti_pct"], y=labels, mode="markers", name="Noi quest'anno",
+        marker=dict(size=14, color=blue, line=dict(color=colors["surface"], width=2)),
+        customdata=np.c_[t["noi_vinti"], t["noi_n"]],
+        hovertemplate="Noi quest'anno: %{x:.0f} scambi vinti su 100 (%{customdata[0]} su %{customdata[1]})"
+                      "<extra></extra>"))
+    fig.update_layout(**_pm_layout(80 * len(t) + 120, "Scambi vinti su 100 attacchi", left_margin=190))
+    fig.update_yaxes(autorange="reversed", gridcolor=colors["grid"])
+    return fig
+
+
+def _id_rules(detail, kinds=None, limit=None):
+    order = {"linee": 0, "scelta": 1, "evitare": 2, "costruire": 3, "rotazione": 4}
+    line_order = {"dietro": 0, "davanti": 1}
+
+    def key(r):
+        if r["tipo"] == "linee":
+            return (0, 0, 0, -r["p"])
+        if r["tipo"] == "rotazione":
+            return (3, 0, 0, -r["p"])
+        return (1, line_order.get(r.get("linea"), 2), order[r["tipo"]], -r["p"])
+    rules = sorted(detail["regole"], key=key)
+    if kinds:
+        rules = [r for r in rules if r["tipo"] in kinds]
+    if not rules:
+        st.caption("Ancora nessuna regola chiara: servono più partite.")
+        return
+    st.markdown("\n".join(f"- {ID_KIND_ICON[r['tipo']]} {r['testo']} {_id_certainty(r['certezza'])}"
+                          for r in rules[:limit]))
+
+
+def _id_detail(I, sit):
+    from src.identity import LINE_LABELS, LINE_NOTES
+    from src.performance_model import ZONE_LABELS
+    d = I["dettagli"][sit]
+    cols = st.columns(2)
+    for col, line in zip(cols, ("dietro", "davanti")):
+        x = d["linee"][line]
+        with col:
+            won = f" · {x['vinti']} scambi vinti ({_pct(x['vinti_pct'])})" if x["n"] else ""
+            st.markdown(f"**{LINE_LABELS[line][:1].upper() + LINE_LABELS[line][1:]}**  \n"
+                        f"<small>{LINE_NOTES[line]} — {x['n']} attacchi{won}; squadre playoff "
+                        f"{_pct(x['playoff_vinti_pct']) if x['playoff_n'] else '-'}</small>", unsafe_allow_html=True)
+            rows = x["righe"]
+            if len(rows):
+                st.plotly_chart(build_court_chart(zone_stats(rows[["zona", "attaccante", "esito"]]
+                                                             .rename(columns={"esito": "voto"})), compact=True),
+                                theme=None, key=f"id_court_{sit}_{line}")
+    st.markdown("**Le regole**")
+    _id_rules(d)
+    with st.expander("I numeri: attaccanti, zone, rotazioni, partita per partita"):
+        for line in ("dietro", "davanti"):
+            x = d["linee"][line]
+            a = x["attaccanti"]
+            if len(a):
+                a = a.sort_values("n", ascending=False)
+                st.markdown(f"**Attaccanti, {LINE_LABELS[line]}**")
+                _pm_table(pd.DataFrame({
+                    "Attaccante": a.apply(lambda c: f"{c['attaccante']} ({ZONE_LABELS.get(c['zona'], c['zona'])})",
+                                          axis=1),
+                    "Attacchi": a["n"], "Scambi vinti": a.apply(lambda c: f"{c['vinti']} ({_pct(c['vinti_pct'])})", axis=1),
+                    "Punto": a["punto_pct"].map(_pct), "Errori o murate": a["errmur_pct"].map(_pct),
+                    "Meglio degli altri della linea (probabilità)": a["p_meglio"].map(_pct),
+                }))
+            z = x["zone"]
+            if len(z):
+                st.markdown(f"**Zone, {LINE_LABELS[line]}: noi e squadre playoff**")
+                _pm_table(pd.DataFrame({
+                    "Zona": z["etichetta"], "Quota noi": z["quota"].map(_pct),
+                    "Quota playoff": z["playoff_quota"].map(_pct),
+                    "Scambi vinti noi": z.apply(lambda c: f"{c['vinti']}/{c['n']}" if c["n"] else "-", axis=1),
+                    "Scambi vinti playoff": z["playoff_vinti_pct"].map(lambda v: _pct(v) if pd.notna(v) else "-"),
+                }))
+        rots = d["rotazioni"]
+        if len(rots):
+            st.markdown("**Rotazioni** (zona del nostro palleggiatore)")
+            rots = rots.sort_values("rotazione")
+            _pm_table(pd.DataFrame({
+                "Rotazione": rots["rotazione"], "Linea del palleggiatore": rots["linea"],
+                "Attacchi": rots["n"], "Scambi vinti": rots.apply(lambda c: f"{c['vinti']} ({_pct(c['vinti_pct'])})",
+                                                                  axis=1),
+                "Nelle altre rotazioni": rots["resto_pct"].map(_pct),
+            }))
+        cmp_ = d.get("confronto_linee")
+        if cmp_ is not None and len(cmp_["partite"]):
+            st.markdown("**Partita per partita** (scambi vinti / attacchi)")
+            _pm_table(cmp_["partite"].rename(columns={"partita": "Partita", "dietro": "Palleggiatore dietro",
+                                                      "davanti": "Palleggiatore davanti"}))
+
+
+def _id_players(I):
+    players = I["giocatori"]
+    if not players:
+        return
+    st.caption("Rispetto ai compagni nella stessa situazione. Le voci sull'attacco per linea del palleggiatore vengono "
+               "dalle partite di quest'anno; le altre dal modello di prestazione (anche la stagione scorsa, con le "
+               "stime che partono dalla media). Mostrate solo le differenze di almeno 1,5 scambi su 100 azioni.")
+    names = list(players)
+    for i in range(0, len(names), 2):
+        cols = st.columns(2)
+        for col, name in zip(cols, names[i:i + 2]):
+            v = players[name]
+            with col:
+                with st.container(border=True):
+                    st.markdown(f"**{name}**")
+                    if not v["appoggio"] and not v["lavoro"]:
+                        st.caption("Per ora nessuna indicazione netta.")
+                    if v["appoggio"]:
+                        st.markdown("🟢 *Ci appoggiamo su di lui*\n" + "\n".join(
+                            f"- {it['testo']} {_id_certainty(it['certezza'])}" for it in v["appoggio"]))
+                    if v["lavoro"]:
+                        st.markdown("🔴 *Ci lavoriamo*\n" + "\n".join(
+                            f"- {it['testo']} {_id_certainty(it['certezza'])}"
+                            + (f"  \n  <small>Come: {it['come']}</small>" if it.get("come") else "")
+                            for it in v["lavoro"]), unsafe_allow_html=True)
+
+
+@st.cache_data(show_spinner=False)
+def cached_front_lines(mtime):
+    from src.identity import front_line_analysis
+    from src.performance_model import load_results
+    r = load_results()
+    rows = (r or {}).get("dati", {}).get("prime_linee")
+    return front_line_analysis(rows) if rows is not None else None
+
+
+def _id_diverging(value, mean, span=0.15):
+    """Colore della cella: verde sopra la media, rosso sotto, pieno a ±span."""
+    colors = theme_colors()
+    if value is None or pd.isna(value):
+        return colors["surface"]
+    t = max(-1.0, min(1.0, (value - mean) / span))
+    end = (26, 127, 55) if t >= 0 else (207, 34, 46)
+    base = (255, 255, 255)   # celle chiare anche nel tema scuro: il testo resta scuro e leggibile
+    a = 0.15 + 0.55 * abs(t)
+    return "rgb({},{},{})".format(*(round(b + (e - b) * a) for b, e in zip(base, end)))
+
+
+def _id_arrangements_figure(A, selected):
+    colors = theme_colors()
+    blue = colors["palette"][0]
+    d = A.copy()
+    d["etichetta"] = [f"{i + 1}. {x}" for i, x in enumerate(d["disposizione"])]
+    fig = go.Figure()
+    for sel in (False, True):
+        part = d[(d["disposizione"] == selected) == sel]
+        if part.empty:
+            continue
+        fig.add_trace(go.Scatter(
+            x=100 * part["media"], y=part["etichetta"], mode="markers",
+            name="Disposizione scelta sotto" if sel else "Stima (pallino) e intervallo all'80% (linea)",
+            error_x=dict(type="data", array=100 * (part["alto"] - part["media"]),
+                         arrayminus=100 * (part["media"] - part["basso"]), thickness=2, width=0,
+                         color=colors["palette"][1] if sel else blue),
+            marker=dict(size=13 if sel else 11, color=colors["palette"][1] if sel else blue,
+                        symbol="diamond" if sel else "circle", line=dict(color=colors["surface"], width=2)),
+            customdata=np.c_[part["p4"], 100 * part["p_migliore"]],
+            hovertemplate="%{y}<br>%{x:.1f} cambi palla su 100 ricezioni<br>in P4 davanti: %{customdata[0]}<br>"
+                          "probabilità di essere la migliore: %{customdata[1]:.0f}%<extra></extra>"))
+        fig.add_trace(go.Scatter(
+            x=100 * part["alto"] + 0.4, y=part["etichetta"], mode="text", showlegend=False, hoverinfo="skip",
+            text=[f"  P4: {v}" for v in part["p4"]], textposition="middle right",
+            textfont=dict(size=11, color=colors["ink"])))
+    fig.update_layout(**_pm_layout(46 * len(d) + 120, "Cambi palla stimati su 100 ricezioni",
+                                   left_margin=int(d["etichetta"].str.len().max() * 7) + 30))
+    span = 100 * (d["alto"].max() - d["basso"].min())
+    fig.update_xaxes(range=[100 * d["basso"].min() - 0.05 * span, 100 * d["alto"].max() + 0.45 * span])
+    fig.update_yaxes(categoryorder="array", categoryarray=d["etichetta"].tolist()[::-1], gridcolor=colors["grid"])
+    return fig
+
+
+def _id_rotation_strip(detail, mean):
+    """Le sei rotazioni della disposizione nell'ordine in cui si giocano
+    (P1, P6, P5, poi P4, P3, P2): la terna d'attacco come la si vede dal
+    campo (posto 4 a sinistra, centro, posto 2 a destra) e i cambi palla
+    stimati (colore rispetto alla nostra media), con le ricezioni osservate."""
+    colors = theme_colors()
+    d = detail.set_index("rotazione")
+    layout_rows = [("Palleggiatore dietro: tre attaccanti davanti", ["P1", "P6", "P5"]),
+                   ("Palleggiatore davanti: due attaccanti davanti", ["P4", "P3", "P2"])]
+    fig = go.Figure()
+    shapes, ann = [], []
+    ink, muted = "#1f2328", "#4b5563"
+    for r_i, (title, rots) in enumerate(layout_rows):
+        y0 = 1.1 * (1 - r_i)
+        ann.append(dict(x=-0.02, y=y0 + 1.0, text=f"<b>{title}</b>", showarrow=False, xanchor="left",
+                        font=dict(size=12, color=colors["ink"])))
+        for c_i, rot in enumerate(rots):
+            x = d.loc[rot]
+            x0 = c_i
+            shapes.append(dict(type="rect", x0=x0 + 0.03, x1=x0 + 0.97, y0=y0 + 0.02, y1=y0 + 0.9,
+                               fillcolor=_id_diverging(x["stima"], mean), line=dict(color=colors["grid"], width=1)))
+            ann.append(dict(x=x0 + 0.08, y=y0 + 0.8, text=f"<b>{rot}</b>", showarrow=False, xanchor="left",
+                            font=dict(size=13, color=ink)))
+            ann.append(dict(x=x0 + 0.92, y=y0 + 0.8, text=f"<b>{_it(100 * x['stima'], 0)}</b> su 100",
+                            showarrow=False, xanchor="right", font=dict(size=15, color=ink)))
+            # terna d'attacco: posto 4 | centro | posto 2
+            shapes.append(dict(type="line", x0=x0 + 0.08, x1=x0 + 0.92, y0=y0 + 0.66, y1=y0 + 0.66,
+                               line=dict(color="rgba(31,35,40,0.35)", width=2)))
+            for j, (name_col, role_col, pos) in enumerate((("posto4", "posto4_ruolo", "4"), ("centro", "centro_ruolo", "3"),
+                                                           ("posto2", "posto2_ruolo", "2"))):
+                role = x[role_col]
+                name = x[name_col] if role != "P" else "palleggiatore"
+                ann.append(dict(x=x0 + 0.2 + 0.3 * j, y=y0 + 0.47, text=f"<b>{name}</b>", showarrow=False,
+                                font=dict(size=11.5, color=ink if role != "P" else muted)))
+                ann.append(dict(x=x0 + 0.2 + 0.3 * j, y=y0 + 0.33,
+                                text=(f"posto {pos} · {role}" if role not in ("P", "O") else
+                                      ("posto 2 · opposto" if role == "O" else "palleggio davanti")),
+                                showarrow=False, font=dict(size=9.5, color=muted)))
+            seen = (f"{x['martello']} + {x['centrale']}: {x['vinti']} su {x['osservate']} visti in partita"
+                    if x["osservate"] else f"{x['martello']} + {x['centrale']}: mai visti insieme, vale la media")
+            ann.append(dict(x=x0 + 0.5, y=y0 + 0.12, text=seen, showarrow=False, font=dict(size=10, color=muted)))
+    fig.update_layout(shapes=shapes, annotations=ann, height=420, margin=dict(t=10, b=10, l=10, r=10),
+                      plot_bgcolor=colors["surface"], paper_bgcolor=colors["surface"],
+                      xaxis=dict(visible=False, range=[-0.03, 3.03]), yaxis=dict(visible=False, range=[0, 2.2]))
+    return fig
+
+
+def _id_pairs_heatmap(pairs, line, mean, key):
+    from src.identity import LINE_LABELS
+    colors = theme_colors()
+    p = pairs[pairs["linea"] == line]
+    if p.empty:
+        return
+    cs, ms = sorted(p["centrale"].unique()), sorted(p["martello"].unique())
+    z, text, hover = [], [], []
+    for c in cs:
+        zr, tr, hr = [], [], []
+        for m in ms:
+            x = p[(p["centrale"] == c) & (p["martello"] == m)]
+            if x.empty:
+                zr.append(None); tr.append(""); hr.append(f"{c} + {m}: mai davanti insieme")
+                continue
+            x = x.iloc[0]
+            v = x["pct"] if x["n"] >= 5 else None
+            zr.append(None if v is None else 100 * (v - mean))
+            tr.append(f"<b>{x['vinti']}/{x['n']}</b><br>{_pct(x['pct'])}" if x["n"] >= 5 else f"{x['vinti']}/{x['n']}")
+            hr.append(f"{c} + {m}: {x['vinti']} cambi palla su {x['n']} ricezioni ({_pct(x['pct'])}); le altre coppie "
+                      f"{_pct(x['resto_pct'])}")
+        z.append(zr); text.append(tr); hover.append(hr)
+    fig = go.Figure(go.Heatmap(
+        z=z, x=ms, y=cs, text=text, customdata=hover,
+        texttemplate="%{text}", textfont=dict(size=13), hovertemplate="%{customdata}<extra></extra>",
+        colorscale=[[0, "#cf222e"], [0.5, "#f6f8fa"], [1, "#1a7f37"]], zmid=0, zmin=-20, zmax=20, showscale=False,
+        xgap=3, ygap=3))
+    fig.update_layout(height=72 * len(cs) + 70, margin=dict(t=40, b=10, l=int(max(len(c) for c in cs) * 8) + 40, r=10),
+                      plot_bgcolor=colors["surface"], paper_bgcolor=colors["surface"],
+                      font=dict(color=colors["ink"], size=12))
+    fig.update_xaxes(side="top", title=dict(text="martello", font=dict(size=11)), showgrid=False, type="category")
+    fig.update_yaxes(autorange="reversed", title=dict(text="centrale", font=dict(size=11)), showgrid=False,
+                     ticksuffix="  ", automargin=True, showticklabels=True, type="category")
+    st.markdown(f"*{LINE_LABELS[line][:1].upper() + LINE_LABELS[line][1:]}*")
+    st.plotly_chart(fig, theme=None, key=key)
+
+
+def _id_front_lines(mtime):
+    from src.identity import arrangement_estimates
+    F = cached_front_lines(mtime)
+    st.subheader("5. Chi c'è in prima linea: C1/C2 e M1/M2")
+    if F is None:
+        st.info("Premi \"Aggiorna con le ultime partite\" per leggere le prime linee dagli scout.")
+        return
+    rows, pairs = F["righe"], F["coppie"]
+    st.caption(
+        "Cambi palla di ogni nostra ricezione (tutte, anche le non positive) secondo chi è davanti. Con il palleggiatore "
+        "davanti (P2, P3, P4) gli attaccanti in prima linea sono solo due, un centrale e un martello: la coppia conta "
+        "più che altrove. Con il palleggiatore dietro ci sono anche l'opposto e la coppia pesa meno.")
+    pp = pairs[pairs["linea"] == "davanti"]
+    cs_all = pairs.groupby("centrale")["n"].sum().sort_values(ascending=False).index.tolist()
+    ms_all = pairs.groupby("martello")["n"].sum().sort_values(ascending=False).index.tolist()
+    c1, c2 = st.columns(2)
+    centrals = c1.multiselect("I due centrali", cs_all, default=cs_all[:2],
+                              max_selections=2, key="id_fl_c")
+    hitters = c2.multiselect("I due martelli", ms_all, default=ms_all[:2],
+                             max_selections=2, key="id_fl_m")
+    if len(centrals) == 2 and len(hitters) == 2:
+        A, detail, _ = arrangement_estimates(F, tuple(centrals), tuple(hitters))
+        best, worst = A.iloc[0], A.iloc[-1]
+        per_set = len(rows) / max(1, rows[["partita", "set"]].drop_duplicates().shape[0])
+        gap = (best["media"] - worst["media"]) * per_set
+        bad_pairs = pp[(pp["n"] >= 8) & (pp["pct"] <= pp["resto_pct"] - 0.10)
+                       & pp["centrale"].isin(centrals) & pp["martello"].isin(hitters)]
+        with st.container(border=True):
+            text = (f"**Come leggerlo.** Con l'ordine di battuta fisso (P, M1, C2, O, M2, C1) le disposizioni di "
+                    f"{' e '.join(centrals)} con {' e '.join(hitters)} sono quattro: chi è C1 e chi C2, chi M1 e chi "
+                    f"M2. C1 è davanti in P3, P4, P5 e C2 in P6, P1, P2; M1 in P1, P2, P3 e M2 in P4, P5, P6. Con il "
+                    f"palleggiatore davanti gli attaccanti sono due: **P2 = M1 + C2, P3 = M1 + C1, P4 = M2 + C1**.  \n"
+                    f"La migliore secondo i dati: **{best['disposizione']}**, {_it(100 * best['media'], 0)} cambi "
+                    f"palla su 100 (in P4 davanti {best['p4']}); la peggiore: {worst['disposizione']}, "
+                    f"{_it(100 * worst['media'], 0)} su 100. Tra le due circa **{_it(gap, 1)} punti a set** "
+                    f"({_it(per_set, 0)} ricezioni a set). Probabilità che la prima sia davvero la migliore: "
+                    f"{_pct(best['p_migliore'])}.")
+            if len(bad_pairs):
+                bp = bad_pairs.sort_values("pct").iloc[0]
+                text += (f"  \nDa evitare: **{bp['martello']} e {bp['centrale']} davanti insieme con il "
+                         f"palleggiatore davanti** ({bp['vinti']} cambi palla su {bp['n']}, {_pct(bp['pct'])}; le "
+                         f"altre coppie il {_pct(bp['resto_pct'])}).")
+            st.markdown(text)
+        st.plotly_chart(_id_arrangements_figure(A, A.iloc[0]["disposizione"] if "id_fl_sel" not in st.session_state
+                                                else st.session_state["id_fl_sel"]), theme=None, key="id_fl_arr")
+        st.caption("Pallino = stima dei cambi palla su tutte le rotazioni, linea = 80% di probabilità; a destra chi è "
+                   "davanti in P4 (posto 4 · centro).")
+        sel = st.selectbox("Guarda le rotazioni di una disposizione", A["disposizione"].tolist(), key="id_fl_sel",
+                           format_func=lambda v: f"{A.index[A['disposizione'] == v][0] + 1}. {v}")
+        st.plotly_chart(_id_rotation_strip(detail[sel], F["media"]), theme=None, key="id_fl_strip")
+        st.caption(f"Le rotazioni nell'ordine in cui si giocano (P1, P6, P5, P4, P3, P2). In ogni riquadro la terna "
+                   f"d'attacco come la vedi dal campo: posto 4 a sinistra, centro, posto 2 a destra. Cambi palla stimati "
+                   f"su 100 ricezioni dalla coppia martello + centrale davanti insieme (stessa linea del palleggiatore, "
+                   f"in qualunque rotazione): verde sopra la nostra media ({_pct(F['media'])}), rosso sotto. Le coppie "
+                   f"con poche ricezioni restano vicine alla media.")
+    st.markdown("**Le coppie centrale + martello, viste in partita** (cambi palla / ricezioni; colore solo da 5 "
+                "ricezioni in su, verde sopra e rosso sotto la media della linea)")
+    cols = st.columns(2)
+    for col, line in zip(cols, ("davanti", "dietro")):
+        with col:
+            _id_pairs_heatmap(pairs, line, F["medie_linea"].get(line, F["media"]), key=f"id_fl_heat_{line}")
+    order = {"certo": 0, "probabile": 1, "da verificare": 2}
+    rules = sorted(F["regole"], key=lambda r: (order[r["certezza"]], -r["p"]))
+    front = [r for r in rules if ("palleggiatore davanti" in r["testo"]) and r["certezza"] != "da verificare"]
+    other = [r for r in rules if r not in front]
+    if front:
+        st.markdown("**Le regole con il palleggiatore davanti** (decidono C1/C2 e M1/M2)")
+        st.markdown("\n".join(f"- {ID_KIND_ICON[r['tipo']]} {r['testo']} {_id_certainty(r['certezza'])}"
+                              for r in front))
+    if other:
+        with st.expander(f"Altre regole ({len(other)}: palleggiatore dietro e indizi da verificare)"):
+            st.markdown("\n".join(f"- {ID_KIND_ICON[r['tipo']]} {r['testo']} {_id_certainty(r['certezza'])}"
+                                  for r in other))
+    with st.expander("Ogni rotazione: le prime linee viste in partita"):
+        br = F["per_rotazione"].sort_values(["rotazione", "n"], ascending=[True, False])
+        _pm_table(pd.DataFrame({
+            "Rotazione": br["rotazione"], "Prima linea": br["prima_linea"], "Ricezioni": br["n"],
+            "Cambi palla": br.apply(lambda x: f"{x['vinti']} ({_pct(x['pct'])})", axis=1),
+            "Da R#/R+": br.apply(lambda x: f"{x['buone_vinti']}/{x['buone_n']}", axis=1),
+            "Altre prime linee nella rotazione": br["resto_pct"].map(lambda v: _pct(v) if pd.notna(v) else "-"),
+        }))
+
+
+def render_identity_tab():
+    from src.identity import SITUATION_WITH, pillar_texts
+    from src.performance_model import RESULTS_PATH, SITUATION_LABELS
+    st.header("Identità di gioco")
+    st.markdown(
+        "Qual è la situazione che porta punti su cui appoggiarci sempre, dentro quella situazione quali scelte ci "
+        "fanno vincere più spesso lo scambio, cosa recuperare e cosa costruire. Misura: **scambi vinti dopo un nostro "
+        "attacco** (1 scambio = 1 punto), confrontati con le squadre in zona playoff (prime 4) e con noi l'anno scorso. "
+        "Ogni indicazione ha la sua certezza: `●●●` certo, `●●○` probabile, `●○○` da verificare.")
+    mtime = RESULTS_PATH.stat().st_mtime if RESULTS_PATH.exists() else 0
+    I = cached_identity(mtime) if mtime else None
+    cols = st.columns([3, 1])
+    with cols[1]:
+        refresh = st.button("Aggiorna con le ultime partite", key="id_refresh", help=(
+            "Rilegge tutti i .dvw di campionato (circa un minuto). Il modello di prestazione, usato per le voci dei "
+            "singoli giocatori che non riguardano la linea del palleggiatore, si aggiorna dalla sua tab."))
+    if refresh:
+        from src.performance_model import refresh_data
+        with st.status("Lettura delle partite…", expanded=True) as status:
+            refresh_data(progress=status.write)
+            status.update(label="Dati aggiornati", state="complete")
+        cached_identity.clear()
+        cached_front_lines.clear()
+        load_performance_results.clear()
+        st.rerun()
+    if I is None:
+        st.info("Servono i dati del modello di prestazione: premi \"Aggiorna con le ultime partite\".")
+        return
+    with cols[0]:
+        st.caption(f"Stagione {I['stagione']}, {I['n_partite']} partite con lo scout. Squadre in zona playoff: "
+                   + ", ".join(I["squadre_playoff"]) + ".")
+    texts = pillar_texts(I)
+    f = texts["forza"]
+
+    st.subheader("1. Chi siamo")
+    if f:
+        with st.container(border=True):
+            st.markdown("**🔵 Il nostro punto di forza**  \n" + f["testo"] + "  \nÈ la situazione che porta punti in "
+                        "cui siamo già al livello delle squadre playoff, e quella che ci capita più spesso: deve "
+                        "diventare la nostra comfort zone.")
+    st.plotly_chart(_id_situations_figure(I["situazioni"]), theme=None, key="id_situations")
+    t = I["situazioni"]
+    _pm_table(pd.DataFrame({
+        "Situazione": t["etichetta"], "Attacchi a set": t["noi_per_set"].map(lambda v: _it(v, 1)),
+        "Scambi vinti: noi": t.apply(lambda x: f"{_pct(x['noi_vinti_pct'])} ({x['noi_vinti']}/{x['noi_n']})"
+                                     if x["noi_n"] else "-", axis=1),
+        "Noi l'anno scorso": t["prima_vinti_pct"].map(lambda v: _pct(v) if pd.notna(v) else "-"),
+        "Squadre playoff": t["playoff_vinti_pct"].map(_pct),
+        "Punti a set rispetto alle playoff": t["scarto_playoff_punti_set"].map(
+            lambda v: _it(v, 2, sign=True) if pd.notna(v) else "-"),
+        "Partite sopra le playoff": t.apply(lambda x: f"{x['partite_sopra_playoff']} su {x['partite']}", axis=1),
+        "Partita per partita": t["partite_vinti"].map(lambda v: " · ".join(v)),
+    }))
+
+    st.subheader("2. Cosa recuperare e cosa costruire")
+    cols = st.columns(2)
+    with cols[0]:
+        for x in texts["recuperare"] or [None]:
+            with st.container(border=True):
+                if x is None:
+                    st.markdown("**🟠 Da recuperare**  \nNessuna situazione è peggiorata in modo netto rispetto "
+                                "all'anno scorso.")
+                else:
+                    st.markdown(f"**🟠 Da recuperare: lo sapevamo fare**  \n{x['testo']}  \n"
+                                f"<small>**Come lavoriamo:** {x['come']}</small>", unsafe_allow_html=True)
+    with cols[1]:
+        for x in texts["costruire"] or [None]:
+            with st.container(border=True):
+                if x is None:
+                    st.markdown("**🔴 Da costruire**  \nNessuna situazione è nettamente sotto le playoff.")
+                else:
+                    st.markdown(f"**🔴 Da costruire: dove perdiamo di più**  \n{x['testo']}  \n"
+                                f"<small>**Come lavoriamo:** {x['come']}</small>", unsafe_allow_html=True)
+    if f and f["linea_debole"]:
+        from src.identity import LINE_LABELS
+        st.markdown(f"🟠 Dentro il punto di forza, da costruire il **{LINE_LABELS[f['linea_debole']]}** "
+                    f"(vedi sotto). <small>**Come lavoriamo:** {f['come']}</small>", unsafe_allow_html=True)
+
+    st.subheader("3. Dentro una situazione: le regole")
+    from src.performance_model import SITUATIONS
+    default = SITUATIONS.index(f["situazione"]) if f else 0
+    sit = st.radio("Situazione", SITUATIONS, index=default, horizontal=True, key="id_sit",
+                   format_func=lambda s_: SITUATION_LABELS[s_] + (" ⭐" if f and s_ == f["situazione"] else ""))
+    st.caption(f"{SITUATION_WITH[sit]}: palleggiatore dietro (P1, P6, P5, opposto davanti: tre attaccanti in prima "
+               "linea) e davanti (P2, P3, P4, opposto dietro: due attaccanti in prima linea). 🔵 linee a confronto, "
+               "🟢 scelte che funzionano, 🔴 cosa rende meno, 🟠 cosa manca. Nei campetti: quota dei palloni per "
+               "zona, attacchi ed efficienza, chi la attacca.")
+    _id_detail(I, sit)
+
+    st.subheader("4. Giocatore per giocatore")
+    _id_players(I)
+
+    _id_front_lines(mtime)
+
+    st.subheader("6. Da condividere con la squadra")
+    with st.container(border=True):
+        st.markdown("**📄 PDF \"La nostra identità\"** — stesso formato del report partita, da mandare sul gruppo o "
+                    "proiettare in allenamento: chi siamo, le regole, cosa recuperare e costruire, come ci misuriamo, "
+                    "giocatore per giocatore.")
+        notes = st.text_area("Messaggio dell'allenatore (facoltativo, in cima al PDF)", key="id_notes", height=100)
+        if st.button("Genera il PDF", key="id_pdf"):
+            from datetime import datetime
+            from src.identity_pdf import build_identity_pdf
+            with st.spinner("Preparo il PDF…"):
+                st.session_state["id_pdf_bytes"] = build_identity_pdf(
+                    I, notes, datetime.now().strftime("%d/%m/%Y"))
+        if st.session_state.get("id_pdf_bytes"):
+            st.download_button("Scarica il PDF", st.session_state["id_pdf_bytes"],
+                               file_name=f"identita_decimo_{I['stagione']}.pdf", mime="application/pdf",
+                               key="id_pdf_download")
+    with st.expander("Come sono fatte le regole e quanto fidarsi"):
+        st.markdown(
+            "- **Punto di forza**: tra le situazioni in cui vinciamo almeno quanto le squadre playoff (meno 3 punti), "
+            "quella con più attacchi a set. **Da recuperare**: peggiorata di almeno 8 scambi su 100 rispetto all'anno "
+            "scorso con probabilità dell'80%. **Da costruire**: la più lontana dalle playoff in punti a set.\n"
+            "- **Regole**: confronti tra conteggi (scambi vinti su attacchi) della stagione in corso: linea del "
+            "palleggiatore, attaccante in una zona contro gli altri attaccanti della stessa linea, rotazione contro "
+            "le altre. Un attaccante entra con almeno 6 attacchi; \"rende meno\" solo se è sotto gli altri di almeno "
+            "10 scambi su 100.\n"
+            "- **Certezza**: probabilità che la cosa sia vera. Certo ≥ 90% con almeno 15 azioni e, dove si può "
+            "controllare, vista in almeno 3 partite su 4; probabile ≥ 80%; da verificare ≥ 65%.\n"
+            "- **Limite**: guardiamo molte divisioni dei dati, quindi qualche regola \"da verificare\" sarà un caso. "
+            "Le regole vanno ricontrollate dopo ogni partita (la tabella partita per partita serve a questo).")
 
 
 def render_performance_model_tab():
@@ -4730,6 +5390,7 @@ def render_performance_model_tab():
     sit = _pm_attackers_section(r)
     _pm_final_section(r, sit)
     _pm_reception_section(r)
+    _pm_profiles_section(r)
     with st.expander("Come funziona il modello e quanto fidarsi"):
         m = r["meta"]
         diag = m["diagnostica"]
@@ -4743,11 +5404,12 @@ def render_performance_model_tab():
             "l'anno prima lo stimano i dati. I giocatori sono società + cognome: chi è rimasto porta i suoi dati.\n"
             "- **Valore di un esito**: la quota di scambi vinti dopo quell'esito.\n"
             "- **Attacco**: l'esito (punto, +, !, -, errore, murato) dipende dalla situazione e dalla zona, dalla "
-            "squadra che attacca in quella situazione, dall'attaccante, dalla squadra che difende (muro e difesa) "
-            "e dal finale di set. Situazioni: side-out da R#/R+ e da R! (palla veloce), da R- (palla alta), free "
+            "squadra che attacca in quella situazione, dall'attaccante (con uno scostamento suo sulla palla difficile: "
+            "side-out da R- e contrattacco), dalla squadra che difende (muro e difesa) e dal finale di set. Situazioni: side-out da R#/R+ e da R! (palla veloce), da R- (palla alta), free "
             "ball (D!), contrattacco. La difesa non è usata se non come free ball.\n"
             "- **Battuta**: l'errore dipende da squadra e battitore; il voto della ricezione da squadra e "
-            "battitore che servono, squadra e giocatore che ricevono, finale di set. Il tipo di battuta non c'è.\n"
+            "battitore che servono, squadra e giocatore che ricevono, prima o seconda linea di chi riceve (con uno scostamento per ogni "
+            "ricevitore), finale di set. Il tipo di battuta non c'è.\n"
             "- **Cosa succede dopo**, per ogni coppia di squadre: chi vince lo scambio dopo un attacco rimasto in "
             "gioco, e dopo una ricezione con un certo voto. Da qui le indicazioni contro un avversario.\n"
             "- **Set**: la probabilità di vincerlo viene dai side-out delle due squadre, punto per punto.\n"
@@ -4822,27 +5484,30 @@ def main():
         st.caption("Le partite da considerare e le impostazioni dei grafici si scelgono dentro ogni sezione.")
     st.caption(f"Stagione {season} · {len(matches)} partite registrate")
 
-    tab_names = (["Partita", "Report partita", "Distribuzione alzate", "Studio avversario", "Classifiche", "Tabellino",
-                  "Andamento KPI", "Modello di prestazione"] + (["Pagella"] if show_pagella else []))
+    tab_names = (["Partita", "Report partita", "Identità di gioco", "Distribuzione alzate", "Studio avversario",
+                  "Classifiche", "Tabellino", "Andamento KPI", "Modello di prestazione"]
+                 + (["Pagella"] if show_pagella else []))
     tabs = st.tabs(tab_names)
     with tabs[0]:
         render_match_section(season, matches, match_label_lookup_full, version)
     with tabs[1]:
         render_match_report_section(season, matches, match_label_lookup_full, version)
     with tabs[2]:
-        render_distribution_section(matches, match_label_lookup_full)
+        render_identity_tab()
     with tabs[3]:
-        render_opponent_section(season, version)
+        render_distribution_section(matches, match_label_lookup_full)
     with tabs[4]:
-        render_classifiche_section(season, matches, match_label_lookup_full, version)
+        render_opponent_section(season, version)
     with tabs[5]:
-        render_tabellino_section(matches, match_label_lookup_full)
+        render_classifiche_section(season, matches, match_label_lookup_full, version)
     with tabs[6]:
-        render_trend_tab(season, version, matches, team_df_fixed, player_df_fixed, match_label_lookup_full)
+        render_tabellino_section(matches, match_label_lookup_full)
     with tabs[7]:
+        render_trend_tab(season, version, matches, team_df_fixed, player_df_fixed, match_label_lookup_full)
+    with tabs[8]:
         render_performance_model_tab()
     if show_pagella:
-        with tabs[8]:
+        with tabs[9]:
             rec_vote_for_report = DEFAULT_REC_VOTE
             player_report, player_report_missing = load_player_report(season, rec_vote_for_report, version)
             season_report = load_player_season_report(season, rec_vote_for_report, version)
