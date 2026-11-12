@@ -15,8 +15,8 @@
   :root {
     --bg: #0f1117; --card: #1a1d27; --card2: #222634; --line: #2b2f3d; --text: #eef0f5; --muted: #9aa0b0;
     --noi: #3b82f6; --loro: #f97316;
-    --pt: #15803d; --pt-hi: #22c55e; --err: #b91c1c; --err-hi: #ef4444; --warn: #facc15;
-    --bad-bg: rgba(239,68,68,.16); --good-bg: rgba(34,197,94,.14);
+    --pt: #15803d; --pt-hi: #22c55e; --err: #b91c1c; --err-hi: #ef4444; --warn: #facc15; --amb: #f59e0b;
+    --bad-bg: rgba(239,68,68,.16); --good-bg: rgba(34,197,94,.14); --amb-bg: rgba(245,158,11,.16);
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text);
@@ -24,10 +24,12 @@
   body { padding: env(safe-area-inset-top) 12px calc(env(safe-area-inset-bottom) + 20px); touch-action: manipulation;
     -webkit-user-select: none; user-select: none; }
   button { font: inherit; color: inherit; border: 0; cursor: pointer; touch-action: manipulation; }
-  select { font: inherit; color: var(--text); background: var(--card2); border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; }
+  select, input { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+  input { -webkit-user-select: text; user-select: text; }
   .hidden { display: none !important; }
-  svg.ic { width: 22px; height: 22px; flex: none; fill: none; stroke: currentColor; stroke-width: 2;
-    stroke-linecap: round; stroke-linejoin: round; }
+  .muted { color: var(--muted); }
+  svg.vball { width: 18px; height: 18px; vertical-align: -3px; margin: 0 6px; fill: #fde047; stroke: #713f12; stroke-width: 1.3; stroke-linecap: round; }
+  .status svg.vball { width: 14px; height: 14px; margin: 0 3px 0 0; vertical-align: -2px; }
 
   header { display: flex; align-items: center; gap: 8px; padding: 8px 0; }
   header .title { flex: 1; font-size: 14px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -36,195 +38,228 @@
   .tab i { position: absolute; top: -6px; right: -6px; background: var(--err-hi); color: #fff; font-style: normal; font-size: 11px;
     font-weight: 700; border-radius: 999px; padding: 1px 6px; }
 
-  /* ---- partita: pannello squadra | centro | pannello squadra ---- */
-  .court { display: grid; grid-template-columns: 290px 1fr 290px; gap: 12px; align-items: start; }
+  /* ---------- partita ---------- */
+  .court { display: grid; grid-template-columns: 250px 1fr 250px; gap: 12px; align-items: start; }
   .panel { border-radius: 16px; padding: 10px; background: var(--card); border: 3px solid var(--team); }
-  .panel.noi { --team: var(--noi); }
-  .panel.loro { --team: var(--loro); }
-  .panel h2 { margin: 0 0 4px; font-size: 19px; color: var(--team); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .status { font-size: 12px; font-weight: 700; letter-spacing: .05em; color: var(--muted); margin-bottom: 4px; min-height: 16px; }
+  .panel.noi { --team: var(--noi); } .panel.loro { --team: var(--loro); }
+  .panel h2 { margin: 0 0 4px; font-size: 18px; color: var(--team); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .status { font-size: 11px; font-weight: 700; letter-spacing: .05em; color: var(--muted); margin-bottom: 4px; min-height: 15px; }
   .status.serve { color: var(--warn); }
   .zl { font-size: 11px; font-weight: 700; letter-spacing: .08em; margin: 8px 2px 5px; }
-  .zl.pt { color: var(--pt-hi); }
-  .zl.err { color: var(--err-hi); }
-  .zone.err { border-top: 2px dashed var(--line); margin-top: 10px; }
+  .zl.pt { color: var(--pt-hi); } .zl.err { color: var(--err-hi); }
   .g2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-  .act { display: flex; gap: 8px; align-items: center; min-height: 52px; border-radius: 10px; padding: 6px 9px;
-    font-size: 14.5px; font-weight: 700; text-align: left; width: 100%; line-height: 1.15; }
-  .act small { display: block; font-size: 11px; font-weight: 500; opacity: .85; margin-top: 2px; }
-  .act.pt { background: var(--pt); }
-  .act.err { background: var(--err); }
-  .act.mur { background: #7f1d1d; border: 2px solid var(--err-hi); }   /* murato: rosso scuro bordato */
+  .act { min-height: 48px; border-radius: 10px; padding: 6px 8px; font-size: 13.5px; font-weight: 700; text-align: left; line-height: 1.15; }
+  .act small { display: block; font-size: 10px; font-weight: 600; opacity: .8; }
+  .act.pt { background: var(--pt); } .act.err { background: var(--err); }
+  .act.mur { background: #7f1d1d; border: 2px solid var(--err-hi); }
+  .act.next { background-image: repeating-linear-gradient(135deg, rgba(0,0,0,.22) 0 7px, transparent 7px 14px); }
   .act:active { filter: brightness(1.3); transform: scale(.98); }
   .act:disabled { opacity: .15; }
   .act.full { grid-column: 1 / -1; }
-  /* 1° attacco e attacco successivo: colonne con intestazione, etichetta piena o tratteggiata, trama a righe */
-  .lanes { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 4px; }
-  .lane-h { text-align: center; font-size: 12px; font-weight: 800; letter-spacing: .04em; padding: 4px 0; border-radius: 7px; line-height: 1.15; }
-  .lane-h small { display: block; font-size: 10px; font-weight: 600; letter-spacing: 0; opacity: .75; }
-  .lane-h.first { background: var(--text); color: var(--bg); }
-  .lane-h.next { border: 2px dashed var(--muted); display: flex; align-items: center; justify-content: center; }
-  .act.first, .act.next { flex-direction: column; align-items: flex-start; justify-content: center; gap: 3px; min-height: 58px; }
-  .act.next { background-image: repeating-linear-gradient(135deg, rgba(0,0,0,.22) 0 7px, transparent 7px 14px); }
-  .sit { font-size: 9.5px; font-weight: 800; letter-spacing: .04em; padding: 2px 6px; border-radius: 5px; line-height: 1.2; }
-  .sit small { font-size: 9px; font-weight: 600; letter-spacing: 0; opacity: .8; }
-  .act.first .sit { background: var(--text); color: var(--bg); }
-  .act.next .sit { border: 1.5px dashed currentColor; }
+  .tc { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 2px solid var(--line); }
+  .tc button { background: var(--card2); border-radius: 10px; padding: 9px 6px; font-size: 14px; font-weight: 700; border-bottom: 3px solid var(--team); }
+  .tc button:disabled { opacity: .35; }
+  .dots { display: inline-flex; gap: 4px; vertical-align: middle; margin-left: 5px; }
+  .dots i { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--team); }
+  .dots i.on { background: var(--team); }
+  .sublog { font-size: 12px; color: var(--muted); margin-top: 6px; line-height: 1.5; }
+  .sublog b { color: var(--text); font-weight: 600; }
 
-  .center { display: flex; flex-direction: column; gap: 10px; }
-  .score { background: var(--card); border-radius: 16px; padding: 10px 14px; text-align: center; }
+  .center { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .score { background: var(--card); border-radius: 16px; padding: 8px 14px; text-align: center; }
   .score .names { display: grid; grid-template-columns: 1fr 1fr; font-size: 15px; font-weight: 600; }
   .score .names span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .pts { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; font-variant-numeric: tabular-nums; }
-  .pts .n { font-size: 60px; font-weight: 700; line-height: 1.05; }
-  .pts .sep { font-size: 26px; color: var(--muted); }
-  .ball { display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: var(--warn); margin: 0 6px; visibility: hidden; }
-  .ball.on { visibility: visible; }
-  .setinfo { font-size: 13px; color: var(--muted); margin-top: 2px; }
-
-  .strip { background: var(--card); border-radius: 14px; padding: 8px 10px; }
-  .strip .l { font-size: 11px; font-weight: 700; letter-spacing: .06em; color: var(--muted); margin-bottom: 6px; }
-  .pills { display: flex; gap: 6px; flex-wrap: wrap; }
-  .pill { border-radius: 999px; padding: 5px 11px; font-size: 14px; font-weight: 600; }
-  .pill.bad { background: var(--bad-bg); color: #fca5a5; border: 1px solid var(--err-hi); }
-  .pill.good { background: var(--good-bg); color: #86efac; border: 1px solid var(--pt-hi); }
-  .pill.neu { background: var(--card2); color: var(--muted); }
-
-  .tools { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .tools button { background: var(--card2); padding: 11px 10px; border-radius: 11px; font-size: 15px; }
-  .tools button.to { display: flex; align-items: center; justify-content: center; gap: 8px; border-bottom: 3px solid var(--team); }
-  .tools button:disabled { opacity: .35; }
-  .tod { display: inline-flex; gap: 4px; }
-  .tod i { width: 11px; height: 11px; border-radius: 50%; border: 2px solid var(--team); }
-  .tod i.on { background: var(--team); }
-  .banner { background: var(--card); border: 2px solid var(--pt-hi); border-radius: 14px; padding: 12px;
-    display: flex; gap: 10px; align-items: center; font-size: 16px; }
+  .pts .n { font-size: 54px; font-weight: 700; line-height: 1.05; }
+  .pts .sep { font-size: 24px; color: var(--muted); }
+  .setinfo { font-size: 13px; color: var(--muted); }
+  .banner { background: var(--card); border: 2px solid var(--pt-hi); border-radius: 14px; padding: 12px; display: flex; gap: 10px; align-items: center; font-size: 16px; }
   .banner .grow { flex: 1; }
   .banner button { background: var(--text); color: var(--bg); padding: 10px 14px; border-radius: 10px; font-weight: 600; }
 
-  .rot { background: var(--card); border-radius: 14px; padding: 8px 10px; }
-  .rot .l { font-size: 12px; color: var(--muted); margin: 0 2px 6px; }
-  .rot .btns { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
-  .rot button, .rot-pick button { background: var(--card2); padding: 9px 0; border-radius: 9px; font-size: 16px; font-weight: 600; }
-  .rot button.on, .rot-pick button.on { background: var(--noi); }
-  .rot-pick { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
-  .rot-pick button { padding: 18px 0; font-size: 20px; }
+  .goals { background: var(--card); border-radius: 14px; padding: 8px 12px; }
+  .focus { background: rgba(250,204,21,.12); border: 1px solid var(--warn); border-radius: 10px; padding: 7px 10px; font-size: 15px; margin-bottom: 6px; }
+  .focus b { color: var(--warn); }
+  .tug-h { display: grid; grid-template-columns: 1fr 150px 1fr; gap: 8px; font-size: 11px; font-weight: 800; letter-spacing: .05em; padding: 2px 0 4px; }
+  .tug { display: grid; grid-template-columns: 1fr 150px 1fr; gap: 8px; align-items: center; padding: 5px 0; border-top: 1px solid var(--line); }
+  .tug .mid { text-align: center; line-height: 1.15; }
+  .tug .mid b { font-size: 14.5px; }
+  .tug .mid small { display: block; color: var(--muted); font-size: 10.5px; margin-top: 2px; }
+  .tug .mid .lt { color: var(--warn); font-size: 10.5px; }
+  .tug .ln { display: flex; align-items: center; gap: 6px; margin: 2px 0; }
+  .tug .ln:first-child { margin-top: 14px; }
+  .tug .ln i { font-style: normal; font-size: 10.5px; font-weight: 800; color: var(--muted); width: 18px; text-align: center; }
+  .hf { position: relative; flex: 1; height: 20px; background: var(--card2); border-radius: 5px; }
+  .hf .fi { position: absolute; top: 2px; bottom: 2px; border-radius: 4px; }
+  .hf.R .fi { left: 0; } .hf.L .fi { right: 0; }
+  .hf .fi.ok { background: var(--pt-hi); } .hf .fi.amb { background: var(--amb); } .hf .fi.bad { background: var(--err-hi); }
+  .hf .mx { position: absolute; top: -3px; bottom: -3px; width: 3px; background: var(--text); border-radius: 2px; }
+  .hf .now { position: absolute; top: 0; bottom: 0; border-left: 2px dashed var(--muted); }
+  .hf .bv { position: absolute; top: 2px; font-size: 12.5px; font-weight: 800; padding: 0 4px; transform: translateX(var(--tx, 0)); }
+  .hf .bv.in { color: #0b0d13; }
+  .hf.R .bv.in { --tx: -100%; } .hf.L .bv.in { --tx: 100%; }
+  .hf .tl { position: absolute; top: -14px; left: 50%; transform: translateX(-50%); font-size: 10px; font-weight: 800; color: var(--text);
+    background: #0b0d13; border: 1px solid var(--muted); border-radius: 4px; padding: 0 4px; white-space: nowrap; line-height: 12px; }
 
-  .log { font-size: 13px; color: var(--muted); }
-  .log div { padding: 5px 2px; border-bottom: 1px solid var(--line); display: flex; gap: 8px; align-items: center; }
-  .log .sc { width: 46px; font-variant-numeric: tabular-nums; color: var(--text); }
-  .log .to { color: var(--warn); }
-  .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .next { background: var(--card); border-radius: 14px; padding: 8px 12px; border-left: 5px solid var(--warn); }
+  .next .l { font-size: 11px; font-weight: 800; letter-spacing: .08em; color: var(--warn); }
+  .next .r { font-size: 14px; margin-top: 4px; line-height: 1.5; }
+  .warnic { color: var(--warn); font-weight: 800; }
+  .sug { display: inline-block; background: var(--card2); border-radius: 7px; padding: 2px 8px; margin: 2px 4px 0 0; font-size: 13px; }
+  .sug b { color: var(--text); }
 
-  /* ---- avvisi: in basso al centro, restano finché non si chiudono con la X ---- */
-  .toast-wrap { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 12px); transform: translateX(-50%);
-    width: min(540px, 46vw); z-index: 20; display: flex; flex-direction: column; gap: 8px; }
-  .toast { background: #12151d; border-radius: 14px; padding: 8px 6px 8px 14px; border-left: 6px solid var(--c);
-    box-shadow: 0 10px 30px rgba(0,0,0,.6); display: flex; gap: 10px; align-items: center; animation: up .25s ease-out; }
-  .toast.bad { --c: var(--err-hi); } .toast.good { --c: var(--pt-hi); }
-  .toast .ico { font-size: 18px; }
-  .toast .t { font-size: 15px; font-weight: 700; }
-  .toast .d { font-size: 13px; color: var(--muted); margin-top: 2px; }
-  .toast .x { margin-left: auto; width: 46px; height: 46px; border-radius: 10px; background: var(--card2); font-size: 20px; flex: none; }
-  .toast-more { align-self: center; background: var(--card2); color: var(--muted); font-size: 12px; padding: 5px 12px; border-radius: 999px; }
-  @keyframes up { from { transform: translateY(20px); opacity: 0; } }
+  .call { border-radius: 16px; padding: 12px 14px; border: 2px solid var(--c); background: #12151d; box-shadow: 0 10px 30px rgba(0,0,0,.5); }
+  .call.bad { --c: var(--err-hi); } .call.amb { --c: var(--amb); } .call.good { --c: var(--pt-hi); } .call.info, .call.neu { --c: var(--warn); }
+  .call .k { display: inline-block; font-size: 12px; font-weight: 900; letter-spacing: .08em; padding: 3px 9px; border-radius: 6px; background: var(--c); color: #000; }
+  .call .t { font-size: 19px; font-weight: 800; margin: 7px 0 3px; line-height: 1.2; }
+  .call .d { font-size: 14px; color: var(--muted); line-height: 1.5; }
+  .call .cmp { display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; margin: 6px 0 4px; font-size: 15px; }
+  .call .cmp span { color: var(--muted); }
+  .call .cmp b { font-variant-numeric: tabular-nums; }
+  .call .rel { display: inline-block; font-size: 12.5px; font-weight: 800; padding: 3px 9px; border-radius: 6px; margin: 4px 0; }
+  .rel.high { background: var(--good-bg); color: #86efac; } .rel.mid { background: var(--amb-bg); color: #fcd34d; } .rel.low { background: var(--card2); color: var(--muted); }
+  .call .row { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+  .call .row .more { flex: 1; font-size: 12px; color: var(--muted); }
+  .call .row button { background: var(--text); color: var(--bg); font-weight: 700; padding: 10px 18px; border-radius: 10px; font-size: 16px; }
+  .call .when { font-size: 12px; color: var(--muted); margin-left: 8px; }
 
-  /* ---- riepilogo ---- */
+  .rotline { font-size: 13px; color: var(--muted); padding: 0 2px; }
+  .rotline b { color: var(--text); }
+  .tools { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .tools button { background: var(--card2); padding: 10px 8px; border-radius: 11px; font-size: 14px; }
+  .tools button:disabled { opacity: .35; }
+
+  /* ---------- fogli: referto, formazione, cambi ---------- */
+  .sheet-wrap { position: fixed; inset: 0; background: rgba(0,0,0,.75); z-index: 40; overflow-y: auto; padding: 16px 12px; }
+  .sheet { background: var(--card); border-radius: 18px; padding: 16px 18px; max-width: 1000px; margin: 0 auto; }
+  .sheet h3 { margin: 0 0 10px; font-size: 21px; display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+  .sheet h3 small { font-size: 14px; font-weight: 600; color: var(--muted); }
+  .cf { display: grid; grid-template-columns: 1fr 280px; gap: 16px; }
+  .field { background: #c2703d; border: 3px solid #fff; border-radius: 6px; position: relative; aspect-ratio: 2 / 1; }
+  .field .net { position: absolute; left: -10px; right: -10px; top: -7px; height: 10px; background: repeating-linear-gradient(90deg, #fff 0 2px, #333 2px 8px); border-radius: 3px; }
+  .field .zones { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: 1fr 2fr; }
+  .zn { position: relative; display: flex; align-items: center; justify-content: center; border: 1px dashed rgba(255,255,255,.35); }
+  .zones .zn:nth-child(-n+3) { border-bottom: 3px solid #fff; }
+  .zn .zl2 { position: absolute; top: 6px; left: 8px; font-size: 12px; font-weight: 800; color: rgba(255,255,255,.75); }
+  .zn .zr { position: absolute; top: 6px; right: 8px; font-size: 10px; font-weight: 800; color: #000; background: rgba(255,255,255,.85); padding: 1px 6px; border-radius: 4px; }
+  .pl { background: var(--noi); border-radius: 12px; padding: 5px 10px; text-align: center; min-width: 118px; box-shadow: 0 4px 12px rgba(0,0,0,.35); touch-action: none; position: relative; }
+  .pl .nu { font-size: 22px; font-weight: 800; line-height: 1; }
+  .pl .co { font-size: 14px; font-weight: 700; }
+  .pl .ro { font-size: 10px; font-weight: 800; letter-spacing: .06em; opacity: .85; }
+  .pl .bd { position: absolute; left: 50%; bottom: -11px; transform: translateX(-50%); white-space: nowrap; font-size: 10.5px; font-weight: 800;
+    background: #0b0d13; color: var(--warn); border: 1px solid var(--warn); border-radius: 6px; padding: 1px 6px; }
+  .pl .bd.lock { color: var(--muted); border-color: var(--muted); }
+  .pl.set { outline: 3px solid var(--warn); }
+  .pl.lib { background: #a16207; }
+  .pl.empty { background: rgba(0,0,0,.2); border: 2px dashed rgba(255,255,255,.6); box-shadow: none; color: rgba(255,255,255,.85); min-height: 60px; display: flex; align-items: center; justify-content: center; }
+  .side .l, .lab { font-size: 11px; font-weight: 800; letter-spacing: .08em; color: var(--muted); margin: 4px 0 6px; }
+  .drop-roster { min-height: 120px; border-radius: 12px; }
+  .chipp { display: flex; align-items: center; gap: 10px; background: var(--card2); border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; width: 100%; text-align: left; touch-action: none; }
+  .chipp .nu { font-size: 18px; font-weight: 800; width: 30px; text-align: center; }
+  .chipp .co { flex: 1; font-weight: 600; }
+  .chipp .ro { font-size: 10px; font-weight: 800; letter-spacing: .05em; color: var(--muted); }
+  .chipp .bd { font-size: 11px; font-weight: 700; color: var(--warn); }
+  .chipp.dead { opacity: .35; }
+  .libslot { display: flex; gap: 10px; align-items: center; margin-top: 18px; }
+  .libslot .zn { border: 2px dashed rgba(255,255,255,.3); border-radius: 12px; padding: 4px; }
+  .rotbtn { display: flex; gap: 8px; margin-top: 10px; }
+  .rotbtn button { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; background: var(--card2); padding: 10px; border-radius: 10px; font-weight: 700; }
+  .rotbtn svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+  .fl { margin-top: 12px; display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+  .fl div { background: var(--card2); border-radius: 8px; padding: 6px; font-size: 12px; line-height: 1.35; }
+  .fl b { font-size: 13px; } .fl span { color: var(--muted); }
+  .hot { font-size: 11.5px; margin-top: 3px; }
+  .hot i { display: inline-block; height: 6px; background: var(--warn); border-radius: 3px; vertical-align: middle; margin-right: 5px; }
+  .brow { display: flex; gap: 10px; margin-top: 14px; }
+  .brow button { flex: 1; padding: 13px; border-radius: 12px; font-size: 17px; font-weight: 600; background: var(--line); }
+  .brow button.ok { background: var(--noi); }
+  .brow button:disabled { opacity: .4; }
+  .bsrv { display: flex; gap: 8px; margin-top: 10px; }
+  .bsrv button { flex: 1; padding: 10px; border-radius: 10px; background: var(--card2); font-weight: 600; }
+  .bsrv button.on { background: var(--noi); }
+  .hist { font-size: 13px; color: var(--muted); margin-top: 10px; line-height: 1.6; }
+  .hist b { color: var(--text); }
+  .cnt { font-size: 15px; font-weight: 800; padding: 4px 10px; border-radius: 8px; background: var(--card2); }
+  .ref { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .ref .chipp { cursor: pointer; }
+  .ref .chipp.off { opacity: .35; }
+  .ref .chipp.off .co { text-decoration: line-through; }
+  .ref .chk { width: 22px; height: 22px; border-radius: 6px; border: 2px solid var(--muted); display: flex; align-items: center; justify-content: center; font-weight: 900; }
+  .ref .chipp:not(.off) .chk { background: var(--pt); border-color: var(--pt-hi); }
+  .ref select { padding: 3px 6px; font-size: 12px; }
+  .add { display: flex; gap: 8px; margin-top: 10px; }
+  .add button { background: var(--card2); padding: 10px 16px; border-radius: 10px; font-weight: 700; }
+  .ghost { position: fixed; z-index: 100; pointer-events: none; opacity: .92; transform: translate(-50%, -50%) scale(1.05); }
+  .dragging { opacity: .3; }
+  [data-drop].ok-target { outline: 3px solid var(--pt-hi); outline-offset: -3px; background-color: rgba(34,197,94,.18); }
+  [data-drop].no-target { outline: 3px solid var(--err-hi); outline-offset: -3px; background-color: rgba(239,68,68,.18); }
+  .toast { position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%); background: #7f1d1d; border: 2px solid var(--err-hi);
+    color: #fff; font-weight: 700; padding: 12px 18px; border-radius: 12px; z-index: 120; font-size: 16px; }
+
+  /* ---------- riepilogo ---------- */
   .chips { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 12px; }
   .chip { background: var(--card); padding: 8px 14px; border-radius: 999px; }
   .chip.active { background: var(--text); color: var(--bg); font-weight: 600; }
   .card { background: var(--card); border-radius: 16px; padding: 12px 14px; margin-bottom: 12px; }
-  .q { font-size: 20px; font-weight: 800; margin: 0 0 2px; }
+  .q { font-size: 19px; font-weight: 800; margin: 0 0 6px; }
   .q small { font-size: 13px; font-weight: 500; color: var(--muted); margin-left: 6px; }
-  .sub { font-size: 13px; color: var(--muted); margin-bottom: 10px; }
+  .sub { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
   .empty { color: var(--muted); font-size: 14px; }
+  .mt { width: 100%; border-collapse: collapse; margin-top: 6px; }
+  .mt th { font-size: 10.5px; font-weight: 700; letter-spacing: .04em; color: var(--muted); text-align: center; padding: 2px 4px 6px; }
+  .mt td { padding: 7px 4px; border-top: 1px solid var(--line); vertical-align: middle; }
+  .mt .m { font-size: 16px; font-weight: 700; text-align: left; }
+  .mt .m small { display: block; font-size: 11.5px; font-weight: 500; color: var(--muted); margin-top: 2px; }
+  .sym { text-align: center; font-size: 22px; line-height: 1; width: 84px; }
+  .up { color: var(--pt-hi); } .eq { color: var(--muted); } .dn { color: var(--err-hi); }
+  .ver { text-align: right; white-space: nowrap; }
+  .vb { display: inline-block; font-size: 13px; font-weight: 800; padding: 5px 9px; border-radius: 8px; }
+  .vb.bad { background: var(--bad-bg); color: #fca5a5; border: 1px solid var(--err-hi); }
+  .vb.amb { background: var(--amb-bg); color: #fcd34d; border: 1px solid var(--amb); }
+  .vb.good { background: var(--good-bg); color: #86efac; border: 1px solid var(--pt-hi); }
+  .vb.neu { background: var(--card2); color: var(--muted); }
+  .mirror { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+  .mirror div { border-radius: 12px; padding: 10px 12px; font-size: 14.5px; line-height: 1.6; }
+  .mirror .upb { background: var(--good-bg); border: 1px solid var(--pt-hi); }
+  .mirror .dnb { background: var(--bad-bg); border: 1px solid var(--err-hi); }
+  .mirror h4 { margin: 0 0 4px; font-size: 12px; letter-spacing: .08em; }
+  .mirror .upb h4 { color: #86efac; } .mirror .dnb h4 { color: #fca5a5; }
+  .p4row { display: grid; grid-template-columns: 130px 1fr 150px; gap: 12px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); }
+  .p4row .n { font-weight: 800; font-size: 15px; }
+  .p4row .sc { display: flex; gap: 6px; flex-wrap: wrap; }
+  .p4row .sc span { background: var(--card2); border-radius: 8px; padding: 5px 10px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .p4row .sc span.top { background: var(--noi); }
+  .p4row .r { text-align: right; font-size: 13px; color: var(--muted); }
+  .p4row .r b { color: var(--text); font-size: 16px; }
+  .stk { display: grid; grid-template-columns: 110px 1fr 44px; gap: 8px; align-items: center; margin: 4px 0; font-size: 14px; font-weight: 700; }
+  .stk .bar { display: flex; height: 26px; border-radius: 6px; overflow: hidden; }
+  .stk .bar span { display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; color: #0b0d13; border-right: 2px solid var(--card); }
+  .stk .tot { text-align: right; font-variant-numeric: tabular-nums; }
+  .lgd { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); margin: 6px 0 10px; }
+  .lgd i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+  .setlab { font-size: 12px; font-weight: 800; letter-spacing: .06em; color: var(--muted); margin: 12px 0 2px; }
+  table.tb { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .tb th { font-size: 11px; color: var(--muted); font-weight: 700; padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: center; }
+  .tb td { padding: 7px 8px; border-bottom: 1px solid var(--line); text-align: center; font-variant-numeric: tabular-nums; }
+  .tb th:first-child, .tb td:first-child { text-align: left; }
+  .tb .bad { color: #fca5a5; font-weight: 800; } .tb .good { color: #86efac; font-weight: 800; }
+  table.leg { border-collapse: collapse; font-size: 14px; }
+  .leg th, .leg td { border: 1px solid var(--line); padding: 8px 10px; text-align: center; }
+  .leg th { color: var(--muted); font-size: 12px; }
 
-  .hero { display: grid; grid-template-columns: 200px 1fr 1fr; gap: 12px; align-items: start; }
-  .hero .sc { background: var(--card2); border-radius: 14px; padding: 12px; text-align: center; }
-  .hero .sc .s { font-size: 13px; color: var(--muted); }
-  .hero .sc .p { font-size: 40px; font-weight: 800; font-variant-numeric: tabular-nums; }
-  .hero .sc .d { font-size: 22px; font-weight: 800; }
-  .side h4 { margin: 0 0 6px; font-size: 13px; letter-spacing: .08em; }
-  .side.bad h4 { color: var(--err-hi); } .side.good h4 { color: var(--pt-hi); }
-  .big { display: flex; justify-content: space-between; align-items: center; gap: 10px; border-radius: 12px; padding: 9px 14px; margin-bottom: 6px; }
-  .side.bad .big { background: var(--bad-bg); border: 1px solid var(--err-hi); }
-  .side.good .big { background: var(--good-bg); border: 1px solid var(--pt-hi); }
-  .big .n { font-size: 16px; font-weight: 700; }
-  .big .n small { display: block; font-size: 12px; font-weight: 500; color: var(--muted); }
-  .big .v { font-size: 28px; font-weight: 800; }
-  .side.bad .v { color: #fca5a5; } .side.good .v { color: #86efac; }
-  .neg { color: #fca5a5; } .pos { color: #86efac; }
-
-  table.bal { width: 100%; border-collapse: collapse; font-size: 14px; }
-  .bal th { font-size: 12px; color: var(--muted); font-weight: 600; text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--line); }
-  .bal td { padding: 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
-  .bal .det { font-size: 12px; color: var(--muted); }
-  .bal .s { font-weight: 700; font-size: 16px; }
-  .bal th.noi { color: var(--noi); } .bal th.loro { color: var(--loro); }
-  .div { position: relative; height: 22px; width: 200px; }
-  .div::before { content: ''; position: absolute; left: 50%; top: -4px; bottom: -4px; width: 2px; background: var(--muted); }
-  .div span { position: absolute; top: 3px; height: 16px; border-radius: 3px; }
-  .div span.n { right: 50%; background: var(--err-hi); } .div span.p { left: 50%; background: var(--pt-hi); }
-  .net { font-weight: 800; font-size: 18px; width: 44px; text-align: right; }
-
-  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
-  .kpi { background: var(--card2); border-radius: 12px; padding: 10px 12px; border-top: 3px solid var(--team); }
-  .kpi .l { font-size: 13px; color: var(--muted); }
-  .kpi .v { font-size: 28px; font-weight: 700; }
-  .kpi .s { font-size: 12px; color: var(--muted); }
-  .vt { display: inline-block; font-size: 10.5px; font-weight: 800; letter-spacing: .06em; padding: 3px 8px; border-radius: 6px; margin: 2px 0 4px; }
-  .vt.bad { background: var(--bad-bg); color: #fca5a5; } .vt.good { background: var(--good-bg); color: #86efac; }
-  .vt.eq, .vt.na { background: var(--line); color: var(--muted); }
-
-  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  .seq { display: flex; gap: 3px; margin: 8px 0; }
-  .seq i { flex: 1; height: 26px; border-radius: 4px; }
-  .mini { font-size: 14px; line-height: 1.6; }
-  .mini .k { color: var(--muted); }
-  .runs div { padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
-  .runs span { color: var(--muted); }
-
-  .rots { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
-  .rtile { background: var(--card2); border-radius: 12px; padding: 10px; border: 2px solid transparent; font-size: 13px; }
-  .rtile.bad { border-color: var(--err-hi); } .rtile.good { border-color: var(--pt-hi); }
-  .rtile .p { font-size: 18px; font-weight: 800; display: flex; justify-content: space-between; align-items: center; }
-  .rtile .p span { font-size: 10px; letter-spacing: .05em; color: var(--muted); font-weight: 700; }
-  .rtile .lab { font-size: 11px; font-weight: 700; letter-spacing: .06em; color: var(--muted); margin-top: 6px; }
-  .rtile .v { font-size: 30px; font-weight: 800; }
-  .rtile.bad .v.main { color: #fca5a5; } .rtile.good .v.main { color: #86efac; }
-  .rtile .u { font-size: 12px; color: var(--muted); }
-  .rtile .perm { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--line); }
-  .rtile .perm .v { font-size: 20px; }
-  .gauge { height: 18px; border-radius: 9px; background: var(--card2); overflow: hidden; margin: 8px 0 6px; }
-  .gauge div { height: 100%; background: var(--noi); }
-
-  table.rules { width: 100%; border-collapse: collapse; font-size: 13.5px; }
-  .rules th { text-align: left; color: var(--muted); font-size: 12px; padding: 5px 8px; border-bottom: 1px solid var(--line); }
-  .rules td { padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
-  .rules tr.grp td { color: var(--warn); font-weight: 700; font-size: 12px; letter-spacing: .06em; padding-top: 14px; }
-  .settings { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; font-size: 14px; margin-bottom: 10px; }
-  .settings label { background: var(--card2); border-radius: 10px; padding: 7px 12px; display: flex; gap: 8px; align-items: center; }
-  .hist { background: var(--card2); border-radius: 12px; padding: 8px 12px; margin-bottom: 8px; border-left: 5px solid var(--c); }
-  .hist.bad { --c: var(--err-hi); } .hist.good { --c: var(--pt-hi); }
-  .hist .t { font-weight: 700; } .hist .d { font-size: 13px; color: var(--muted); }
-
-  /* ---- partite salvate ---- */
   .match-row { display: flex; align-items: center; gap: 10px; background: var(--card); border-radius: 12px; padding: 12px 14px; margin-top: 8px; }
   .match-row .grow { flex: 1; }
-  .match-row .sub { font-size: 13px; color: var(--muted); }
+  .match-row .sub { margin: 0; }
   .match-row button { background: var(--card2); padding: 10px 14px; border-radius: 10px; }
   .badge { font-size: 11px; font-weight: 700; background: var(--pt); padding: 2px 8px; border-radius: 999px; margin-left: 6px; }
-
-  .modal { position: fixed; inset: 0; background: rgba(0,0,0,.7); display: flex; align-items: center; justify-content: center; z-index: 40; }
+  .badge.dvw { background: var(--line); color: var(--muted); }
+  .modal { position: fixed; inset: 0; background: rgba(0,0,0,.7); display: flex; align-items: center; justify-content: center; z-index: 60; }
   .modal .box { background: var(--card); border-radius: 18px; padding: 22px; width: min(520px, 92vw); }
   .modal h3 { margin: 0 0 14px; font-size: 20px; }
   .modal p { color: var(--muted); }
-  .modal input { width: 100%; font-size: 18px; padding: 12px; border-radius: 10px; border: 1px solid var(--line);
-    background: var(--bg); color: var(--text); margin-bottom: 8px; -webkit-user-select: text; user-select: text; }
-  .modal .hint { font-size: 13px; color: var(--muted); margin: 0 0 14px; min-height: 18px; }
   .modal .row { display: flex; gap: 10px; }
   .modal .row button { flex: 1; padding: 16px; border-radius: 12px; font-size: 18px; font-weight: 600; }
-  .bnoi { background: var(--noi); } .bloro { background: var(--loro); } .bgrey { background: var(--line); } .bred { background: var(--err); }
+  .bnoi { background: var(--noi); } .bgrey { background: var(--line); } .bred { background: var(--err); }
 </style>
 </head>
 <body>
@@ -232,8 +267,8 @@
   <div class="title" id="title">Decimo Roma</div>
   <button class="tab active" data-view="live">Partita</button>
   <button class="tab" data-view="stats">Riepilogo</button>
-  <button class="tab" data-view="alerts">Avvisi<i id="alert-n" class="hidden"></i></button>
-  <button class="tab" data-view="saved">Partite salvate</button>
+  <button class="tab" data-view="calls">Chiamate<i id="call-n" class="hidden"></i></button>
+  <button class="tab" data-view="saved">Partite</button>
 </header>
 
 <section id="view-live">
@@ -241,31 +276,24 @@
     <div id="side-left"></div>
     <div class="center">
       <div class="score">
-        <div class="names"><span><span class="ball" id="ball-left"></span><span id="name-left"></span></span><span><span id="name-right"></span><span class="ball" id="ball-right"></span></span></div>
-        <div class="pts">
-          <span class="n" id="pt-left">0</span>
-          <span class="sep">–</span>
-          <span class="n" id="pt-right">0</span>
-        </div>
+        <div class="names"><span id="name-left"></span><span id="name-right"></span></div>
+        <div class="pts"><span class="n" id="pt-left">0</span><span class="sep">–</span><span class="n" id="pt-right">0</span></div>
         <div class="setinfo" id="setinfo"></div>
       </div>
       <div id="banner" class="banner hidden"></div>
-      <div class="strip" id="strip"></div>
-      <div class="rot"><div class="l">Rotazione Decimo (zona del palleggiatore) · tocca per correggere</div>
-        <div class="btns" id="rot-btns"></div></div>
+      <div class="goals" id="goals"></div>
+      <div class="next hidden" id="next"></div>
+      <div id="call"></div>
+      <div class="rotline" id="rotline"></div>
       <div class="tools">
-        <button id="undo">↶ Annulla ultimo</button>
+        <button id="undo">↶ Annulla</button>
         <button id="swap">⇄ Cambia campo</button>
-        <button class="to" id="to-noi" style="--team:var(--noi)"></button>
-        <button class="to" id="to-loro" style="--team:var(--loro)"></button>
         <button id="switch-serve">Cambia battuta</button>
         <button id="end-set">Chiudi set</button>
       </div>
-      <div class="log" id="log"></div>
     </div>
     <div id="side-right"></div>
   </div>
-  <div class="toast-wrap" id="toasts"></div>
 </section>
 
 <section id="view-stats" class="hidden">
@@ -273,835 +301,630 @@
   <div id="stats-body"></div>
 </section>
 
-<section id="view-alerts" class="hidden">
+<section id="view-calls" class="hidden">
+  <div id="calls-list"></div>
   <div class="card">
-    <div class="q">Avvisi di questa partita</div>
-    <div class="sub">Tutti quelli comparsi, anche quelli già chiusi, dal più recente.</div>
-    <div id="history"></div>
-  </div>
-  <div class="card">
-    <div class="q">Come funzionano</div>
-    <div class="settings">
-      <label>Tendenza sugli ultimi <select id="set-window"><option>6</option><option>8</option><option>10</option><option>15</option><option>20</option></select> scambi</label>
-      <label><input type="checkbox" id="set-good"> Avvisi positivi</label>
-      <span class="sub" id="ref-info" style="margin:0"></span>
-    </div>
-    <div class="sub">L'avviso compare in basso al centro nella schermata Partita e resta finché non lo chiudi con la X.
-      Se ce ne sono più di 3 aperti si vedono i 3 più recenti. Due tipi: <b>subito</b>, appena succede la cosa, e <b>tendenza</b>,
-      sulla finestra lunga e rispetto al solito (le ultime partite scoutizzate): con 6 ricezioni 2 su 6 può capitare, quindi l'avviso arriva solo quando lo scarto è troppo grande per essere un caso.
-      Lo stesso avviso non torna prima che sia passata un'altra finestra di scambi. Provate sulle ultime 10 partite: circa 5 avvisi a set, di cui 2 sono i break avversari da 3. "Annulla ultimo" toglie anche gli avvisi nati da quello scambio.</div>
-    <table class="rules">
-      <tr><th>Avviso</th><th>Quando</th></tr>
-      <tr class="grp"><td colspan="2">SUBITO · appena succede</td></tr>
-      <tr><td>🔴 Break avversario</td><td>loro 3 punti di fila nel set (si aggiorna a 4, 5…), con le cause e la nostra rotazione</td></tr>
-      <tr><td>🔴 1° attacco</td><td>2 errori o murate al nostro 1° attacco nelle ultime 3 ricezioni giocate</td></tr>
-      <tr><td>🔴 Battuta</td><td>2 nostri errori in battuta negli ultimi 3 turni in battuta</td></tr>
-      <tr><td>🔴 Ace subiti</td><td>2 ace subiti nelle ultime 4 ricezioni</td></tr>
-      <tr><td>🟢 Break nostro</td><td>noi 4 punti di fila nel set (si aggiorna a 5, 6…)</td></tr>
-      <tr><td>🟢 Rimonta</td><td>recuperati 4 punti da uno svantaggio di almeno 4 nel set</td></tr>
-      <tr class="grp"><td colspan="2">TENDENZA · ultimi N scambi, rispetto al solito</td></tr>
-      <tr><td>🔴 / 🟢 1° attacco</td><td>efficienza stimata del 1° attacco sotto / sopra il solito più di quanto possa fare il caso (almeno 5 ricezioni giocate)</td></tr>
-      <tr><td>🔴 / 🟢 Side-out</td><td>side-out sotto / sopra il solito più di quanto possa fare il caso (almeno 5 ricezioni)</td></tr>
-      <tr><td>🔴 / 🟢 Break-point</td><td>break-point sotto / sopra il solito più di quanto possa fare il caso (almeno 5 battute)</td></tr>
-      <tr><td>🔴 Errori gratuiti</td><td>3 nostre invasioni o altri errori nella finestra</td></tr>
-      <tr><td>🟢 Muro</td><td>3 nostri muri punto nella finestra</td></tr>
+    <div class="q">Come si leggono</div>
+    <div class="sub"><b>Affidabile al X%</b> = probabilità che la differenza sia vera e non dovuta al caso, sugli scambi di tutta la partita (avvicinati al solito finché sono pochi). Sotto il 65%: "nessuna differenza".</div>
+    <table class="leg">
+      <tr><th>vs solito ↓ · vs loro →</th><th>▲ meglio</th><th>● come loro</th><th>▼ peggio</th></tr>
+      <tr><th class="up">▲ meglio del solito</th><td><span class="vb good">Ci fa vincere</span></td><td><span class="vb good">Sopra il solito</span></td><td><span class="vb amb">Meglio, ma non basta</span></td></tr>
+      <tr><th class="eq">● come al solito</th><td><span class="vb good">Ci fa vincere</span></td><td><span class="vb neu">Alla pari</span></td><td><span class="vb amb">Ok, ma non basta</span></td></tr>
+      <tr><th class="dn">▼ peggio del solito</th><td><span class="vb amb">Sottotono, ma basta</span></td><td><span class="vb bad">Sottotono</span></td><td><span class="vb bad">Sottotono</span></td></tr>
     </table>
   </div>
 </section>
 
 <section id="view-saved" class="hidden">
-  <div class="tools" style="grid-template-columns: auto 1fr; margin-top: 4px">
-    <button id="new-match" class="bnoi" style="background: var(--noi); font-weight: 600">+ Nuova partita</button>
-    <div></div>
+  <div style="display:flex;gap:10px;align-items:center;margin-top:6px">
+    <button id="new-match" class="bnoi" style="padding:12px 18px;border-radius:12px;font-weight:600">+ Nuova partita</button>
+    <span class="muted" id="ref-info" style="font-size:13px"></span>
   </div>
   <div id="saved-list"></div>
 </section>
 
+<div class="sheet-wrap hidden" id="sheet"><div class="sheet" id="sheet-box"></div></div>
 <div class="modal hidden" id="modal"><div class="box" id="modal-box"></div></div>
 
+<script src="core.js"></script>
 <script>
-const KEY = 'volley-live-v2';
-const ICONS = {
-  attack: '<path d="M4 3l9 9"/><path d="M13 6v6H7"/><circle cx="18" cy="18" r="3.5"/>',
-  block:  '<rect x="4" y="3" width="6" height="11" rx="3"/><rect x="14" y="3" width="6" height="11" rx="3"/><path d="M2 18h20M2 21.5h20"/>',
-  serve:  '<circle cx="6" cy="18" r="3.5"/><path d="M8.5 15C11 7 16 4 21 5"/><path d="M17.5 3l3.5 2-2 3.5"/>',
-  set:    '<circle cx="12" cy="4.5" r="2.8"/><path d="M9.5 9.5L7 13v8M14.5 9.5L17 13v8"/>',
-  net:    '<path d="M3 5h18M3 19h18M6 5v14M12 5v14M18 5v14M3 12h18"/>',
-};
-const icon = k => `<svg class="ic" viewBox="0 0 24 24">${ICONS[k]}</svg>`;
-
-// Azioni registrate: "actor" è la squadra che fa l'azione. pt = l'azione dà il punto a chi la fa.
-// Murata (mur_*): chi la fa è chi attacca (perde il punto); si segna anche dal "Muro punto" dell'altra squadra.
-// Le stesse chiavi le usa src/live_reference.py per i valori "di solito" dai .dvw.
-const ACTIONS = {
-  att_pt_1:  { pt: true,  voce: 'primo', label: 'attacco punto al 1° attacco' },
-  att_pt_s:  { pt: true,  voce: 'succ',  label: 'attacco punto successivo' },
-  err_att_1: { pt: false, voce: 'primo', label: 'errore al 1° attacco' },
-  err_att_s: { pt: false, voce: 'succ',  label: 'errore in attacco successivo' },
-  mur_1:     { pt: false, voce: 'primo', label: 'murata al 1° attacco' },
-  mur_s:     { pt: false, voce: 'succ',  label: 'murata in attacco successivo' },
-  ace:       { pt: true,  voce: 'battuta', label: 'ace' },
-  err_battuta: { pt: false, voce: 'battuta', label: 'errore in battuta' },
-  invasione: { pt: false, voce: 'gratuiti', label: 'invasione' },
-  altro:     { pt: false, voce: 'gratuiti', label: 'altro errore' },
-  // partite segnate con la versione precedente dell'app (attacco e muro non distinti)
-  attacco:     { pt: true,  voce: 'nd', label: 'attacco punto' },
-  err_attacco: { pt: false, voce: 'nd', label: 'errore in attacco' },
-  muro:        { pt: true,  voce: 'nd', label: 'muro punto', blocker: true },
-  err_muro:    { pt: false, voce: 'gratuiti', label: 'errore a muro' },
-  err_alzata:  { pt: false, voce: 'gratuiti', label: 'errore di alzata' },
-};
-// pulsanti: action registrata e se chi la fa è l'altra squadra (muro punto = murata di chi attacca)
-const BUTTONS = {
-  b_att_pt_1:  { action: 'att_pt_1' },  b_att_pt_s: { action: 'att_pt_s' },
-  b_muro_1:    { action: 'mur_1', byOther: true }, b_muro_s: { action: 'mur_s', byOther: true },
-  b_ace:       { action: 'ace' },
-  b_err_att_1: { action: 'err_att_1' }, b_err_att_s: { action: 'err_att_s' },
-  b_mur_1:     { action: 'mur_1' }, b_mur_s: { action: 'mur_s' },
-  b_err_bat:   { action: 'err_battuta' }, b_inv: { action: 'invasione' }, b_altro: { action: 'altro' },
-};
-const VOCI = {
-  primo:    { label: '1° attacco dopo ricezione', how: 'punti − errori − murate' },
-  succ:     { label: 'Attacchi successivi e contrattacco', how: 'punti − errori − murate' },
-  nd:       { label: 'Attacco (non distinto)', how: 'partite segnate prima della divisione' },
-  battuta:  { label: 'Battuta', how: 'ace − errori' },
-  gratuiti: { label: 'Errori gratuiti', how: 'invasioni, alzata, doppia, posizione…' },
-};
-const other = t => (t === 'noi' ? 'loro' : 'noi');
+'use strict';
+const C = window.Core;
+const KEY = 'volley-live-v3';
+const BALL = '<svg class="vball" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 2c3 3 4 7 3.2 11M3.3 7.2c4.2-.8 8.4.6 11.9 3.8M20.7 7.2c-2.2 3.6-2.6 8-1.3 12.4M2.2 13.6c3.3 2.9 7.9 4.2 12.7 3.5M8.6 21.4c-.6-4.4.8-8.7 4-12"/></svg>';
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const pct = x => (x === null || x === undefined || isNaN(x) ? '–' : Math.round(100 * x) + '%');
-const dec = (x, d = 1) => (x === null || isNaN(x) ? '–' : x.toFixed(d).replace('.', ','));
+const pc = x => (x === null || x === undefined || isNaN(x) ? '–' : Math.round(100 * x) + '%');
 const sgn = x => (x > 0 ? '+' + x : x < 0 ? '−' + Math.abs(x) : '0');
-const owner = r => (ACTIONS[r.action].blocker ? other(r.actor) : r.actor);   // di chi è la voce dello scambio
-const voceOf = r => ACTIONS[r.action].voce;
+const sgn1 = x => { const r = Math.round(x * 10) / 10; return (r > 0 ? '+' : r < 0 ? '−' : '') + String(Math.abs(r)).replace('.', ','); };
 
-// ---------- salvataggio ----------
-// Tutte le partite stanno in localStorage e si salvano a ogni tocco: se l'app si chiude
-// o crasha si riparte esattamente da dove si era. Si cancellano solo a mano.
+// ---------- salvataggio: tutto in localStorage, a ogni tocco ----------
 let db = loadDb();
-db.settings = Object.assign({ window: 10, good: true }, db.settings || {});
-let statsSet = 'tutti';
-let REF = null;   // riferimenti.json: rendimento passato (src/live_reference.py)
-
 function loadDb() {
-  try {
-    const d = JSON.parse(localStorage.getItem(KEY));
-    if (d) return d;
-  } catch (e) {}
-  return { matches: [], currentId: null, swap: false };
+  try { const d = JSON.parse(localStorage.getItem(KEY)); if (d) return d; } catch (e) {}
+  return { matches: [], currentId: null, swap: false, extra: [], removedImports: [] };
 }
-function save() {
-  db.savedAt = new Date().toISOString();
-  localStorage.setItem(KEY, JSON.stringify(db));
-}
+function save() { db.savedAt = new Date().toISOString(); localStorage.setItem(KEY, JSON.stringify(db)); }
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
-
 const cur = () => db.matches.find(m => m.id === db.currentId) || null;
 const teamName = (m, t) => (t === 'noi' ? 'Decimo' : m.opponent);
+const decimoLeft = () => !db.swap;
 
-// ---------- riferimenti ("di solito") ----------
+// ---------- riferimenti ("di solito") e partite già giocate dai .dvw ----------
+let REF = null;
 const normTeam = s => { const w = String(s).toLowerCase().trim().split(/\s+/); if (w.length > 1 && w[w.length - 1] === 'd') w.pop(); return w.join(' '); };
 function findRefKey(name) {
   if (!REF || !name) return null;
   const n = normTeam(name), keys = Object.keys(REF.squadre);
   return keys.find(k => k === n) || keys.find(k => k.includes(n) || n.includes(k)) || null;
 }
-const refTot = (m, t) => (!REF ? null : t === 'noi' ? REF.decimo.totali : (m.refKey && REF.squadre[m.refKey] ? REF.squadre[m.refKey].totali : null));
-const eff1 = c => (c && c.ric_gioco ? (c.pt1 - c.err1 - c.mur1) / c.ric_gioco : null);
-fetch('riferimenti.json').then(r => r.json()).then(j => {
-  REF = j;
-  db.matches.forEach(m => { if (m.refKey === undefined) m.refKey = findRefKey(m.opponent); });
-  render();
+fetch('riferimenti.json').then(r => r.json()).then(j => { REF = j; render(); }).catch(() => {});
+fetch('partite.json').then(r => r.json()).then(j => {
+  let added = 0;
+  (j.partite || []).forEach(p => {
+    if (db.matches.some(m => m.id === p.id) || (db.removedImports || []).includes(p.id)) return;
+    db.matches.push(Object.assign({ calls: [] }, p)); added++;
+  });
+  if (added) { save(); render(); }
 }).catch(() => {});
 
-// ---------- stato del set ----------
-// Punteggio, battuta e rotazione si ricavano sempre dagli scambi registrati
-// (così "annulla" è banale e niente può andare fuori sincrono).
-function setStatus(m, n) {
-  const set = m.sets[n - 1];
-  const rallies = m.rallies.filter(r => r.set === n);
-  const pts = { noi: 0, loro: 0 };
-  let server = set.firstServer;
-  // rotazione = zona del nostro palleggiatore: a ogni nostro cambio palla si ruota
-  // (P1 -> P6 -> P5 ...); le correzioni a mano valgono da quello scambio in poi
-  let rot = set.startRot || null;
-  const fix = i => (set.rotFixes || []).filter(f => f.at === i).forEach(f => { rot = f.rot; });
-  rallies.forEach((r, i) => {
-    fix(i);
-    pts[r.winner]++; server = r.winner;
-    if (rot && r.winner === 'noi' && r.server === 'loro') rot = rot === 1 ? 6 : rot - 1;
-  });
-  fix(rallies.length);
-  if (set.serverOverride) server = set.serverOverride;
-  const target = n === 5 ? 15 : 25;
-  const auto = Math.max(pts.noi, pts.loro) >= target && Math.abs(pts.noi - pts.loro) >= 2
-    ? (pts.noi > pts.loro ? 'noi' : 'loro') : null;
-  return { pts, server, rot, winner: set.closedBy || auto, rallies };
-}
-function setsWon(m) {
-  const w = { noi: 0, loro: 0 };
-  m.sets.forEach((_, i) => { const s = setStatus(m, i + 1); if (s.winner) w[s.winner]++; });
-  return w;
-}
-function partials(m) {
-  return m.sets.map((_, i) => setStatus(m, i + 1)).filter(s => s.rallies.length)
-    .map(s => `${s.pts.noi}-${s.pts.loro}`).join(', ');
-}
-const timeouts = (m, n) => m.sets[n - 1].timeouts || [];
-
+// ---------- azioni sulla partita ----------
+function push(e) { const m = cur(); m.events.push(Object.assign({ set: m.sets.length }, e)); }
 function addRally(t, key) {
-  const m = cur(), n = m.sets.length, st = setStatus(m, n), b = BUTTONS[key];
-  const actor = b.byOther ? other(t) : t;
-  const winner = ACTIONS[b.action].pt ? actor : other(actor);
-  m.rallies.push({
-    set: n, actor, action: b.action, winner, server: st.server, rot: st.rot,
-    fase: winner === st.server ? 'BP' : 'SO',
-    noi: st.pts.noi + (winner === 'noi' ? 1 : 0),
-    loro: st.pts.loro + (winner === 'loro' ? 1 : 0),
-    ora: new Date().toTimeString().slice(0, 8),
-  });
-  delete m.sets[n - 1].serverOverride;
-  checkAlerts(m);
+  const m = cur(), b = C.BUTTONS[key], actor = b.byOther ? C.other(t) : t;
+  const winner = C.ACTIONS[b.action].pt ? actor : C.other(actor);
+  push({ t: 'r', actor, action: b.action, winner, ora: new Date().toTimeString().slice(0, 8) });
+  C.updateCalls(m, REF);
   save(); render();
 }
-
-function callTimeout(t) {
-  const m = cur(), n = m.sets.length, st = setStatus(m, n), set = m.sets[n - 1];
-  if (st.winner || timeouts(m, n).filter(x => x.team === t).length >= 2) return;
-  (set.timeouts = set.timeouts || []).push({ team: t, at: st.rallies.length, noi: st.pts.noi, loro: st.pts.loro });
-  save(); render();
-}
-
 function undo() {
   const m = cur(); if (!m) return;
-  const n = m.sets.length, set = m.sets[n - 1], len = setStatus(m, n).rallies.length;
-  if (set.closedBy) delete set.closedBy;
-  else if (set.serverOverride) delete set.serverOverride;
-  else if ((set.timeouts || []).length && set.timeouts[set.timeouts.length - 1].at === len) set.timeouts.pop();
-  else if ((set.rotFixes || []).some(f => f.at === len)) set.rotFixes.pop();
-  else if (m.rallies.length && m.rallies[m.rallies.length - 1].set === n) m.rallies.pop();
+  const n = m.sets.length, idx = m.events.map(e => e.set).lastIndexOf(n);
+  if (idx >= 0) m.events.splice(idx, 1);
   else if (n > 1) m.sets.pop();
-  m.alerts = (m.alerts || []).filter(a => a.at <= m.rallies.length);
+  const st = C.replay(m, m.sets.length);
+  m.calls = (m.calls || []).filter(c => c.set < m.sets.length || (c.set === m.sets.length && c.at <= st.rallies.length));
   save(); render();
 }
 
-// ---------- conteggi (stesse definizioni di src/live_reference.py) ----------
-function counts(rs, t, withRot) {
-  const o = other(t), c = f => rs.filter(f).length;
-  const mine = r => owner(r) === t, A = (r, k) => r.action === k;
-  const lostServe = r => r.server === o && owner(r) === o && (A(r, 'ace') || A(r, 'err_battuta'));
-  const out = {
-    scambi: rs.length,
-    ric: c(r => r.server === o), so: c(r => r.server === o && r.winner === t),
-    bat: c(r => r.server === t), bp: c(r => r.server === t && r.winner === t),
-    ric_gioco: c(r => r.server === o && !lostServe(r)),
-    pt1: c(r => mine(r) && A(r, 'att_pt_1')), err1: c(r => mine(r) && A(r, 'err_att_1')), mur1: c(r => mine(r) && A(r, 'mur_1')),
-    pts: c(r => mine(r) && A(r, 'att_pt_s')), errs: c(r => mine(r) && A(r, 'err_att_s')), murs: c(r => mine(r) && A(r, 'mur_s')),
-    ace: c(r => mine(r) && A(r, 'ace')), err_bat: c(r => mine(r) && A(r, 'err_battuta')),
-    muri: c(r => (owner(r) === o && (A(r, 'mur_1') || A(r, 'mur_s'))) || (A(r, 'muro') && r.actor === t)),
-    gratuiti: c(r => mine(r) && voceOf(r) === 'gratuiti'),
-  };
-  if (withRot) {
-    out.rot = {};
-    for (let z = 1; z <= 6; z++) out.rot[z] = counts(rs.filter(r => r.rot === z), t, false);
-  }
-  return out;
-}
-// saldo per voce: ogni scambio sta in una sola voce, quella della squadra che fa l'azione
-function balance(rs) {
-  const out = {};
-  Object.keys(VOCI).forEach(v => { out[v] = { noi: 0, loro: 0, n: 0 }; });
-  rs.forEach(r => {
-    const v = voceOf(r), o = owner(r);
-    out[v][o] += r.winner === o ? 1 : -1; out[v].n++;
-  });
-  Object.values(out).forEach(x => { x.net = x.noi - x.loro; });
-  return out;
-}
-function voceDetail(rs, v, t) {
-  const mine = rs.filter(r => voceOf(r) === v && owner(r) === t), c = k => mine.filter(r => r.action === k).length;
-  if (v === 'primo') return `${c('att_pt_1')} pt · ${c('err_att_1')} err · ${c('mur_1')} murate`;
-  if (v === 'succ') return `${c('att_pt_s')} pt · ${c('err_att_s')} err · ${c('mur_s')} murate`;
-  if (v === 'battuta') return `${c('ace')} ace · ${c('err_battuta')} err`;
-  if (v === 'gratuiti') return `${c('invasione') + c('err_muro')} invasioni · ${c('altro') + c('err_alzata')} altri`;
-  return `${c('attacco') + c('muro')} pt · ${c('err_attacco')} err`;
-}
-// cause di una serie di punti, raggruppate: "Decimo: errore al 1° attacco ×2 · Prati: ace"
-function causes(m, rs) {
-  const parts = ['noi', 'loro'].map(t => {
-    const g = {};
-    rs.filter(r => owner(r) === t).forEach(r => { g[ACTIONS[r.action].label] = (g[ACTIONS[r.action].label] || 0) + 1; });
-    const s = Object.entries(g).sort((a, b) => b[1] - a[1]).map(([l, k]) => l + (k > 1 ? ' ×' + k : '')).join(', ');
-    return s ? `${esc(teamName(m, t))}: ${s}` : '';
-  }).filter(Boolean);
-  return parts.join(' · ');
-}
-
-// ---------- avvisi ----------
-// Ogni regola guarda gli scambi fino a un certo punto; un avviso nasce quando la regola
-// diventa vera con l'ultimo scambio (era falsa senza). Le serie si aggiornano (0-3, 0-4…).
-function lastRun(rs) {
-  if (!rs.length) return null;
-  const w = rs[rs.length - 1].winner; let k = 0;
-  while (k < rs.length && rs[rs.length - 1 - k].winner === w) k++;
-  return { w, k, start: rs.length - k };
-}
-function trendRules(m, rs) {
-  const N = db.settings.window, win = rs.slice(-N), out = [];
-  if (rs.length < N) return out;
-  const c = counts(win, 'noi'), ref = refTot(m, 'noi');
-  if (!ref) return out;
-  // avviso solo se lo scarto dal solito non si spiega col caso: con n azioni la deviazione
-  // standard della media è sd/√n; serve uno scarto di almeno Z volte quella (e almeno 5 azioni)
-  const Z = 1.8;
-  const rule = (key, n, val, refv, sd, label, shown, sub) => {
-    if (n < 5 || refv === null) return;
-    const diff = val - refv;
-    if (Math.abs(diff) * Math.sqrt(n) / sd < Z) return;
-    out.push({ key: key + (diff < 0 ? '-' : '+'), k: diff < 0 ? 'bad' : 'good',
-      t: `${label} ${diff < 0 ? 'in calo' : 'sopra il solito'}: ${shown}`, d: `ultimi ${N} scambi · di solito ${pct(refv)} · ${sub}` });
-  };
-  const sdP = p => Math.sqrt(p * (1 - p));
-  const pp = ref.pt1 / ref.ric_gioco, pn = (ref.err1 + ref.mur1) / ref.ric_gioco;
-  rule('eff1', c.ric_gioco, eff1(c), eff1(ref), Math.sqrt(pp + pn - (pp - pn) ** 2), '1° attacco', pct(eff1(c)),
-    `${c.pt1} punti, ${c.err1} errori, ${c.mur1} murate su ${c.ric_gioco} ricezioni`);
-  rule('so', c.ric, c.so / c.ric, ref.so / ref.ric, sdP(ref.so / ref.ric), 'Side-out', `${c.so} su ${c.ric}`, 'cambi palla vinti');
-  rule('bp', c.bat, c.bp / c.bat, ref.bp / ref.bat, sdP(ref.bp / ref.bat), 'Break-point', `${c.bp} su ${c.bat}`, 'punti in battuta');
-  if (c.gratuiti >= 3) out.push({ key: 'grat', k: 'bad', t: `${c.gratuiti} errori gratuiti negli ultimi ${N} scambi`, d: 'invasioni, alzate, doppie, posizione' });
-  if (c.muri >= 3) out.push({ key: 'muri', k: 'good', t: `Il muro sta funzionando: ${c.muri} muri punto`, d: `ultimi ${N} scambi · di solito ${dec(ref.muri / ref.scambi * N)}` });
-  return out;
-}
-function quickRules(m, rs) {
-  const out = [], n = rs.length ? rs[rs.length - 1].set : 1, inSet = rs.filter(r => r.set === n);
-  const recv = rs.filter(r => r.server === 'loro'), serv = rs.filter(r => r.server === 'noi');
-  const played = recv.filter(r => !(owner(r) === 'loro' && (r.action === 'ace' || r.action === 'err_battuta')));
-  const l3 = played.slice(-3), e1 = l3.filter(r => owner(r) === 'noi' && (r.action === 'err_att_1' || r.action === 'mur_1')).length;
-  if (e1 >= 2) out.push({ key: 'primo', k: 'bad', t: `1° attacco: ${e1} errori o murate nelle ultime 3 ricezioni`,
-    d: causes(m, l3.filter(r => owner(r) === 'noi' && (r.action === 'err_att_1' || r.action === 'mur_1'))) });
-  const s3 = serv.slice(-3), eb = s3.filter(r => r.action === 'err_battuta' && owner(r) === 'noi').length;
-  if (eb >= 2) out.push({ key: 'bat', k: 'bad', t: `${eb} errori in battuta negli ultimi 3 turni`, d: refTot(m, 'noi') ? `di solito 1 ogni ${dec(refTot(m, 'noi').bat / refTot(m, 'noi').err_bat)} turni` : '' });
-  const r4 = recv.slice(-4), ac = r4.filter(r => r.action === 'ace' && owner(r) === 'loro').length;
-  if (ac >= 2) out.push({ key: 'ace', k: 'bad', t: `${ac} ace subiti nelle ultime 4 ricezioni`, d: '' });
-  // rimonta: recuperati 3 punti dal massimo svantaggio del set
-  let minDiff = 0; inSet.forEach(r => { minDiff = Math.min(minDiff, r.noi - r.loro); });
-  const last = inSet[inSet.length - 1];
-  if (last && minDiff <= -4 && (last.noi - last.loro) - minDiff >= 4) {
-    const lowAt = inSet.findIndex(r => r.noi - r.loro === minDiff), low = inSet[lowAt];
-    out.push({ key: `rimonta-${n}-${lowAt}`, k: 'good', t: `Rimonta: da ${low.noi}-${low.loro} a ${last.noi}-${last.loro}`, d: causes(m, inSet.slice(lowAt + 1)) });
-  }
-  return out;
-}
-function checkAlerts(m) {
-  m.alerts = m.alerts || [];
-  const rs = m.rallies, n = rs[rs.length - 1].set, prev = rs.slice(0, -1);
-  const at = rs.length, last = rs[rs.length - 1], score = `${last.noi}-${last.loro}`;
-  const push = a => {
-    if (a.k === 'good' && !db.settings.good) return;
-    m.alerts.push({ ...a, id: Date.now() + Math.random(), set: n, at, score, open: true });
-  };
-  // serie di punti nel set: nasce a 3, poi lo stesso avviso si aggiorna e si riapre
-  const run = lastRun(rs.filter(r => r.set === n));
-  if (run && run.k >= (run.w === 'loro' ? 3 : 4)) {
-    const setRs = rs.filter(r => r.set === n), from = setRs[run.start - 1];
-    const fromScore = from ? `${from.noi}-${from.loro}` : '0-0', key = `run-${n}-${run.start}`;
-    const rot = run.w === 'loro' && last.server === 'loro' && last.rot ? ` · ancora in P${setStatus(m, n).rot || last.rot}` : '';
-    const usual = run.w === 'loro' && last.rot && REF && REF.decimo.totali.rot[last.rot]
-      ? ` (di solito in P${last.rot} ci servono ${dec(REF.decimo.totali.rot[last.rot].ric / REF.decimo.totali.rot[last.rot].so)} ricezioni)` : '';
-    const a = { key, k: run.w === 'noi' ? 'good' : 'bad',
-      t: run.w === 'noi' ? `Break nostro: ${run.k}-0 da ${fromScore}` : `Break di ${m.opponent}: 0-${run.k} da ${fromScore}`,
-      d: causes(m, setRs.slice(run.start)) + rot + usual };
-    const old = m.alerts.find(x => x.key === key);
-    if (old) Object.assign(old, a, { at, score, open: true });
-    else push(a);
-  }
-  // le altre regole: avviso quando diventano vere con questo scambio, e non prima che sia
-  // passata una finestra di scambi dall'ultima volta (se la situazione oscilla non si ripete)
-  const before = new Set([...quickRules(m, prev), ...trendRules(m, prev)].map(a => a.key));
-  const recent = key => m.alerts.some(x => x.key === key && at - x.at < db.settings.window);
-  [...quickRules(m, rs), ...trendRules(m, rs)].forEach(a => { if (!before.has(a.key) && !recent(a.key)) push(a); });
-}
-
-function renderToasts(m) {
-  const wrap = document.getElementById('toasts');
-  const open = (m && m.alerts || []).filter(a => a.open);
-  const badge = document.getElementById('alert-n');
-  badge.textContent = open.length; badge.classList.toggle('hidden', !open.length);
-  if (view !== 'live') { wrap.innerHTML = ''; return; }
-  const vis = open.slice(-3).reverse(), more = open.length - vis.length;
-  wrap.innerHTML = vis.map(a => `<div class="toast ${a.k}"><div class="ico">${a.k === 'bad' ? '🔴' : '🟢'}</div>
-    <div style="flex:1"><div class="t">${esc(a.t)}</div>${a.d ? `<div class="d">${esc(a.d)}</div>` : ''}</div>
-    <button class="x" data-close="${a.id}" aria-label="Chiudi">✕</button></div>`).join('')
-    + (more > 0 ? `<button class="toast-more" data-goto="alerts">+${more} altri avvisi aperti</button>` : '');
-}
-
-// ---------- partita ----------
-const sit = first => first ? '1° ATTACCO <small>dopo ricezione</small>' : 'ATTACCO SUCCESSIVO';
+// ---------- partita: render ----------
+const svgRot = d => `<svg viewBox="0 0 24 24">${d}</svg>`;
 function panelHtml(m, t, st) {
   const serving = st.server === t, recv = !serving, live = !st.winner;
-  const b = (key, cls, ic, txt, small, on) => `<button class="act ${cls}" data-t="${t}" data-a="${key}" ${live && on ? '' : 'disabled'}>
-    ${icon(ic)}<span>${txt}${small ? `<small>${small}</small>` : ''}</span></button>`;
-  const s = (key, cls, first, txt, on) => `<button class="act ${cls} ${first ? 'first' : 'next'}" data-t="${t}" data-a="${key}" ${live && on ? '' : 'disabled'}>
-    <span class="sit">${sit(first)}</span><span>${txt}</span></button>`;
-  const lanes = `<div class="lanes"><div class="lane-h first">1° ATTACCO<small>dopo ricezione</small></div><div class="lane-h next">ATTACCO SUCCESSIVO</div></div>`;
+  const b = (key, cls, txt, small, on) => `<button class="act ${cls}" data-t="${t}" data-a="${key}" ${live && on ? '' : 'disabled'}>${txt}${small ? `<small>${small}</small>` : ''}</button>`;
+  const tos = st.timeouts.filter(x => x.team === t);
+  const subsN = t === 'noi' ? st.subs.length : st.oppSubs.length;
+  const log = (t === 'noi'
+    ? tos.map(x => ({ at: x.at, h: `Timeout ${x.noi}-${x.loro}` })).concat(st.subs.map(s => ({ at: s.at, h: `<b>${esc(C.nameOf(m, s.in))}</b> per ${esc(C.nameOf(m, s.out))} · ${s.noi}-${s.loro}` })))
+    : tos.map(x => ({ at: x.at, h: `Timeout ${x.noi}-${x.loro}` }))).sort((a, c) => a.at - c.at).map(x => x.h);
   return `<div class="panel ${t}">
     <h2>${esc(teamName(m, t))}</h2>
-    <div class="status ${serving ? 'serve' : ''}">${serving ? '● IN BATTUTA · punto = break-point' : 'IN RICEZIONE · punto = side-out'}</div>
-    <div class="zl pt">PUNTI</div>${lanes}
+    <div class="status ${serving ? 'serve' : ''}">${serving ? BALL + 'IN BATTUTA' : 'IN RICEZIONE'}</div>
+    <div class="zl pt">PUNTI</div>
     <div class="g2">
-      ${s('b_att_pt_1', 'pt', true, 'Attacco punto', recv)}
-      ${s('b_att_pt_s', 'pt', false, 'Attacco punto', true)}
-      ${s('b_muro_1', 'pt', true, 'Muro punto', serving)}
-      ${s('b_muro_s', 'pt', false, 'Muro punto', true)}
-      ${b('b_ace', 'pt full', 'serve', 'Ace', 'solo chi batte', serving)}
+      ${b('b_att_pt_1', 'pt', 'Attacco punto', '1° attacco', recv)}
+      ${b('b_att_pt_s', 'pt next', 'Attacco punto', 'successivo', true)}
+      ${b('b_muro_1', 'pt', 'Muro punto', '1° attacco', serving)}
+      ${b('b_muro_s', 'pt next', 'Muro punto', 'successivo', true)}
+      ${b('b_ace', 'pt full', 'Ace', '', serving)}
     </div>
-    <div class="zone err"><div class="zl err">ERRORI · punto agli avversari</div>${lanes}
+    <div class="zl err">ERRORI</div>
     <div class="g2">
-      ${s('b_err_att_1', 'err', true, 'Errore attacco', recv)}
-      ${s('b_err_att_s', 'err', false, 'Errore attacco', true)}
-      ${s('b_mur_1', 'mur', true, 'Attacco murato', recv)}
-      ${s('b_mur_s', 'mur', false, 'Attacco murato', true)}
-      ${b('b_err_bat', 'err', 'serve', 'Errore battuta', 'solo chi batte', serving)}
-      ${b('b_inv', 'err', 'net', 'Invasione', 'rete a muro', true)}
-      ${b('b_altro', 'err full', 'set', 'Altro errore', 'alzata, doppia, fallo di posizione, rete in difesa', true)}
-    </div></div>
+      ${b('b_err_att_1', 'err', 'Errore attacco', '1° attacco', recv)}
+      ${b('b_err_att_s', 'err next', 'Errore attacco', 'successivo', true)}
+      ${b('b_mur_1', 'mur', 'Murato', '1° attacco', recv)}
+      ${b('b_mur_s', 'mur next', 'Murato', 'successivo', true)}
+      ${b('b_err_bat', 'err', 'Errore battuta', '', serving)}
+      ${b('b_inv', 'err', 'Invasione', '', true)}
+      ${b('b_altro', 'err full', 'Altro errore', 'alzata, doppia, posizione…', true)}
+    </div>
+    <div class="tc">
+      <button data-to="${t}" ${tos.length >= C.MAX_TO || st.winner ? 'disabled' : ''}>Timeout<span class="dots">${[0, 1].map(i => `<i class="${i < tos.length ? 'on' : ''}"></i>`).join('')}</span></button>
+      <button data-subs="${t}" ${st.winner ? 'disabled' : ''}>Cambi ${subsN}/${C.MAX_SUBS}${t === 'loro' ? ' +' : ''}</button>
+    </div>
+    <div class="sublog">${log.join('<br>')}${t === 'loro' && subsN ? (log.length ? '<br>' : '') + `${subsN} cambi` : ''}</div>
   </div>`;
 }
-function logText(m, r) {
-  const a = ACTIONS[r.action], who = esc(teamName(m, owner(r)));
-  if (r.action === 'mur_1' || r.action === 'mur_s')
-    return `Muro ${esc(teamName(m, r.winner))} su ${r.action === 'mur_1' ? '1° attacco' : 'attacco successivo'} ${who}`;
-  return `${who}: ${a.label}`;
-}
-function stripHtml(m, n) {
-  const rs = m.rallies.filter(r => r.set === n);
-  if (!rs.length) return `<div class="l">SET ${n} · DOVE PERDIAMO / GUADAGNIAMO</div><div class="pills"><span class="pill neu">nessuno scambio</span></div>`;
-  const bal = balance(rs), vs = Object.entries(bal).filter(([, x]) => x.net !== 0).sort((a, b) => a[1].net - b[1].net);
-  const neg = vs.filter(([, x]) => x.net < 0).slice(0, 2), pos = vs.filter(([, x]) => x.net > 0).slice(-2).reverse();
-  const short = { primo: '1° attacco', succ: 'Successivi', nd: 'Attacco', battuta: 'Battuta', gratuiti: 'Errori gratuiti' };
-  const N = db.settings.window, last = m.rallies.slice(-N), w = last.filter(r => r.winner === 'noi').length;
-  return `<div class="l">SET ${n} · DOVE PERDIAMO / GUADAGNIAMO</div><div class="pills">
-    ${neg.map(([v, x]) => `<span class="pill bad">${short[v]} ${sgn(x.net)}</span>`).join('')}
-    ${pos.map(([v, x]) => `<span class="pill good">${short[v]} ${sgn(x.net)}</span>`).join('')}
-    <span class="pill neu">Ultimi ${last.length}: ${w}-${last.length - w}</span></div>`;
-}
 
+// tiro alla fune: per ogni obiettivo la barra di ciascuna squadra cresce dal centro verso il suo lato
+const RANGE = { bat: [-5, 3], a1: [-2, 8], ac: [-2, 8], muri: [0, 6], grat: [0, 6] };
+const fmtG = (k, v) => (k === 'muri' || k === 'grat' ? (Number.isInteger(v) ? String(v) : String(Math.round(v * 10) / 10).replace('.', ',')) : (Number.isInteger(v) ? sgn(v) : sgn1(v)));
+function half(it, side, cls, showT, pace) {
+  const k = it.g.k, [lo, hi] = RANGE[k], w = u => Math.max(0, Math.min(1, (u - lo) / (hi - lo))) * 92;
+  const fw = Math.max(w(it.v), 2), pos = side === 'L' ? 'right' : 'left';
+  const near = Math.abs(w(it.thr) - fw) < 8, inside = fw >= 16;
+  const where = !inside ? `${pos}:${fw + 1}%` : near ? `${pos}:${fw / 2}%;--tx:${side === 'L' ? '50%' : '-50%'}` : `${pos}:${fw - 1}%`;
+  return `<div class="hf ${side}"><div class="fi ${cls}" style="width:${fw}%"></div>
+    <span class="bv ${inside ? 'in' : 'out'}" style="${where}">${fmtG(k, it.v)}</span>
+    <div class="mx" style="${pos}:${w(it.thr)}%">${showT ? `<span class="tl">${it.g.dir < 0 ? 'max ' + it.thr : fmtG(k, it.thr)}</span>` : ''}</div>
+    ${pace !== null && pace !== undefined ? `<div class="now" style="${pos}:${w(pace)}%"></div>` : ''}</div>`;
+}
+// rows: [{label, items (da goalState), done}]; decimoLeft: Decimo dalla parte sinistra
+function tugHtml(m, rows, dLeft) {
+  const multi = rows.length > 1, sideOf = t => ((t === 'loro' ? !dLeft : dLeft) ? 'L' : 'R');
+  const col = (g, t) => `<div>${rows.map((r, i) => {
+    const it = r.items.find(x => x.g.k === g.k && x.t === t);
+    const bar = half(it, sideOf(t), C.goalClass(it, r.done), i === 0, r.done ? null : it.pace);
+    const lab = multi ? `<i>${r.label}</i>` : '';
+    return `<div class="ln">${sideOf(t) === 'L' ? bar + lab : lab + bar}</div>`;
+  }).join('')}</div>`;
+  const head = t => `<span style="color:var(--${t});text-align:${sideOf(t) === 'L' ? 'right' : 'left'}">${sideOf(t) === 'L' ? '◀ ' : ''}${esc(teamName(m, t))}${sideOf(t) === 'R' ? ' ▶' : ''}</span>`;
+  const [Lt, Rt] = dLeft ? ['noi', 'loro'] : ['loro', 'noi'];
+  const vale = g => (REF && REF.modello ? Math.round(100 * Math.abs(REF.modello.vale[g.k])) + '%' : '');
+  return `<div class="tug-h">${head(Lt)}<span></span>${head(Rt)}</div>` + C.GOALS.map(g => `<div class="tug">${col(g, Lt)}
+    <div class="mid"><b>${g.name}</b><small>${g.how ? g.how + '<br>' : ''}${g.dir < 0 ? '<b class="lt">più corta è meglio</b><br>' : ''}vale ${vale(g)}</small></div>${col(g, Rt)}</div>`).join('');
+}
+function focusText(m, f) {
+  if (!f) return '';
+  const what = f.t === 'noi'
+    ? (f.g.dir > 0 ? `ci ${f.thr - f.v === 1 ? 'manca 1' : 'mancano ' + (f.thr - f.v)} per l'obiettivo` : `siamo a ${f.v}, il massimo è ${f.thr}`)
+    : (f.g.dir > 0 ? `non fargli raggiungere ${fmtG(f.g.k, f.thr)} (sono a ${fmtG(f.g.k, f.v)})` : 'tenerli sotto pressione');
+  return `<div class="focus">🎯 Concentrati su: <b>${f.t === 'loro' ? esc(m.opponent) + ', ' : ''}${f.g.name.toLowerCase()}</b> · ${what}, vale ${Math.round(100 * f.vale)}%</div>`;
+}
+function callHtml(c, tail) {
+  return `<div class="call ${c.cls}"><span class="k">${esc(c.k)}</span>${tail && c.score ? `<span class="when">set ${c.set} · ${c.score}</span>` : ''}
+    <div class="t">${esc(c.t)}</div>
+    ${c.cmp ? `<div class="cmp">${c.cmp.map(([a, b]) => `<span>${esc(a)}</span><b>${esc(b)}</b>`).join('')}</div>` : ''}
+    ${c.rel !== undefined ? `<div class="rel ${C.relClass(c.rel)}">${C.relText(c.rel)}</div>` : ''}
+    ${c.sug && (c.sug.safe || c.sug.press) ? `<div class="d">${c.sug.safe ? `<span class="sug">sicura: <b>${esc(c.sug.safe.c)}</b></span>` : ''}${c.sug.press ? `<span class="sug">pressione: <b>${esc(c.sug.press.c)}</b></span>` : ''}</div>` : ''}
+    ${c.d ? `<div class="d">${esc(c.d)}</div>` : ''}${tail || ''}</div>`;
+}
+function nextHtml(m, st) {
+  if (st.server !== 'loro' || st.winner || !st.six.every(Boolean)) return '';
+  const six = C.rotate(st.six), rot = st.rot ? C.nextZone(st.rot) : null, srv = six[0];
+  const today = C.serverStats(m)[srv], u = C.usualServe(REF, C.nameOf(m, srv));
+  let warnS = '', warnR = '';
+  if (today && today.errori >= 2 && u && u.battute >= 10 && C.compareRates(u.errori, u.battute, today.errori, today.battute, u.errori / u.battute, 20) >= 0.8) {
+    const sg = C.serveSuggestions(m, REF, st, srv);
+    warnS = ` <span class="warnic">⚠ ${today.errori} errori su ${today.battute}</span>` + (sg.safe ? `<span class="sug">sicura: <b>${esc(sg.safe.c)}</b></span>` : '') + (sg.press ? `<span class="sug">pressione: <b>${esc(sg.press.c)}</b></span>` : '');
+  }
+  if (rot) {
+    const rr = C.allRallies(m).filter(r => r.rot === rot && r.server === 'loro'), w = rr.filter(r => r.winner === 'noi').length;
+    const ru = REF && REF.decimo ? REF.decimo.totali.rot[rot] : null;
+    if (rr.length >= 3 && ru && C.compareRates(w, rr.length, ru.so, ru.ric, ru.so / ru.ric, 10) >= 0.8) warnR = ` <span class="warnic">⚠ ${w} su ${rr.length}</span> <span class="muted">(di solito ${pc(ru.so / ru.ric)})</span>`;
+  }
+  return `<div class="l">IN ARRIVO${rot ? ' · P' + rot : ''}</div><div class="r">Batte <b>${esc(C.nameOf(m, srv))}</b>${warnS}<br>Ricezione con <b>${esc(C.frontLine(m, six))}</b>${warnR}</div>`;
+}
 function renderLive() {
-  const m = cur();
-  if (!m) return;
-  const n = m.sets.length, st = setStatus(m, n), won = setsWon(m);
-  const [L, R] = db.swap ? ['loro', 'noi'] : ['noi', 'loro'];
-
+  const m = cur(); if (!m) return;
+  const n = m.sets.length, st = C.replay(m, n), won = C.setsWon(m);
+  const [L, R] = decimoLeft() ? ['noi', 'loro'] : ['loro', 'noi'];
   document.getElementById('side-left').innerHTML = panelHtml(m, L, st);
   document.getElementById('side-right').innerHTML = panelHtml(m, R, st);
-  document.getElementById('name-left').textContent = teamName(m, L);
-  document.getElementById('name-right').textContent = teamName(m, R);
-  document.getElementById('name-left').style.color = `var(--${L})`;
-  document.getElementById('name-right').style.color = `var(--${R})`;
-  document.getElementById('pt-left').textContent = st.pts[L];
-  document.getElementById('pt-right').textContent = st.pts[R];
-  document.getElementById('ball-left').classList.toggle('on', st.server === L);
-  document.getElementById('ball-right').classList.toggle('on', st.server === R);
-  const prev = m.sets.slice(0, -1).map((_, i) => { const p = setStatus(m, i + 1).pts; return `${p[L]}-${p[R]}`; });
-  document.getElementById('setinfo').textContent =
-    `Set ${n} · set ${won[L]}-${won[R]}` + (prev.length ? ` · ${prev.join(', ')}` : '');
-  document.getElementById('strip').innerHTML = stripHtml(m, n);
-
-  document.getElementById('rot-btns').innerHTML = [1, 2, 3, 4, 5, 6].map(p =>
-    `<button class="${st.rot === p ? 'on' : ''}" data-rot="${p}">P${p}</button>`).join('');
-
-  ['noi', 'loro'].forEach(t => {
-    const used = timeouts(m, n).filter(x => x.team === t).length, btn = document.getElementById('to-' + t);
-    btn.innerHTML = `⏱ Timeout ${esc(t === 'noi' ? 'Decimo' : m.opponent)} <span class="tod">${[0, 1].map(i => `<i class="${i < used ? 'on' : ''}"></i>`).join('')}</span>`;
-    btn.disabled = used >= 2 || !!st.winner;
+  ['left', 'right'].forEach((s, i) => {
+    const t = i ? R : L, el = document.getElementById('name-' + s);
+    el.innerHTML = (st.server === t && i === 0 ? BALL : '') + `<span style="color:var(--${t})">${esc(teamName(m, t))}</span>` + (st.server === t && i === 1 ? BALL : '');
+    document.getElementById('pt-' + s).textContent = st.pts[t];
   });
+  const prev = m.sets.slice(0, -1).map((_, i) => { const p = C.replay(m, i + 1).pts; return `${p[L]}-${p[R]}`; });
+  document.getElementById('setinfo').textContent = `Set ${n} · set ${won[L]}-${won[R]}` + (prev.length ? ' · ' + prev.join(', ') : '');
 
-  const banner = document.getElementById('banner');
-  const matchOver = won.noi === 3 || won.loro === 3;
+  const gs = C.goalState(m, REF, n);
+  document.getElementById('goals').innerHTML = gs ? focusText(m, gs.focus) + tugHtml(m, [{ label: 'S' + n, items: gs.items, done: gs.done }], decimoLeft())
+    : '<div class="empty">Obiettivi: servono i riferimenti (riferimenti.json).</div>';
+  const nx = nextHtml(m, st), nEl = document.getElementById('next');
+  nEl.innerHTML = nx; nEl.classList.toggle('hidden', !nx);
+  const open = (m.calls || []).filter(c => c.open), c = open[0];
+  document.getElementById('call').innerHTML = c ? callHtml(c, `<div class="row"><span class="more">${open.length > 1 ? `+${open.length - 1} in attesa` : ''}</span><button data-done="${c.id}">Detto ✓</button></div>`) : '';
+  document.getElementById('rotline').innerHTML = st.rot ? `P${st.rot} · davanti <b>${esc(C.frontLine(m, st.six))}</b>${st.libero ? ` · libero ${esc(C.nameOf(m, st.libero))}` : ''}${st.dc ? ' · <b>doppio cambio</b>' : ''}` : '';
+
+  const banner = document.getElementById('banner'), over = won.noi === 3 || won.loro === 3;
   if (st.winner) {
-    banner.innerHTML = matchOver
-      ? `<div class="grow">Partita finita: Decimo ${won.noi}-${won.loro}</div><button id="b-stats">Riepilogo</button>`
-      : `<div class="grow">Set ${n} a ${esc(teamName(m, st.winner))}</div><button id="b-next">Inizia set ${n + 1}</button>`;
+    banner.innerHTML = over ? `<div class="grow">Partita finita: Decimo ${won.noi}-${won.loro}</div><button data-go="stats">Riepilogo</button>`
+      : `<div class="grow">Set ${n} a ${esc(teamName(m, st.winner))} ${st.pts.noi}-${st.pts.loro}</div><button id="b-next">Inizia set ${n + 1}</button>`;
     banner.classList.remove('hidden');
-    const next = document.getElementById('b-next');
-    if (next) next.onclick = () => startSet(m, n + 1, set => { m.sets.push(set); save(); render(); });
-    const bs = document.getElementById('b-stats'); if (bs) bs.onclick = () => showView('stats');
+  } else if (!st.rallies.length) {
+    banner.innerHTML = `<div class="grow">Set ${n}: formazione e battuta da sistemare?</div><button id="b-form">Formazione</button>`;
+    banner.classList.remove('hidden');
   } else banner.classList.add('hidden');
-
-  // registro: ultimi scambi e timeout del set, dal più recente
-  const items = st.rallies.map((r, i) => ({ i: i + 0.5, html: `<div><span class="dot" style="background:var(--${r.winner})"></span>
-      <span class="sc">${r[L]}-${r[R]}</span>${r.rot ? `<span>P${r.rot}</span>` : ''}<span>${logText(m, r)}</span></div>` }))
-    .concat(timeouts(m, n).map(x => ({ i: x.at, html: `<div class="to"><span class="dot" style="background:var(--warn)"></span>
-      <span class="sc">${x[L]}-${x[R]}</span><span>⏱ Timeout ${esc(teamName(m, x.team))}</span></div>` })));
-  document.getElementById('log').innerHTML = items.sort((a, b) => b.i - a.i).slice(0, 10).map(x => x.html).join('');
+  document.getElementById('end-set').disabled = !!st.winner || st.pts.noi === st.pts.loro;
 }
 
 // ---------- riepilogo ----------
-// verdetto rispetto al solito: percentuali con scarto di almeno 8 punti; conteggi almeno doppi (e 2 in più) del previsto
-function vPct(v, ref, n, highGood, theirs) {
-  if (ref === null || ref === undefined || isNaN(ref)) return { cls: 'na', txt: '' };
-  if (!n || n < 6) return { cls: 'na', txt: 'POCHI DATI' };
-  const d = 100 * (v - ref);
-  if (Math.abs(d) < 8) return { cls: 'eq', txt: theirs ? 'COME IL LORO SOLITO' : 'COME AL SOLITO' };
-  const better = highGood ? d > 0 : d < 0;
-  return { cls: better !== !!theirs ? 'good' : 'bad', txt: (better ? 'MEGLIO DEL ' : 'PEGGIO DEL ') + (theirs ? 'LORO SOLITO' : 'SOLITO') };
+let statsSel = 'partita';
+function stageTable(m, rs, fase) {
+  const refNoi = REF ? REF.decimo.totali : null, refLoro = REF && m.refKey && REF.squadre[m.refKey] ? REF.squadre[m.refKey].totali : null;
+  const rep = C.stageReport(rs, refNoi, refLoro).filter(x => x.st.fase === fase);
+  const cn = C.stageCounts(rs, 'noi'), cl = C.stageCounts(rs, 'loro');
+  const so = fase === 'SO';
+  const head = so ? `Il nostro cambio palla <span style="font-size:15px;font-weight:600"><span style="color:var(--noi)">${cn.so}/${cn.ric} (${pc(cn.so / cn.ric)})</span> · loro <span style="color:var(--loro)">${cl.so}/${cl.ric} (${pc(cl.so / cl.ric)})</span></span>`
+    : `Il nostro break-point <span style="font-size:15px;font-weight:600">= il loro cambio palla · noi <span style="color:var(--noi)">${cn.bp}/${cn.bat} (${pc(cn.bp / cn.bat)})</span> · loro <span style="color:var(--loro)">${cl.bp}/${cl.bat} (${pc(cl.bp / cl.bat)})</span></span>`;
+  return `<div class="card"><div class="q">${head}</div><table class="mt"><tr><th></th><th>vs nostro solito</th><th>vs loro ${so ? 'in cambio palla' : 'in break-point'}</th><th></th></tr>
+    ${rep.map(x => `<tr><td class="m">${x.st.label}<small>noi ${esc(x.st.txt(x.cn))}${refNoi ? ` (di solito ${esc(C.usualTxt(x, refNoi))})` : ''} · loro ${esc(x.st.txt(x.cl))}</small></td>
+      <td class="sym ${x.vsUsual}">${C.SYM[x.vsUsual]}</td><td class="sym ${x.vsThem}">${C.SYM[x.vsThem]}</td><td class="ver"><span class="vb ${x.cls}">${x.label}</span></td></tr>`).join('')}</table></div>`;
 }
-function vCount(obs, exp, highGood) {
-  if (exp === null || isNaN(exp)) return { cls: 'na', txt: '' };
-  const worse = highGood ? (exp - obs >= 2 && obs <= exp / 2) : (obs - exp >= 2 && obs >= 2 * exp);
-  const better = highGood ? (obs - exp >= 2 && obs >= 2 * exp) : (exp - obs >= 2 && obs <= exp / 2);
-  return worse ? { cls: 'bad', txt: 'PEGGIO DEL SOLITO' } : better ? { cls: 'good', txt: 'MEGLIO DEL SOLITO' } : { cls: 'eq', txt: 'COME AL SOLITO' };
+function pointsCard(m) {
+  const COL = { primo: '#60a5fa', succ: '#a78bfa', muro: '#2dd4bf', ace: '#facc15', err: '#f87171' };
+  const blocks = [['PARTITA', C.allRallies(m)]].concat(m.sets.map((_, i) => { const s = C.replay(m, i + 1); return [`SET ${i + 1} · ${s.pts.noi}-${s.pts.loro}`, s.rallies]; }));
+  const max = Math.max(1, ...blocks.flatMap(([, rs]) => ['noi', 'loro'].map(t => rs.filter(r => r.winner === t).length)));
+  const bar = (rs, t) => { const c = C.pointCauses(rs, t); return C.CAUSES.map(([k]) => c[k] ? `<span style="width:${100 * c[k] / max}%;background:${COL[k]}">${c[k]}</span>` : '').join(''); };
+  return `<div class="card"><div class="q">Da dove arrivano i punti</div>
+    <div class="lgd">${C.CAUSES.map(([k, l]) => `<span><i style="background:${COL[k]}"></i>${l}</span>`).join('')}</div>
+    ${blocks.map(([l, rs]) => `<div class="setlab">${l}</div>${['noi', 'loro'].map(t => `<div class="stk"><span style="color:var(--${t})">${esc(teamName(m, t))}</span><div class="bar">${bar(rs, t)}</div><span class="tot">${rs.filter(r => r.winner === t).length}</span></div>`).join('')}`).join('')}</div>`;
 }
-const kpiTile = (t, label, val, v, sub) => `<div class="kpi" style="--team:var(--${t})"><div class="l">${label}</div>
-  ${v.txt ? `<div class="vt ${v.cls}">${v.txt}</div>` : '<div class="vt na">SENZA RIFERIMENTO</div>'}<div class="v">${val}</div><div class="s">${sub}</div></div>`;
-
-function heroHtml(m, rs) {
-  const bal = balance(rs), entries = Object.entries(bal).filter(([, x]) => x.n);
-  const pts = { noi: rs.filter(r => r.winner === 'noi').length, loro: rs.filter(r => r.winner === 'loro').length };
-  const diff = pts.noi - pts.loro, scope = statsSet === 'tutti' ? 'PARTITA' : 'SET ' + statsSet;
-  const w = statsSet === 'tutti' ? setsWon(m) : null;
-  const tile = ([v, x]) => `<div class="big"><div class="n">${VOCI[v].label}<small>${esc(teamName(m, 'noi'))} ${sgn(x.noi)} (${voceDetail(rs, v, 'noi')}) · ${esc(teamName(m, 'loro'))} ${sgn(x.loro)} (${voceDetail(rs, v, 'loro')})</small></div><div class="v">${sgn(x.net)}</div></div>`;
-  const neg = entries.filter(([, x]) => x.net < 0).sort((a, b) => a[1].net - b[1].net);
-  const pos = entries.filter(([, x]) => x.net > 0).sort((a, b) => b[1].net - a[1].net);
-  const even = entries.filter(([, x]) => x.net === 0).map(([v]) => VOCI[v].label);
-  const max = Math.max(1, ...entries.map(([, x]) => Math.abs(x.net)));
-  const rows = entries.sort((a, b) => a[1].net - b[1].net).map(([v, x]) => `<tr><td><b>${VOCI[v].label}</b><div class="det">${VOCI[v].how}</div></td>
-    <td><span class="s">${sgn(x.noi)}</span> <span class="det">${voceDetail(rs, v, 'noi')}</span></td>
-    <td><span class="s">${sgn(x.loro)}</span> <span class="det">${voceDetail(rs, v, 'loro')}</span></td>
-    <td><div class="div"><span class="${x.net < 0 ? 'n' : 'p'}" style="width:${Math.abs(x.net) / max * 100}px"></span></div></td>
-    <td class="net ${x.net < 0 ? 'neg' : x.net > 0 ? 'pos' : ''}">${sgn(x.net)}</td></tr>`).join('');
-  return `<div class="card">
-    <div class="q">Dove stiamo perdendo ${statsSet === 'tutti' ? 'la partita' : 'il set'}, e dove compensiamo?</div>
-    <div class="sub">Punti fatti meno punti concessi, voce per voce: ogni scambio va in una sola voce, quella della squadra che fa l'azione
-      (un muro va nella voce dell'attacco murato). La somma è lo scarto nel punteggio.</div>
-    <div class="hero">
-      <div class="sc"><div class="s">${scope}${w ? ` · set ${w.noi}-${w.loro}` : ''}</div><div class="p">${pts.noi}-${pts.loro}</div>
-        <div class="d ${diff < 0 ? 'neg' : diff > 0 ? 'pos' : ''}">${sgn(diff)}</div>${w ? '<div class="s">punti totali</div>' : ''}</div>
-      <div class="side bad"><h4>▼ PERDIAMO PUNTI</h4>${neg.map(tile).join('') || '<div class="empty">in nessuna voce</div>'}</div>
-      <div class="side good"><h4>▲ GUADAGNIAMO / COMPENSIAMO</h4>${pos.map(tile).join('') || '<div class="empty">in nessuna voce</div>'}</div>
-    </div>
-    ${even.length ? `<div class="sub" style="margin:8px 0 0">In pari: ${even.join(', ')}.</div>` : ''}
-    <details style="margin-top:10px"><summary style="color:var(--muted);font-size:13px;cursor:pointer">Il dettaglio, squadra per squadra</summary>
-    <table class="bal" style="margin-top:6px"><tr><th>Voce</th><th class="noi">${esc(teamName(m, 'noi'))}</th><th class="loro">${esc(teamName(m, 'loro'))}</th><th></th><th style="text-align:right">Saldo</th></tr>${rows}</table></details>
-  </div>`;
+function p4Card(m) {
+  const n = m.sets.length, st = C.replay(m, n);
+  if (st.winner || !st.lr) return '';
+  const r = C.todayRates(m, REF), res = C.whenP4(st, r.pSO, r.pBP);
+  const rg = (x, y) => (x === y ? `${x}` : `${x}-${y}`);
+  const rows = res.filter(x => x.reach >= 0.03).map((x, i) => `<div class="p4row"><span class="n">${i === 0 ? 'Prossimo ingresso' : (i + 1) + '° ingresso da ora'}</span>
+    <span class="sc"><span class="top">circa ${x.med[0]}-${x.med[1]}</span><span>8 volte su 10: noi ${rg(x.lo[0], x.hi[0])}, loro ${rg(x.lo[1], x.hi[1])}</span><span>nel finale ${pc(x.fin)}</span></span>
+    <span class="r">ci arriviamo prima della fine del set <b>${pc(x.reach)}</b></span></div>`).join('');
+  return `<div class="card"><div class="q">Quando entreremo in P4 <small>dal ${st.pts.noi}-${st.pts.loro}, set ${n}</small></div>${rows || '<div class="empty">Non ci arriviamo più in questo set.</div>'}
+    <div class="sub" style="margin:8px 0 0">Punteggio quando entriamo in P4 (dopo il cambio palla). Simulato con cambio palla ${pc(r.pSO)} e break-point ${pc(r.pBP)} (oggi, avvicinati al solito).</div></div>`;
 }
-
-function usualHtml(m, rs) {
-  const cn = counts(rs, 'noi'), cl = counts(rs, 'loro'), rn = refTot(m, 'noi'), rl = refTot(m, 'loro');
-  const r = (c, k1, k2) => (c && c[k2] ? c[k1] / c[k2] : null);
-  const opp = esc(m.opponent);
-  const usual = (x, theirs) => (x === null ? 'nessun riferimento' : (theirs ? 'loro di solito ' : 'di solito ') + pct(x));
-  const expErr = rn ? rn.err_bat / rn.bat * cn.bat : null, expMuri = rn ? rn.muri / rn.scambi * cn.scambi : null;
-  const perSet = (c, k) => (c ? dec(c[k] / c.set) : '–');
-  const options = REF ? `<select id="ref-pick"><option value="">— nessuna —</option>${Object.entries(REF.squadre)
-    .sort((a, b) => a[1].nome.localeCompare(b[1].nome)).map(([k, s]) => `<option value="${k}" ${k === m.refKey ? 'selected' : ''}>${esc(s.nome)} (${s.partite.length})</option>`).join('')}</select>` : '';
-  return `<div class="card">
-    <div class="q">Stiamo giocando come al solito?</div>
-    <div class="sub">${REF ? `"Di solito" = ultime ${REF.decimo.partite.length} partite scoutizzate del Decimo · ${opp}: ` + options + (rl ? ` ultime ${REF.squadre[m.refKey].partite.length} partite` : '') + ` · aggiornato al ${REF.generato}.` : 'Riferimenti non caricati: apri l\'app con internet dopo averli rigenerati.'}
-      Etichetta colorata quando lo scarto dal solito è grande (8 punti percentuali; per i conteggi il doppio del previsto).</div>
-    <div class="kpis">
-      ${kpiTile('noi', '1° attacco Decimo · efficienza stimata', pct(eff1(cn)), vPct(eff1(cn), eff1(rn), cn.ric_gioco, true),
-        `${usual(eff1(rn))} · (${cn.pt1} − ${cn.err1} − ${cn.mur1}) su ${cn.ric_gioco} ricezioni in gioco`)}
-      ${kpiTile('noi', 'Side-out Decimo', pct(r(cn, 'so', 'ric')), vPct(r(cn, 'so', 'ric'), r(rn, 'so', 'ric'), cn.ric, true), `${usual(r(rn, 'so', 'ric'))} · ${cn.so} su ${cn.ric}`)}
-      ${kpiTile('noi', 'Break-point Decimo', pct(r(cn, 'bp', 'bat')), vPct(r(cn, 'bp', 'bat'), r(rn, 'bp', 'bat'), cn.bat, true), `${usual(r(rn, 'bp', 'bat'))} · ${cn.bp} su ${cn.bat}`)}
-      ${kpiTile('noi', 'Errori in battuta Decimo', cn.err_bat, vCount(cn.err_bat, expErr, false), `previsti ${dec(expErr)} (di solito ${perSet(rn, 'err_bat')} a set) · ace ${cn.ace} (di solito ${perSet(rn, 'ace')} a set)`)}
-      ${kpiTile('loro', `1° attacco ${opp} · eff. stimata`, pct(eff1(cl)), vPct(eff1(cl), eff1(rl), cl.ric_gioco, true, true),
-        `${usual(eff1(rl), true)} · (${cl.pt1} − ${cl.err1} − ${cl.mur1}) su ${cl.ric_gioco}`)}
-      ${kpiTile('loro', `Side-out ${opp}`, pct(r(cl, 'so', 'ric')), vPct(r(cl, 'so', 'ric'), r(rl, 'so', 'ric'), cl.ric, true, true), `${usual(r(rl, 'so', 'ric'), true)} · ${cl.so} su ${cl.ric}`)}
-      ${kpiTile('loro', `Break-point ${opp}`, pct(r(cl, 'bp', 'bat')), vPct(r(cl, 'bp', 'bat'), r(rl, 'bp', 'bat'), cl.bat, true, true), `${usual(r(rl, 'bp', 'bat'), true)} · ${cl.bp} su ${cl.bat}`)}
-      ${kpiTile('noi', 'Muri punto Decimo', cn.muri, vCount(cn.muri, expMuri, true), `previsti ${dec(expMuri)} (di solito ${perSet(rn, 'muri')} a set) · errori gratuiti ${cn.gratuiti}`)}
-    </div></div>`;
-}
-
-function rotationsHtml(m, rs) {
-  const withRot = rs.filter(r => r.rot);
-  if (!withRot.length) return `<div class="card"><div class="q">In quale rotazione soffriamo?</div><div class="empty">Rotazione non segnata in questi scambi.</div></div>`;
-  const c = counts(withRot, 'noi', true), ref = refTot(m, 'noi');
-  const tiles = [1, 2, 3, 4, 5, 6].map(z => {
-    const x = c.rot[z], rz = ref && ref.rot[z], e = eff1(x), re = rz ? eff1(rz) : null;
-    const few = x.ric_gioco < 4, d = e !== null && re !== null ? e - re : null;
-    const cls = few || d === null ? '' : d <= -0.25 ? 'bad' : d >= 0.25 ? 'good' : '';
-    const perm = x.so ? dec(x.ric / x.so) : x.ric ? '∞' : '–';
-    return `<div class="rtile ${cls}"><div class="p">P${z}${x.ric && few ? '<span>POCHI DATI</span>' : ''}</div>
-      <div class="lab">1° ATTACCO</div><div class="v main">${pct(e)}</div>
-      <div class="u">${x.pt1} pt · ${x.err1} err · ${x.mur1} mur su ${x.ric_gioco}${re !== null ? ` · di solito ${pct(re)}` : ''}</div>
-      <div class="perm"><div class="lab">PERMANENZA</div><div class="v">${perm}</div>
-      <div class="u">ricezioni per cambio palla${rz && rz.so ? ` (di solito ${dec(rz.ric / rz.so)})` : ''} · side-out ${x.so}/${x.ric}</div></div></div>`;
+function rotCard(m, rs) {
+  const rows = [1, 6, 5, 4, 3, 2].map(z => {
+    const rr = rs.filter(r => r.rot === z), so = rr.filter(r => r.server === 'loro'), bp = rr.filter(r => r.server === 'noi');
+    if (!rr.length) return '';
+    const fl = {}; rr.forEach(r => { const k = C.frontLine(m, r.six); fl[k] = (fl[k] || 0) + 1; });
+    const line = Object.entries(fl).sort((a, b) => b[1] - a[1])[0][0];
+    const ru = REF ? REF.decimo.totali.rot[z] : null, sw = so.filter(r => r.winner === 'noi').length, bw = bp.filter(r => r.winner === 'noi').length;
+    const p = ru && so.length >= 3 ? C.compareRates(ru.so, ru.ric, sw, so.length, ru.so / ru.ric, 10) : 0.5;
+    const ndc = rr.filter(r => r.dc).length;
+    return `<tr><td><b>P${z}</b> <span class="muted">${esc(line)}</span>${ndc ? ` <span class="muted">· ${ndc} scambi col doppio cambio</span>` : ''}</td>
+      <td class="${p >= 0.8 ? 'good' : p <= 0.2 ? 'bad' : ''}">${sw}/${so.length}${so.length ? ' · ' + pc(sw / so.length) : ''}</td><td>${ru ? pc(ru.so / ru.ric) : '–'}</td>
+      <td>${bw}/${bp.length}${bp.length ? ' · ' + pc(bw / bp.length) : ''}</td><td>${ru && ru.bat ? pc(ru.bp / ru.bat) : '–'}</td></tr>`;
   }).join('');
-  return `<div class="card"><div class="q">In quale rotazione soffriamo? <small>prima il 1° attacco, poi quanto ci restiamo</small></div>
-    <div class="sub">1° attacco = (punti − errori − murate) sulle ricezioni rimaste in gioco in quella rotazione; "di solito" = stessa rotazione nelle ultime partite.
-      Bordo rosso/verde = 1° attacco almeno 25 punti sotto/sopra il solito, con almeno 4 ricezioni giocate. Permanenza = ricezioni per fare un cambio palla.</div>
-    <div class="rots">${tiles}</div></div>`;
+  return `<div class="card"><div class="q">Rotazioni e prime linee <small>prima linea: posto 4 – centro – posto 2</small></div>
+    <table class="tb"><tr><th>Rotazione</th><th>Cambio palla</th><th>di solito</th><th>Break-point</th><th>di solito</th></tr>${rows}</table></div>`;
 }
-
-function recentHtml(m, rs) {
-  const N = db.settings.window, win = m.rallies.slice(-N);
-  const w = win.filter(r => r.winner === 'noi').length, c = counts(win, 'noi');
-  const bal = Object.entries(balance(win)).filter(([, x]) => x.n).sort((a, b) => a[1].net - b[1].net);
-  const worst = bal.length && bal[0][1].net < 0 ? bal[0] : null, best = bal.length && bal[bal.length - 1][1].net > 0 ? bal[bal.length - 1] : null;
-  // serie di almeno 3 punti, nel perimetro scelto
-  const runs = [];
-  m.sets.forEach((_, i) => {
-    if (statsSet !== 'tutti' && statsSet !== i + 1) return;
-    const sr = m.rallies.filter(r => r.set === i + 1);
-    let s = 0;
-    for (let k = 1; k <= sr.length; k++) {
-      if (k === sr.length || sr[k].winner !== sr[s].winner) {
-        if (k - s >= 3) runs.push({ set: i + 1, w: sr[s].winner, len: k - s, from: s ? sr[s - 1] : null, to: sr[k - 1], rs: sr.slice(s, k) });
-        s = k;
+function serversCard(m, rs) {
+  const out = {};
+  rs.filter(r => r.server === 'noi' && r.six[0]).forEach(r => {
+    const b = out[r.six[0]] = out[r.six[0]] || { battute: 0, ace: 0, errori: 0 };
+    b.battute++; if (r.actor === 'noi' && r.action === 'ace') b.ace++; if (r.actor === 'noi' && r.action === 'err_battuta') b.errori++;
+  });
+  const rows = Object.entries(out).sort((a, b) => b[1].battute - a[1].battute).map(([n, b]) => {
+    const u = C.usualServe(REF, C.nameOf(m, Number(n)));
+    return `<tr><td>${esc(C.nameOf(m, Number(n)))} (${n})</td><td>${b.battute}</td><td>${b.ace}</td><td>${b.errori}</td>
+      <td>${u && u.battute ? `${u.errori} su ${u.battute} · ${pc(u.errori / u.battute)}` : '–'}</td><td>${u && u.battute ? pc(u.ace / u.battute) : '–'}</td></tr>`;
+  }).join('');
+  return rows ? `<div class="card"><div class="q">Battitori</div><table class="tb"><tr><th>Battitore</th><th>battute</th><th>ace</th><th>errori</th><th>di solito errori</th><th>di solito ace</th></tr>${rows}</table></div>` : '';
+}
+function compareSets(m, a, b) {   // set b rispetto al set a (chiusi): meglio / peggio per voce
+  const va = { noi: C.goalValues(C.replay(m, a).rallies, 'noi'), loro: C.goalValues(C.replay(m, a).rallies, 'loro') };
+  const vb = { noi: C.goalValues(C.replay(m, b).rallies, 'noi'), loro: C.goalValues(C.replay(m, b).rallies, 'loro') };
+  const better = [], worse = [];
+  C.GOALS.forEach(g => ['noi', 'loro'].forEach(t => {
+    const x = va[t][g.k], y = vb[t][g.k], d = (y - x) * g.dir * (t === 'noi' ? 1 : -1);
+    const line = `${g.name}${t === 'loro' ? ' loro' : ''}: ${fmtG(g.k, x)} → <b>${fmtG(g.k, y)}</b>`;
+    if (d > 0) better.push(line); if (d < 0) worse.push(line);
+  }));
+  return `<div class="mirror"><div class="upb"><h4>▲ SET ${b} RISPETTO AL SET ${a}: MEGLIO</h4>${better.join('<br>') || 'niente'}</div>
+    <div class="dnb"><h4>▼ SET ${b} RISPETTO AL SET ${a}: PEGGIO</h4>${worse.join('<br>') || 'niente'}</div></div>`;
+}
+function renderStats() {
+  const m = cur(), body = document.getElementById('stats-body');
+  if (!m) { body.innerHTML = ''; return; }
+  const closed = m.sets.map((_, i) => i + 1).filter(n => C.replay(m, n).winner);
+  const chips = [['partita', 'Partita']].concat(m.sets.map((_, i) => [String(i + 1), 'Set ' + (i + 1)])).concat(closed.length >= 2 ? [['confronto', 'Confronto tra set']] : []);
+  if (!chips.some(c => c[0] === statsSel)) statsSel = 'partita';
+  document.getElementById('set-chips').innerHTML = chips.map(([k, l]) => `<button class="chip ${k === statsSel ? 'active' : ''}" data-sel="${k}">${l}</button>`).join('');
+  let html = '';
+  if (statsSel === 'confronto') {
+    const rows = closed.map(n => { const g = C.goalState(m, REF, n); const s = C.replay(m, n); return { label: 'S' + n, items: g.items, done: true, sc: `${s.pts.noi}-${s.pts.loro}` }; });
+    html = `<div class="card"><div class="q">Confronto tra set chiusi <small>${rows.map(r => `${r.label} ${r.sc}`).join(' · ')}</small></div>${REF ? tugHtml(m, rows, false) : ''}
+      ${compareSets(m, closed[closed.length - 2], closed[closed.length - 1])}</div>`;
+  } else {
+    const rs = statsSel === 'partita' ? C.allRallies(m) : C.replay(m, Number(statsSel)).rallies;
+    if (REF) {
+      if (statsSel === 'partita') {
+        const per = m.sets.map((_, i) => C.goalState(m, REF, i + 1)).filter(g => g.st.rallies.length);
+        if (per.length) {
+          const items = per[0].items.map(it => Object.assign({}, it, { v: per.reduce((a, g) => a + g.items.find(x => x.key === it.key).v, 0) / per.length }));
+          html += `<div class="card"><div class="q">Obiettivi · partita <small>media per set</small></div>${tugHtml(m, [{ label: '', items, done: true }], false)}</div>`;
+        }
+      } else {
+        const g = C.goalState(m, REF, Number(statsSel));
+        html += `<div class="card"><div class="q">Obiettivi · set ${statsSel}${g.done ? '' : ' <small>in corso</small>'}</div>${tugHtml(m, [{ label: '', items: g.items, done: g.done }], false)}</div>`;
       }
     }
-  });
-  const runHtml = runs.slice(-6).reverse().map(x => `<div><b style="color:var(--${x.w})">${x.w === 'noi' ? x.len + '-0' : '0-' + x.len}</b>
-    set ${x.set}, da ${x.from ? x.from.noi + '-' + x.from.loro : '0-0'} a ${x.to.noi}-${x.to.loro}${x.rs[0].rot ? ` · P${x.rs[0].rot}` : ''} · <span>${causes(m, x.rs)}</span></div>`).join('');
-  return `<div class="card">
-    <div class="q">Com'è andata negli ultimi scambi?</div>
-    <div class="sub">Ultimi ${win.length} scambi della partita (la finestra si cambia nella tab Avvisi). Blu = punto Decimo, arancio = ${esc(m.opponent)}.</div>
-    <div class="seq">${win.map(r => `<i style="background:var(--${r.winner})"></i>`).join('')}</div>
-    <div class="mini"><b>${w}-${win.length - w}</b> <span class="k">· side-out ${c.so}/${c.ric}, break-point ${c.bp}/${c.bat}</span><br>
-      ${worst ? `<span class="k">peggio:</span> ${VOCI[worst[0]].label} ${sgn(worst[1].net)}<br>` : ''}
-      ${best ? `<span class="k">meglio:</span> ${VOCI[best[0]].label} ${sgn(best[1].net)}` : ''}</div>
-    <div class="q" style="font-size:16px;margin-top:12px">Serie di punti <small>da 3 di fila in su${statsSet === 'tutti' ? '' : ', set ' + statsSet}</small></div>
-    <div class="runs">${runHtml || '<div class="empty">nessuna</div>'}</div></div>`;
+    if (statsSel === 'partita' || Number(statsSel) === m.sets.length) html += p4Card(m);
+    html += stageTable(m, rs, 'SO') + stageTable(m, rs, 'BP') + pointsCard(m) + rotCard(m, rs) + serversCard(m, rs);
+  }
+  body.innerHTML = html;
 }
 
-// probabilità di vincere il set in corso: simulazione punto per punto con le probabilità di vincere lo scambio
-// in ricezione e in battuta (quelle della partita, avvicinate al solito finché gli scambi sono pochi)
-function pSet(m) {
-  const n = m.sets.length, st = setStatus(m, n);
-  if (st.winner) return null;
-  const rn = refTot(m, 'noi'), rl = refTot(m, 'loro'); if (!rn) return null;
-  const c = counts(m.rallies, 'noi'), K = 20;
-  const priorR = rl ? (rn.so / rn.ric + 1 - rl.bp / rl.bat) / 2 : rn.so / rn.ric;
-  const priorS = rl ? (rn.bp / rn.bat + 1 - rl.so / rl.ric) / 2 : rn.bp / rn.bat;
-  const pr = (c.so + K * priorR) / (c.ric + K), ps = (c.bp + K * priorS) / (c.bat + K);
-  const target = n === 5 ? 15 : 25, memo = {};
-  const f = (a, b, s) => {
-    if (a >= target && a - b >= 2) return 1;
-    if (b >= target && b - a >= 2) return 0;
-    if (a + b > 90) return 0.5;
-    const k = a + '-' + b + s; if (k in memo) return memo[k];
-    const p = s === 'noi' ? ps : pr;
-    return (memo[k] = p * f(a + 1, b, 'noi') + (1 - p) * f(a, b + 1, 'loro'));
-  };
-  return { p: f(st.pts.noi, st.pts.loro, st.server), pr, ps, n, pts: st.pts };
+// ---------- chiamate e partite ----------
+function renderCalls() {
+  const m0 = cur();
+  if (m0 && m0.importata && !m0.callsBuilt && REF) { C.rebuildCalls(m0, REF); save(); }
+  const m = cur(), list = m ? (m.calls || []).slice().reverse() : [];
+  document.getElementById('calls-list').innerHTML = list.length ? list.map(c => `<div style="margin-bottom:10px;max-width:680px;opacity:${c.open ? 1 : 0.6}">${callHtml(c, '')}</div>`).join('')
+    : '<div class="card empty">Nessuna chiamata.</div>';
 }
-
-function endgameHtml(m) {
-  const lines = m.sets.map((_, i) => {
-    if (statsSet !== 'tutti' && statsSet !== i + 1) return '';
-    const sr = m.rallies.filter(r => r.set === i + 1), target = i === 4 ? 15 : 25, lim = target - 5;
-    const k = sr.findIndex(r => Math.max(r.noi - (r.winner === 'noi'), r.loro - (r.winner === 'loro')) >= lim);
-    if (k < 0) return '';
-    const fr = sr.slice(k), w = fr.filter(r => r.winner === 'noi').length, from = sr[k - 1];
-    const bal = Object.entries(balance(fr)).filter(([, x]) => x.net).sort((a, b) => Math.abs(b[1].net) - Math.abs(a[1].net)).slice(0, 2);
-    return `<span class="k">Finale set ${i + 1}:</span> <b>${w}-${fr.length - w}</b> (da ${from ? from.noi + '-' + from.loro : '0-0'})${bal.length ? ' · ' + bal.map(([v, x]) => `${VOCI[v].label.toLowerCase()} ${sgn(x.net)}`).join(', ') : ''}<br>`;
-  }).join('');
-  const tos = m.sets.flatMap((s, i) => (statsSet !== 'tutti' && statsSet !== i + 1) ? [] : (s.timeouts || []).map(x => {
-    const after = m.rallies.filter(r => r.set === i + 1).slice(x.at, x.at + 5), w = after.filter(r => r.winner === 'noi').length;
-    return `<span class="k">⏱ Timeout ${esc(teamName(m, x.team))}</span> set ${i + 1}, ${x.noi}-${x.loro} → dopo ${after.length ? `<b>${w}-${after.length - w}</b>${after.length < 5 ? ' (in corso)' : ''}` : '–'}<br>`;
-  })).join('');
-  const ps = pSet(m);
-  const prob = ps ? `<div class="q" style="font-size:16px;margin-top:14px">Probabilità di vincere il set ${ps.n} <small>sul ${ps.pts.noi}-${ps.pts.loro}</small></div>
-    <div style="font-size:30px;font-weight:700">${pct(ps.p)}</div><div class="gauge"><div style="width:${100 * ps.p}%"></div></div>
-    <div class="sub" style="margin:0">Simulando il resto del set punto per punto: vinciamo lo scambio il ${pct(ps.pr)} delle volte in ricezione e il ${pct(ps.ps)} in battuta
-      (la partita di oggi, avvicinata al solito nostro e loro finché gli scambi sono pochi).</div>` : '';
-  return `<div class="card"><div class="q">Finale di set e timeout</div>
-    <div class="sub">Da 20 in poi (da 10 al quinto), e i 5 scambi dopo ogni timeout.</div>
-    <div class="mini">${lines || '<span class="k">Nessun finale di set ancora.</span><br>'}${tos || '<span class="k">Nessun timeout.</span>'}</div>${prob}</div>`;
-}
-
-function renderStats() {
-  const m = cur();
-  if (!m) { document.getElementById('stats-body').innerHTML = ''; return; }
-  if (statsSet !== 'tutti' && statsSet > m.sets.length) statsSet = 'tutti';
-  const chips = ['tutti', ...m.sets.map((_, i) => i + 1)];
-  document.getElementById('set-chips').innerHTML = chips.map(c =>
-    `<button class="chip ${String(c) === String(statsSet) ? 'active' : ''}" data-set="${c}">${c === 'tutti' ? 'Partita' : 'Set ' + c}</button>`).join('');
-  const rs = m.rallies.filter(r => statsSet === 'tutti' || r.set === statsSet);
-  document.getElementById('stats-body').innerHTML = !rs.length ? '<div class="card empty">Nessuno scambio segnato.</div>'
-    : heroHtml(m, rs) + usualHtml(m, rs) + rotationsHtml(m, rs) + `<div class="grid2">${recentHtml(m, rs)}${endgameHtml(m)}</div>`;
-  const pick = document.getElementById('ref-pick');
-  if (pick) pick.onchange = () => { m.refKey = pick.value || null; save(); renderStats(); };
-}
-
-function renderAlerts() {
-  const m = cur();
-  document.getElementById('set-window').value = String(db.settings.window);
-  document.getElementById('set-good').checked = db.settings.good;
-  document.getElementById('ref-info').textContent = REF ? `Riferimenti aggiornati al ${REF.generato}.` : 'Riferimenti non caricati: niente avvisi di tendenza.';
-  const list = (m && m.alerts || []).slice().reverse();
-  document.getElementById('history').innerHTML = list.length ? list.map(a => `<div class="hist ${a.k}"><div class="t">${a.k === 'bad' ? '🔴' : '🟢'} ${esc(a.t)}</div>
-    <div class="d">${a.d ? esc(a.d) + ' · ' : ''}set ${a.set}, ${a.score}${a.open ? '' : ' · chiuso'}</div></div>`).join('') : '<div class="empty">Nessun avviso.</div>';
-}
-
-// ---------- partite salvate ----------
+function setsScore(m) { return m.sets.map((_, i) => C.replay(m, i + 1)).filter(s => s.rallies.length).map(s => `${s.pts.noi}-${s.pts.loro}`).join(', '); }
 function renderSaved() {
-  const list = [...db.matches].sort((a, b) => b.id - a.id);
+  document.getElementById('ref-info').textContent = REF ? `Riferimenti aggiornati al ${REF.generato}` : 'Riferimenti non caricati: apri l\'app con internet.';
+  const list = db.matches.slice().sort((a, b) => String(b.date).localeCompare(String(a.date)));
   document.getElementById('saved-list').innerHTML = list.length ? list.map(m => {
-    const w = setsWon(m);
-    return `<div class="match-row"><div class="grow">
-      <div><b>Decimo – ${esc(m.opponent)}</b> ${w.noi}-${w.loro}${m.id === db.currentId ? '<span class="badge">APERTA</span>' : ''}</div>
-      <div class="sub">${m.date} · ${partials(m) || 'nessuno scambio'} · ${m.rallies.length} scambi</div></div>
+    const w = C.setsWon(m);
+    return `<div class="match-row"><div class="grow"><div><b>Decimo – ${esc(m.opponent)}</b> ${w.noi}-${w.loro}${m.id === db.currentId ? '<span class="badge">APERTA</span>' : ''}${m.importata ? '<span class="badge dvw">DALLO SCOUT</span>' : ''}</div>
+      <div class="sub">${m.date} · ${setsScore(m) || 'nessuno scambio'} · ${C.allRallies(m).length} scambi</div></div>
       <button data-open="${m.id}">Apri</button><button data-csv="${m.id}">CSV</button><button data-del="${m.id}">Elimina</button></div>`;
-  }).join('') : '<p style="color:var(--muted)">Nessuna partita salvata.</p>';
+  }).join('') : '<p class="muted">Nessuna partita salvata.</p>';
 }
-
 async function exportCsv(m) {
-  const head = 'avversario;data;set;scambio;battuta;vincitore;fase;azione;voce;squadra_azione;rotazione;punti_noi;punti_loro;ora';
-  const lines = m.rallies.map((r, i) => [m.opponent, m.date, r.set, i + 1, r.server, r.winner,
-    r.fase, r.action, voceOf(r), r.actor, r.rot ? 'P' + r.rot : '', r.noi, r.loro, r.ora].join(';'));
-  m.sets.forEach((s, i) => (s.timeouts || []).forEach(x => lines.push([m.opponent, m.date, i + 1, '', '', '', '', 'timeout', '', x.team, '', x.noi, x.loro, ''].join(';'))));
+  const head = 'avversario;data;set;scambio;battuta;vincitore;fase;azione;squadra_azione;rotazione;in_campo;doppio_cambio;punti_noi;punti_loro;ora';
+  const lines = C.allRallies(m).map((r, i) => [m.opponent, m.date, r.set, i + 1, r.server, r.winner, r.fase, r.action, r.actor,
+    r.rot ? 'P' + r.rot : '', r.six.join('-'), r.dc ? 1 : 0, r.noi, r.loro, r.ora].join(';'));
+  m.sets.forEach((_, i) => { const st = C.replay(m, i + 1);
+    st.timeouts.forEach(x => lines.push([m.opponent, m.date, i + 1, '', '', '', '', 'timeout', x.team, '', '', '', x.noi, x.loro, ''].join(';')));
+    st.subs.forEach(x => lines.push([m.opponent, m.date, i + 1, '', '', '', '', `cambio ${x.out}>${x.in}`, 'noi', '', '', '', x.noi, x.loro, ''].join(';'))); });
   const name = `scambi_${m.date}_${m.opponent.replace(/\W+/g, '_')}.csv`;
   const file = new File([[head, ...lines].join('\n')], name, { type: 'text/csv' });
-  if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    try { await navigator.share({ files: [file], title: name }); return; } catch (e) { if (e.name === 'AbortError') return; }
-  }
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(file); a.download = name; a.click();
+  if (navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file], title: name }); return; } catch (e) { if (e.name === 'AbortError') return; } }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = name; a.click();
 }
 
-// ---------- modali ----------
-function modal(html) {
-  document.getElementById('modal-box').innerHTML = html;
-  document.getElementById('modal').classList.remove('hidden');
-}
+// ---------- fogli ----------
+const sheet = html => { document.getElementById('sheet-box').innerHTML = html; document.getElementById('sheet').classList.remove('hidden'); };
+const closeSheet = () => { document.getElementById('sheet').classList.add('hidden'); dropCtx = null; render(); };
+function modal(html) { document.getElementById('modal-box').innerHTML = html; document.getElementById('modal').classList.remove('hidden'); }
 function closeModal() { document.getElementById('modal').classList.add('hidden'); }
 function confirmBox(title, text, okLabel, okClass, onOk) {
-  modal(`<h3>${title}</h3><p>${text}</p><div class="row">
-    <button class="bgrey" id="m-no">Annulla</button><button class="${okClass}" id="m-yes">${okLabel}</button></div>`);
+  modal(`<h3>${title}</h3><p>${text}</p><div class="row"><button class="bgrey" id="m-no">Annulla</button><button class="${okClass}" id="m-yes">${okLabel}</button></div>`);
   document.getElementById('m-no').onclick = closeModal;
   document.getElementById('m-yes').onclick = () => { closeModal(); onOk(); };
 }
-function askServe(m, n, onPick) {
-  modal(`<h3>Set ${n}: chi batte per primo?</h3><div class="row">
-    <button class="bnoi" id="m-noi">Batte Decimo</button>
-    <button class="bloro" id="m-loro">Batte ${esc(m.opponent)}</button></div>`);
-  document.getElementById('m-noi').onclick = () => { closeModal(); onPick('noi'); };
-  document.getElementById('m-loro').onclick = () => { closeModal(); onPick('loro'); };
-}
-function askRotation(n, onPick) {
-  modal(`<h3>Set ${n}: in che rotazione partiamo?</h3>
-    <p>Zona in cui parte il nostro palleggiatore.</p>
-    <div class="rot-pick">${[1, 2, 3, 4, 5, 6].map(p => `<button data-p="${p}">P${p}</button>`).join('')}</div>
-    <div class="row"><button class="bgrey" id="m-skip">Non la segno</button></div>`);
-  document.querySelectorAll('.rot-pick button').forEach(b => b.onclick = () => { closeModal(); onPick(Number(b.dataset.p)); });
-  document.getElementById('m-skip').onclick = () => { closeModal(); onPick(null); };
-}
-function startSet(m, n, onDone) {
-  askServe(m, n, s => askRotation(n, r => onDone({ firstServer: s, startRot: r })));
+function toast(t) { const d = document.createElement('div'); d.className = 'toast'; d.textContent = t; document.body.appendChild(d); setTimeout(() => d.remove(), 2200); }
+const ORDER = [4, 3, 2, 5, 6, 1];   // disegno del campo: rete in alto
+const plHtml = (m, n, drag, badge = '') => { const p = C.player(m, n);
+  return `<div class="pl ${p.r === 'P' ? 'set' : ''} ${p.r === 'L' ? 'lib' : ''}" data-drag="${drag}"><div class="nu">${p.n}</div><div class="co">${esc(p.c)}</div><div class="ro">${p.r}</div>${badge}</div>`; };
+const ROT_ICONS = { back: '<path d="M4 12a8 8 0 1 0 2.6-5.9"/><path d="M4 3v5h5"/>', fwd: '<path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 3v5h-5"/>' };
+
+// referto: avversario, data, chi c'è (rosa abituale + aggiunti), ruoli correggibili
+function openReferto() {
+  const base = (REF && REF.rosa ? REF.rosa : []).concat(db.extra || []);
+  const roster = base.filter((p, i) => base.findIndex(x => x.n === p.n) === i).map(p => Object.assign({ on: p.referto !== false }, p));
+  const names = REF ? Object.values(REF.squadre).map(s => s.nome).sort() : [];
+  const draw = () => {
+    sheet(`<h3>Nuova partita</h3>
+      <div style="display:flex;gap:10px;margin-bottom:12px"><input id="r-opp" placeholder="Avversario" list="r-teams" style="flex:1" value="${esc(draft.opp)}"><datalist id="r-teams">${names.map(n => `<option value="${esc(n)}">`).join('')}</datalist>
+        <input id="r-date" type="date" value="${draft.date}"></div>
+      <div class="lab">A REFERTO · ${roster.filter(p => p.on).length}</div>
+      <div class="ref">${roster.map((p, i) => `<div class="chipp ${p.on ? '' : 'off'}" data-i="${i}"><span class="chk">${p.on ? '✓' : ''}</span><span class="nu">${p.n}</span><span class="co">${esc(p.c)}</span>
+        <select data-role="${i}">${['P', 'M', 'C', 'O', 'L', '?'].map(r => `<option ${r === p.r ? 'selected' : ''}>${r}</option>`).join('')}</select></div>`).join('')}</div>
+      <div class="add"><input id="a-n" placeholder="N." style="width:70px" inputmode="numeric"><input id="a-c" placeholder="Cognome" style="flex:1"><select id="a-r">${['P', 'M', 'C', 'O', 'L'].map(r => `<option>${r}</option>`).join('')}</select><button id="a-ok">+ Aggiungi</button></div>
+      <div class="brow"><button id="r-cancel">Annulla</button><button class="ok" id="r-next">Avanti: formazione</button></div>`);
+    const box = document.getElementById('sheet-box');
+    box.querySelectorAll('.ref .chipp').forEach(el => el.onclick = e => { if (e.target.tagName === 'SELECT') return; const p = roster[+el.dataset.i]; p.on = !p.on; keep(); draw(); });
+    box.querySelectorAll('[data-role]').forEach(el => el.onchange = () => { roster[+el.dataset.role].r = el.value; });
+    document.getElementById('a-ok').onclick = () => {
+      const n = Number(document.getElementById('a-n').value), c = document.getElementById('a-c').value.trim();
+      if (!n || !c || roster.some(p => p.n === n)) { toast(!n || !c ? 'Numero e cognome' : 'Numero già in rosa'); return; }
+      const p = { n, c, r: document.getElementById('a-r').value };
+      db.extra = (db.extra || []).concat([p]); save(); roster.push(Object.assign({ on: true }, p)); keep(); draw();
+    };
+    document.getElementById('r-cancel').onclick = closeSheet;
+    document.getElementById('r-next').onclick = () => {
+      keep();
+      const r = roster.filter(p => p.on).map(p => ({ n: p.n, c: p.c, r: p.r }));
+      if (r.length < 6) { toast('Servono almeno 6 giocatori'); return; }
+      const m = { id: 'm' + Date.now(), opponent: draft.opp || 'Avversario', refKey: findRefKey(draft.opp), date: draft.date, roster: r, sets: [], events: [], calls: [] };
+      const last = db.matches.filter(x => !x.importata && x.sets.length).sort((a, b) => String(b.date).localeCompare(String(a.date)))[0]
+        || db.matches.filter(x => x.sets.length).sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
+      const start = last ? { firstServer: 'noi', lineup: Object.assign({}, last.sets[0].lineup), libero: last.sets[0].libero } : { firstServer: 'noi', lineup: {}, libero: null };
+      Object.keys(start.lineup).forEach(z => { if (!r.some(p => p.n === start.lineup[z])) delete start.lineup[z]; });
+      if (!r.some(p => p.n === start.libero)) start.libero = null;
+      openFormazione(m, 1, start, true);
+    };
+  };
+  const draft = { opp: '', date: new Date().toISOString().slice(0, 10) };
+  const keep = () => { const o = document.getElementById('r-opp'), d = document.getElementById('r-date'); if (o) draft.opp = o.value.trim(); if (d) draft.date = d.value; };
+  draw();
 }
 
-function newMatch() {
-  const names = REF ? Object.values(REF.squadre).map(s => s.nome).sort() : [];
-  modal(`<h3>Nuova partita</h3>
-    <input id="m-opp" placeholder="Avversario" autocomplete="off" list="m-teams">
-    <datalist id="m-teams">${names.map(n => `<option value="${esc(n)}">`).join('')}</datalist>
-    <div class="hint" id="m-hint"></div>
-    <div class="row"><button class="bgrey" id="m-cancel">Annulla</button>
-    <button class="bnoi" id="m-ok">Avanti</button></div>`);
-  const cancel = document.getElementById('m-cancel'), inp = document.getElementById('m-opp'), hint = document.getElementById('m-hint');
-  cancel.classList.toggle('hidden', !cur());
-  cancel.onclick = closeModal;
-  inp.oninput = () => {
-    const k = findRefKey(inp.value.trim());
-    hint.textContent = !inp.value.trim() ? '' : k ? `Confronto con le ultime ${REF.squadre[k].partite.length} partite scoutizzate di ${REF.squadre[k].nome}.` : 'Nessuna partita scoutizzata di questa squadra: confronto solo con il Decimo.';
+// formazione di partenza del set n: trascinare dalla lista al campo, ruotare, libero, chi batte
+function openFormazione(m, n, F, isNew) {
+  F = { firstServer: F.firstServer, lineup: Object.assign({}, F.lineup), libero: F.libero };
+  const draw = () => {
+    const z = F.lineup, sz = +Object.keys(z).find(k => z[k] && C.roleOf(m, z[k]) === 'P') || null;
+    const used = new Set(Object.values(z).concat([F.libero]));
+    const full = [1, 2, 3, 4, 5, 6].every(k => z[k]);
+    const hot = REF && REF.momenti_caldi ? REF.momenti_caldi.quote : null;
+    let cells = '';
+    if (full && sz) {
+      let six = [1, 2, 3, 4, 5, 6].map(k => z[k]);
+      for (let i = 0; i < 6; i++) {
+        const rz = six.findIndex(x => C.roleOf(m, x) === 'P') + 1;
+        cells += `<div><b>P${rz}</b><br>${esc(C.frontLine(m, six))}<br><span>batte ${esc(C.nameOf(m, six[0]))}</span>${hot ? `<div class="hot"><i style="width:${Math.round(hot[i] * 200)}px"></i>momenti caldi ${pc(hot[i])}</div>` : ''}</div>`;
+        six = C.rotate(six);
+      }
+    }
+    sheet(`<h3>Set ${n} · formazione <small>${esc(m.opponent)}${sz ? ' · parte in P' + sz : ''}</small></h3>
+      <div class="cf"><div>
+        <div class="field"><div class="net"></div><div class="zones">${ORDER.map(k => `<div class="zn" data-drop="z:${k}"><span class="zl2">${k}</span>${k === sz ? `<span class="zr">P${k}</span>` : ''}${z[k] ? plHtml(m, z[k], 'z:' + k) : '<div class="pl empty">—</div>'}</div>`).join('')}</div></div>
+        <div class="rotbtn"><button id="f-back">${svgRot(ROT_ICONS.back)}Indietro</button><button id="f-fwd">${svgRot(ROT_ICONS.fwd)}Avanti</button></div>
+        <div class="libslot"><span class="lab">LIBERO</span><div class="zn" data-drop="lib">${F.libero ? plHtml(m, F.libero, 'lib') : '<div class="pl empty">libero</div>'}</div></div>
+        <div class="bsrv"><button data-srv="noi" class="${F.firstServer === 'noi' ? 'on' : ''}">Batte Decimo</button><button data-srv="loro" class="${F.firstServer === 'loro' ? 'on' : ''}">Batte ${esc(m.opponent)}</button></div>
+      </div><div class="side"><div class="l">A REFERTO</div><div class="drop-roster" data-drop="roster">${m.roster.filter(p => !used.has(p.n)).map(p =>
+        `<div class="chipp" data-drag="r:${p.n}"><span class="nu">${p.n}</span><span class="co">${esc(p.c)}</span><span class="ro">${p.r}</span></div>`).join('') || '<div class="muted">tutti in campo</div>'}</div></div></div>
+      ${cells ? `<div class="lab" style="margin-top:12px">PRIMA LINEA IN OGNI ROTAZIONE (posto 4 – centro – posto 2)</div><div class="fl">${cells}</div>` : ''}
+      <div class="brow"><button id="f-cancel">Annulla</button><button class="ok" id="f-ok" ${full && sz ? '' : 'disabled'}>Inizia il set</button></div>`);
+    document.getElementById('f-fwd').onclick = () => { const o = {}; for (let k = 1; k <= 6; k++) o[k] = z[k === 6 ? 1 : k + 1]; F.lineup = o; draw(); };
+    document.getElementById('f-back').onclick = () => { const o = {}; for (let k = 1; k <= 6; k++) o[k] = z[k === 1 ? 6 : k - 1]; F.lineup = o; draw(); };
+    document.querySelectorAll('[data-srv]').forEach(b => b.onclick = () => { F.firstServer = b.dataset.srv; draw(); });
+    document.getElementById('f-cancel').onclick = closeSheet;
+    document.getElementById('f-ok').onclick = () => {
+      const set = { firstServer: F.firstServer, lineup: F.lineup, libero: F.libero };
+      if (isNew) { m.sets = [set]; db.matches.push(m); db.currentId = m.id; }
+      else if (m.sets.length >= n) m.sets[n - 1] = set; else m.sets.push(set);
+      save(); closeSheet(); showView('live');
+    };
   };
-  document.getElementById('m-ok').onclick = () => {
-    const opponent = inp.value.trim() || 'Avversario';
-    const m = { id: Date.now(), opponent, refKey: findRefKey(opponent), date: new Date().toISOString().slice(0, 10), sets: [{ firstServer: 'noi' }], rallies: [], alerts: [] };
-    startSet(m, 1, set => {
-      m.sets[0] = set;
-      db.matches.push(m); db.currentId = m.id;
-      save(); showView('live');
-    });
+  dropCtx = {
+    check(src, dst) {
+      const n0 = src.startsWith('r:') ? +src.slice(2) : src === 'lib' ? F.libero : F.lineup[+src.slice(2)];
+      if (!n0) return 'x';
+      if (dst === 'lib') return C.roleOf(m, n0) === 'L' ? null : 'Qui solo un libero';
+      if (dst.startsWith('z:') && C.roleOf(m, n0) === 'L') return 'Il libero va nel suo posto';
+      return null;
+    },
+    drop(src, dst) {
+      const z = F.lineup, n0 = src.startsWith('r:') ? +src.slice(2) : src === 'lib' ? F.libero : z[+src.slice(2)];
+      const from = src.startsWith('z:') ? +src.slice(2) : null;
+      if (dst === 'roster') { if (from) delete z[from]; else if (src === 'lib') F.libero = null; }
+      else if (dst === 'lib') F.libero = n0;
+      else { const k = +dst.slice(2), prev = z[k]; z[k] = n0; if (from) { if (prev) z[from] = prev; else delete z[from]; } }
+      draw();
+    },
   };
+  draw();
 }
+
+// cambi del set in corso: trascinare dalla panchina sul giocatore che esce
+function openCambi() {
+  const m = cur(), n = m.sets.length;
+  const draw = () => {
+    const st = C.replay(m, n), sz = st.rot;
+    const badge = x => { const s = C.subStatus(st, x); return s.k === 'sub' ? `<span class="bd">esce solo per ${esc(C.nameOf(m, s.pair))}</span>` : s.k === 'back' ? '<span class="bd lock">🔒 rientrato</span>' : ''; };
+    const onCourt = new Set(st.six.concat([st.libero]));
+    const bench = m.roster.filter(p => !onCourt.has(p.n)).map(p => {
+      const s = C.subStatus(st, p.n), dead = s.k === 'done' || s.k === 'back';
+      const bd = s.k === 'out' ? `solo per ${esc(C.nameOf(m, s.pair))}` : s.k === 'done' ? 'già uscito' : '';
+      return `<div class="chipp ${dead ? 'dead' : ''}" data-drag="${dead ? 'x' : 'r:' + p.n}"><span class="nu">${p.n}</span><span class="co">${esc(p.c)}</span>${bd ? `<span class="bd">${bd}</span>` : `<span class="ro">${p.r}</span>`}</div>`;
+    }).join('');
+    sheet(`<h3>Cambi <span class="cnt" style="${C.MAX_SUBS - st.subs.length <= 2 ? 'color:var(--warn)' : ''}">${st.subs.length}/${C.MAX_SUBS}</span> <small>${st.pts.noi}-${st.pts.loro} · set ${n}${sz ? ' · P' + sz : ''}</small></h3>
+      <div class="cf"><div>
+        <div class="field"><div class="net"></div><div class="zones">${ORDER.map(k => `<div class="zn" data-drop="z:${k}"><span class="zl2">${k}</span>${k === sz ? `<span class="zr">P${k}</span>` : ''}${st.six[k - 1] ? plHtml(m, st.six[k - 1], 'x', badge(st.six[k - 1])) : ''}</div>`).join('')}</div></div>
+        <div class="libslot"><span class="lab">LIBERO</span><div class="zn" data-drop="lib">${st.libero ? plHtml(m, st.libero, 'x') : '<div class="pl empty">libero</div>'}</div></div>
+        <div class="hist">${st.subs.map(s => `<b>${esc(C.nameOf(m, s.in))}</b> per ${esc(C.nameOf(m, s.out))} · ${s.noi}-${s.loro}`).join('<br>')}</div>
+      </div><div class="side"><div class="l">PANCHINA</div>${bench || '<div class="muted">nessuno</div>'}</div></div>
+      <div class="brow"><button id="c-undo" ${st.subs.length ? '' : 'disabled'}>↶ Annulla ultimo cambio</button><button class="ok" id="c-ok">Fatto</button></div>`);
+    document.getElementById('c-ok').onclick = closeSheet;
+    document.getElementById('c-undo').onclick = () => {
+      const i = m.events.map((e, j) => (e.set === n && e.t === 'sub' ? j : -1)).filter(j => j >= 0).pop();
+      if (i !== undefined) { m.events.splice(i, 1); save(); draw(); }
+    };
+  };
+  dropCtx = {
+    check(src, dst) {
+      if (!src.startsWith('r:')) return 'x';
+      const n0 = +src.slice(2), st = C.replay(m, n);
+      if (dst === 'lib') return C.roleOf(m, n0) === 'L' ? null : 'Qui solo un libero';
+      if (!dst.startsWith('z:')) return 'x';
+      return C.subLegal(m, st, n0, st.six[+dst.slice(2) - 1]);
+    },
+    drop(src, dst) {
+      const n0 = +src.slice(2), st = C.replay(m, n);
+      if (dst === 'lib') m.events.push({ t: 'lib', set: n, n: n0 });
+      else m.events.push({ t: 'sub', set: n, out: st.six[+dst.slice(2) - 1], in: n0 });
+      save(); draw();
+    },
+  };
+  draw();
+}
+
+// ---------- trascinamento (dito o mouse) ----------
+let dropCtx = null, drag = null;
+document.addEventListener('pointerdown', e => {
+  const el = e.target.closest('[data-drag]');
+  if (!el || el.dataset.drag === 'x' || !dropCtx || !el.closest('#sheet')) return;
+  e.preventDefault();
+  const g = el.cloneNode(true); g.classList.add('ghost'); g.style.width = el.offsetWidth + 'px';
+  g.style.left = e.clientX + 'px'; g.style.top = e.clientY + 'px'; document.body.appendChild(g);
+  el.classList.add('dragging');
+  drag = { el, g, src: el.dataset.drag, target: null };
+  document.querySelectorAll('#sheet [data-drop]').forEach(d => {
+    if (d.dataset.drop === 'roster') return;
+    const r = dropCtx.check(drag.src, d.dataset.drop);
+    if (r !== 'x') d.classList.add(r ? 'no-target' : 'ok-target');
+  });
+});
+document.addEventListener('pointermove', e => {
+  if (!drag) return;
+  drag.g.style.left = e.clientX + 'px'; drag.g.style.top = e.clientY + 'px';
+  const t = document.elementFromPoint(e.clientX, e.clientY);
+  drag.target = t && t.closest('[data-drop]');
+});
+document.addEventListener('pointerup', () => {
+  if (!drag) return;
+  const { el, g, src, target } = drag; drag = null;
+  g.remove(); el.classList.remove('dragging');
+  document.querySelectorAll('.ok-target, .no-target').forEach(d => d.classList.remove('ok-target', 'no-target'));
+  if (!target || !dropCtx) return;
+  const dst = target.dataset.drop;
+  if (dst === src) return;
+  const r = dst === 'roster' ? null : dropCtx.check(src, dst);
+  if (r === 'x') return;
+  if (r) { toast(r); return; }
+  dropCtx.drop(src, dst);
+});
 
 // ---------- navigazione ----------
 let view = 'live';
 function showView(v) {
   view = v;
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.view === v));
-  ['live', 'stats', 'alerts', 'saved'].forEach(x => document.getElementById('view-' + x).classList.toggle('hidden', x !== v));
+  ['live', 'stats', 'calls', 'saved'].forEach(x => document.getElementById('view-' + x).classList.toggle('hidden', x !== v));
   render();
 }
 function render() {
   const m = cur();
   document.getElementById('title').textContent = m ? `Decimo – ${m.opponent} · ${m.date}` : 'Decimo Roma';
-  renderToasts(m);
-  if (!m && view !== 'saved' && view !== 'alerts') { newMatch(); return; }
+  const open = m ? (m.calls || []).filter(c => c.open).length : 0, badge = document.getElementById('call-n');
+  badge.textContent = open; badge.classList.toggle('hidden', !open);
+  if (!m && (view === 'live' || view === 'stats')) { view = 'saved'; document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.view === 'saved')); ['live', 'stats', 'calls', 'saved'].forEach(x => document.getElementById('view-' + x).classList.toggle('hidden', x !== 'saved')); }
   if (view === 'live') renderLive();
   if (view === 'stats') renderStats();
-  if (view === 'alerts') renderAlerts();
+  if (view === 'calls') renderCalls();
   if (view === 'saved') renderSaved();
 }
 
 // ---------- eventi ----------
 document.querySelector('.court').addEventListener('click', e => {
+  const m = cur(); if (!m) return;
   const b = e.target.closest('.act');
-  if (b && !b.disabled) addRally(b.dataset.t, b.dataset.a);
-});
-document.getElementById('toasts').addEventListener('click', e => {
-  const x = e.target.closest('[data-close]'), g = e.target.closest('[data-goto]');
-  if (x) { const a = (cur().alerts || []).find(a => String(a.id) === x.dataset.close); if (a) a.open = false; save(); renderToasts(cur()); }
-  if (g) showView(g.dataset.goto);
+  if (b && !b.disabled) { addRally(b.dataset.t, b.dataset.a); return; }
+  const to = e.target.closest('[data-to]');
+  if (to && !to.disabled) { push({ t: 'to', team: to.dataset.to }); save(); render(); return; }
+  const sb = e.target.closest('[data-subs]');
+  if (sb && !sb.disabled) {
+    if (sb.dataset.subs === 'noi') openCambi();
+    else if (C.replay(m, m.sets.length).oppSubs.length < C.MAX_SUBS) { push({ t: 'osub' }); save(); render(); }
+    return;
+  }
+  const done = e.target.closest('[data-done]');
+  if (done) { const c = (m.calls || []).find(x => String(x.id) === done.dataset.done); if (c) c.open = false; save(); render(); return; }
+  if (e.target.id === 'b-next') openFormazione(m, m.sets.length + 1, C.nextSetStart(m), false);
+  if (e.target.id === 'b-form') openFormazione(m, m.sets.length, m.sets[m.sets.length - 1], false);
+  if (e.target.dataset.go) showView(e.target.dataset.go);
 });
 document.querySelectorAll('.tab').forEach(t => t.onclick = () => showView(t.dataset.view));
-document.getElementById('set-chips').addEventListener('click', e => {
-  const b = e.target.closest('.chip'); if (!b) return;
-  statsSet = b.dataset.set === 'tutti' ? 'tutti' : Number(b.dataset.set); renderStats();
-});
-document.getElementById('set-window').onchange = e => { db.settings.window = Number(e.target.value); save(); };
-document.getElementById('set-good').onchange = e => { db.settings.good = e.target.checked; save(); };
+document.getElementById('set-chips').addEventListener('click', e => { const b = e.target.closest('.chip'); if (b) { statsSel = b.dataset.sel; renderStats(); } });
 document.getElementById('undo').onclick = undo;
-document.getElementById('to-noi').onclick = () => callTimeout('noi');
-document.getElementById('to-loro').onclick = () => callTimeout('loro');
-document.getElementById('rot-btns').addEventListener('click', e => {
-  const b = e.target.closest('button'); if (!b) return;
-  const m = cur(), n = m.sets.length, set = m.sets[n - 1], st = setStatus(m, n), p = Number(b.dataset.rot);
-  if (st.rot === p) return;
-  if (!st.rallies.length) set.startRot = p;
-  else {
-    set.rotFixes = (set.rotFixes || []).filter(f => f.at !== st.rallies.length);
-    set.rotFixes.push({ at: st.rallies.length, rot: p });
-  }
-  save(); render();
-});
 document.getElementById('swap').onclick = () => { db.swap = !db.swap; save(); render(); };
 document.getElementById('switch-serve').onclick = () => {
-  const m = cur(), n = m.sets.length, set = m.sets[n - 1], s = setStatus(m, n).server;
-  if (!m.rallies.some(r => r.set === n)) set.firstServer = other(s);
-  else set.serverOverride = other(s);
+  const m = cur(); if (!m) return;
+  const n = m.sets.length, st = C.replay(m, n);
+  if (!st.rallies.length && !m.events.some(e => e.set === n)) m.sets[n - 1].firstServer = C.other(m.sets[n - 1].firstServer);
+  else push({ t: 'srv' });
   save(); render();
 };
 document.getElementById('end-set').onclick = () => {
-  const m = cur(), n = m.sets.length, st = setStatus(m, n);
+  const m = cur(), n = m.sets.length, st = C.replay(m, n);
   if (st.winner || st.pts.noi === st.pts.loro) return;
-  confirmBox(`Chiudere il set ${n} sul ${st.pts.noi}-${st.pts.loro}?`,
-    'Serve solo se lo scout si è interrotto prima della fine del set.', 'Chiudi set', 'bnoi', () => {
-      m.sets[n - 1].closedBy = st.pts.noi > st.pts.loro ? 'noi' : 'loro'; save(); render();
-    });
+  confirmBox(`Chiudere il set ${n} sul ${st.pts.noi}-${st.pts.loro}?`, 'Serve solo se lo scout si è interrotto prima della fine del set.', 'Chiudi set', 'bnoi',
+    () => { push({ t: 'close', team: st.pts.noi > st.pts.loro ? 'noi' : 'loro' }); save(); render(); });
 };
-document.getElementById('new-match').onclick = newMatch;
+document.getElementById('new-match').onclick = openReferto;
 document.getElementById('saved-list').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
-  const id = Number(b.dataset.open || b.dataset.csv || b.dataset.del);
-  const m = db.matches.find(x => x.id === id);
-  if (b.dataset.open) { db.currentId = id; save(); showView('live'); }
+  const id = b.dataset.open || b.dataset.csv || b.dataset.del, m = db.matches.find(x => String(x.id) === id);
+  if (b.dataset.open) { db.currentId = m.id; save(); showView('live'); }
   if (b.dataset.csv) exportCsv(m);
-  if (b.dataset.del) confirmBox(`Eliminare Decimo – ${esc(m.opponent)} del ${m.date}?`,
-    'La partita verrà cancellata da questo iPad. Esporta prima il CSV se ti serve.', 'Elimina', 'bred', () => {
-      db.matches = db.matches.filter(x => x.id !== id);
-      if (db.currentId === id) db.currentId = null;
-      save(); render();
-    });
+  if (b.dataset.del) confirmBox(`Eliminare Decimo – ${esc(m.opponent)} del ${m.date}?`, 'La partita verrà cancellata da questo iPad. Esporta prima il CSV se ti serve.', 'Elimina', 'bred', () => {
+    db.matches = db.matches.filter(x => x.id !== m.id);
+    if (m.importata) db.removedImports = (db.removedImports || []).concat([m.id]);
+    if (db.currentId === m.id) db.currentId = null;
+    save(); render();
+  });
 });
 
-// schermo sempre acceso durante la partita (dove supportato)
 async function keepAwake() { try { await navigator.wakeLock.request('screen'); } catch (e) {} }
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') keepAwake(); });
 keepAwake();
-
 if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js');
 render();
 </script>

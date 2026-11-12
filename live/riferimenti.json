@@ -1,5 +1,5 @@
 {
- "generato": "2026-11-09",
+ "generato": "2026-11-12",
  "n_partite": 10,
  "decimo": {
   "partite": [
@@ -34,6 +34,16 @@
    "gratuiti": 50,
    "punti": 804,
    "subiti": 814,
+   "so_ace_sub": 32,
+   "so_err_loro": 91,
+   "so3_n": 337,
+   "so3_w": 154,
+   "bat_gioco": 678,
+   "o_pt1": 231,
+   "o_err1": 58,
+   "o_mur1": 34,
+   "bp3_n": 355,
+   "bp3_w": 179,
    "rot": {
     "1": {
      "ric": 144,
@@ -41,7 +51,9 @@
      "ric_gioco": 117,
      "pt1": 41,
      "err1": 10,
-     "mur1": 8
+     "mur1": 8,
+     "bat": 121,
+     "bp": 44
     },
     "2": {
      "ric": 125,
@@ -49,7 +61,9 @@
      "ric_gioco": 101,
      "pt1": 38,
      "err1": 14,
-     "mur1": 6
+     "mur1": 6,
+     "bat": 112,
+     "bp": 37
     },
     "3": {
      "ric": 130,
@@ -57,7 +71,9 @@
      "ric_gioco": 107,
      "pt1": 37,
      "err1": 5,
-     "mur1": 6
+     "mur1": 6,
+     "bat": 132,
+     "bp": 55
     },
     "4": {
      "ric": 131,
@@ -65,7 +81,9 @@
      "ric_gioco": 116,
      "pt1": 42,
      "err1": 11,
-     "mur1": 6
+     "mur1": 6,
+     "bat": 138,
+     "bp": 53
     },
     "5": {
      "ric": 130,
@@ -73,7 +91,9 @@
      "ric_gioco": 112,
      "pt1": 47,
      "err1": 9,
-     "mur1": 6
+     "mur1": 6,
+     "bat": 161,
+     "bp": 70
     },
     "6": {
      "ric": 154,
@@ -81,8 +101,72 @@
      "ric_gioco": 138,
      "pt1": 45,
      "err1": 18,
-     "mur1": 6
+     "mur1": 6,
+     "bat": 139,
+     "bp": 50
     }
+   }
+  },
+  "battitori": {
+   "Carrer": {
+    "battute": 60,
+    "ace": 5,
+    "errori": 13
+   },
+   "Cepparano": {
+    "battute": 93,
+    "ace": 4,
+    "errori": 13
+   },
+   "Pessei": {
+    "battute": 133,
+    "ace": 4,
+    "errori": 12
+   },
+   "Caranzetti": {
+    "battute": 97,
+    "ace": 3,
+    "errori": 9
+   },
+   "Chimenton": {
+    "battute": 129,
+    "ace": 8,
+    "errori": 15
+   },
+   "Moscetta": {
+    "battute": 103,
+    "ace": 5,
+    "errori": 6
+   },
+   "D'Arienzo": {
+    "battute": 92,
+    "ace": 7,
+    "errori": 15
+   },
+   "Licenziati": {
+    "battute": 7,
+    "ace": 0,
+    "errori": 0
+   },
+   "Sardella": {
+    "battute": 15,
+    "ace": 1,
+    "errori": 1
+   },
+   "Principato": {
+    "battute": 1,
+    "ace": 0,
+    "errori": 0
+   },
+   "D'Elia": {
+    "battute": 56,
+    "ace": 1,
+    "errori": 3
+   },
+   "Racheli": {
+    "battute": 17,
+    "ace": 0,
+    "errori": 0
    }
   }
  },
@@ -112,7 +196,17 @@
     "muri": 17,
     "gratuiti": 13,
     "punti": 150,
-    "subiti": 122
+    "subiti": 122,
+    "so_ace_sub": 4,
+    "so_err_loro": 7,
+    "so3_n": 60,
+    "so3_w": 41,
+    "bat_gioco": 129,
+    "o_pt1": 38,
+    "o_err1": 17,
+    "o_mur1": 7,
+    "bp3_n": 67,
+    "bp3_w": 38
    }
   },
   "appio": {
@@ -145,7 +239,17 @@
     "muri": 54,
     "gratuiti": 31,
     "punti": 623,
-    "subiti": 525
+    "subiti": 525,
+    "so_ace_sub": 23,
+    "so_err_loro": 63,
+    "so3_n": 224,
+    "so3_w": 105,
+    "bat_gioco": 500,
+    "o_pt1": 130,
+    "o_err1": 45,
+    "o_mur1": 27,
+    "bp3_n": 298,
+    "bp3_w": 180
    }
   },
   "astrolabio": {
@@ -176,7 +280,17 @@
     "muri": 36,
     "gratuiti": 16,
     "punti": 412,
-    "subiti": 430
+    "subiti": 430,
+    "so_ace_sub": 24,
+    "so_err_loro": 59,
+    "so3_n": 189,
+    "so3_w": 80,
+    "bat_gioco": 339,
+    "o_pt1": 115,
+    "o_err1": 39,
+    "o_mur1": 23,
+    "bp3_n": 162,
+    "bp3_w": 88
    }
   },
   "civita castellana": {
@@ -209,7 +323,17 @@
     "muri": 62,
     "gratuiti": 21,
     "punti": 580,
-    "subiti": 607
+    "subiti": 607,
+    "so_ace_sub": 29,
+    "so_err_loro": 60,
+    "so3_n": 283,
+    "so3_w": 125,
+    "bat_gioco": 478,
+    "o_pt1": 171,
+    "o_err1": 46,
+    "o_mur1": 38,
+    "bp3_n": 223,
+    "bp3_w": 129
    }
   },
   "civitavecchia": {
@@ -240,7 +364,17 @@
     "muri": 32,
     "gratuiti": 14,
     "punti": 431,
-    "subiti": 441
+    "subiti": 441,
+    "so_ace_sub": 27,
+    "so_err_loro": 64,
+    "so3_n": 181,
+    "so3_w": 78,
+    "bat_gioco": 348,
+    "o_pt1": 104,
+    "o_err1": 42,
+    "o_mur1": 17,
+    "bp3_n": 185,
+    "bp3_w": 103
    }
   },
   "genzano": {
@@ -267,7 +401,17 @@
     "muri": 3,
     "gratuiti": 8,
     "punti": 65,
-    "subiti": 75
+    "subiti": 75,
+    "so_ace_sub": 3,
+    "so_err_loro": 8,
+    "so3_n": 30,
+    "so3_w": 14,
+    "bat_gioco": 57,
+    "o_pt1": 27,
+    "o_err1": 4,
+    "o_mur1": 3,
+    "bp3_n": 23,
+    "bp3_w": 10
    }
   },
   "lazio": {
@@ -295,7 +439,17 @@
     "muri": 5,
     "gratuiti": 9,
     "punti": 100,
-    "subiti": 149
+    "subiti": 149,
+    "so_ace_sub": 12,
+    "so_err_loro": 26,
+    "so3_n": 74,
+    "so3_w": 23,
+    "bat_gioco": 85,
+    "o_pt1": 37,
+    "o_err1": 9,
+    "o_mur1": 1,
+    "bp3_n": 38,
+    "bp3_w": 18
    }
   },
   "monterotondo": {
@@ -327,7 +481,17 @@
     "muri": 56,
     "gratuiti": 22,
     "punti": 495,
-    "subiti": 403
+    "subiti": 403,
+    "so_ace_sub": 17,
+    "so_err_loro": 53,
+    "so3_n": 152,
+    "so3_w": 77,
+    "bat_gioco": 388,
+    "o_pt1": 95,
+    "o_err1": 41,
+    "o_mur1": 33,
+    "bp3_n": 219,
+    "bp3_w": 128
    }
   },
   "nmc": {
@@ -362,7 +526,17 @@
     "muri": 75,
     "gratuiti": 29,
     "punti": 785,
-    "subiti": 750
+    "subiti": 750,
+    "so_ace_sub": 33,
+    "so_err_loro": 96,
+    "so3_n": 347,
+    "so3_w": 172,
+    "bat_gioco": 663,
+    "o_pt1": 185,
+    "o_err1": 57,
+    "o_mur1": 36,
+    "bp3_n": 385,
+    "bp3_w": 206
    }
   },
   "poolstars": {
@@ -393,7 +567,17 @@
     "muri": 44,
     "gratuiti": 17,
     "punti": 417,
-    "subiti": 325
+    "subiti": 325,
+    "so_ace_sub": 11,
+    "so_err_loro": 54,
+    "so3_n": 123,
+    "so3_w": 60,
+    "bat_gioco": 354,
+    "o_pt1": 98,
+    "o_err1": 25,
+    "o_mur1": 30,
+    "bp3_n": 201,
+    "bp3_w": 126
    }
   },
   "pqp": {
@@ -424,7 +608,17 @@
     "muri": 28,
     "gratuiti": 12,
     "punti": 347,
-    "subiti": 336
+    "subiti": 336,
+    "so_ace_sub": 20,
+    "so_err_loro": 46,
+    "so3_n": 166,
+    "so3_w": 89,
+    "bat_gioco": 299,
+    "o_pt1": 97,
+    "o_err1": 39,
+    "o_mur1": 12,
+    "bp3_n": 151,
+    "bp3_w": 79
    }
   },
   "roma7": {
@@ -453,7 +647,17 @@
     "muri": 14,
     "gratuiti": 15,
     "punti": 215,
-    "subiti": 266
+    "subiti": 266,
+    "so_ace_sub": 28,
+    "so_err_loro": 32,
+    "so3_n": 136,
+    "so3_w": 50,
+    "bat_gioco": 176,
+    "o_pt1": 54,
+    "o_err1": 18,
+    "o_mur1": 8,
+    "bp3_n": 96,
+    "bp3_w": 51
    }
   },
   "roman": {
@@ -485,7 +689,17 @@
     "muri": 36,
     "gratuiti": 24,
     "punti": 459,
-    "subiti": 442
+    "subiti": 442,
+    "so_ace_sub": 18,
+    "so_err_loro": 57,
+    "so3_n": 177,
+    "so3_w": 83,
+    "bat_gioco": 391,
+    "o_pt1": 129,
+    "o_err1": 35,
+    "o_mur1": 19,
+    "bp3_n": 208,
+    "bp3_w": 119
    }
   },
   "san paolo 27": {
@@ -512,7 +726,17 @@
     "muri": 10,
     "gratuiti": 7,
     "punti": 101,
-    "subiti": 100
+    "subiti": 100,
+    "so_ace_sub": 1,
+    "so_err_loro": 13,
+    "so3_n": 46,
+    "so3_w": 26,
+    "bat_gioco": 88,
+    "o_pt1": 29,
+    "o_err1": 8,
+    "o_mur1": 3,
+    "bp3_n": 48,
+    "bp3_w": 19
    }
   },
   "santa monica": {
@@ -543,7 +767,17 @@
     "muri": 23,
     "gratuiti": 15,
     "punti": 337,
-    "subiti": 401
+    "subiti": 401,
+    "so_ace_sub": 36,
+    "so_err_loro": 52,
+    "so3_n": 178,
+    "so3_w": 68,
+    "bat_gioco": 273,
+    "o_pt1": 90,
+    "o_err1": 24,
+    "o_mur1": 12,
+    "bp3_n": 147,
+    "bp3_w": 86
    }
   },
   "stella mantus": {
@@ -576,7 +810,17 @@
     "muri": 42,
     "gratuiti": 33,
     "punti": 528,
-    "subiti": 583
+    "subiti": 583,
+    "so_ace_sub": 23,
+    "so_err_loro": 83,
+    "so3_n": 283,
+    "so3_w": 115,
+    "bat_gioco": 438,
+    "o_pt1": 134,
+    "o_err1": 57,
+    "o_mur1": 23,
+    "bp3_n": 224,
+    "bp3_w": 105
    }
   },
   "valsugana": {
@@ -603,7 +847,17 @@
     "muri": 6,
     "gratuiti": 14,
     "punti": 99,
-    "subiti": 101
+    "subiti": 101,
+    "so_ace_sub": 4,
+    "so_err_loro": 10,
+    "so3_n": 48,
+    "so3_w": 20,
+    "bat_gioco": 83,
+    "o_pt1": 32,
+    "o_err1": 5,
+    "o_mur1": 5,
+    "bp3_n": 41,
+    "bp3_w": 20
    }
   },
   "volley prati": {
@@ -631,8 +885,195 @@
     "muri": 12,
     "gratuiti": 11,
     "punti": 198,
-    "subiti": 177
+    "subiti": 177,
+    "so_ace_sub": 11,
+    "so_err_loro": 14,
+    "so3_n": 74,
+    "so3_w": 40,
+    "bat_gioco": 164,
+    "o_pt1": 55,
+    "o_err1": 8,
+    "o_mur1": 7,
+    "bp3_n": 94,
+    "bp3_w": 55
    }
   }
+ },
+ "rosa": [
+  {
+   "n": 2,
+   "c": "D'Elia",
+   "referto": true,
+   "r": "M"
+  },
+  {
+   "n": 3,
+   "c": "Liberatori",
+   "referto": false,
+   "r": "?"
+  },
+  {
+   "n": 4,
+   "c": "Chimenton",
+   "referto": true,
+   "r": "M"
+  },
+  {
+   "n": 10,
+   "c": "Racheli",
+   "referto": true,
+   "r": "P"
+  },
+  {
+   "n": 11,
+   "c": "Cepparano",
+   "referto": true,
+   "r": "C"
+  },
+  {
+   "n": 13,
+   "c": "Pessei",
+   "referto": true,
+   "r": "C"
+  },
+  {
+   "n": 14,
+   "c": "Caranzetti",
+   "referto": true,
+   "r": "P"
+  },
+  {
+   "n": 18,
+   "c": "Carrer",
+   "referto": true,
+   "r": "C"
+  },
+  {
+   "n": 19,
+   "c": "Terribili",
+   "referto": false,
+   "r": "?"
+  },
+  {
+   "n": 22,
+   "c": "D'Arienzo",
+   "referto": true,
+   "r": "O"
+  },
+  {
+   "n": 30,
+   "c": "Moscetta",
+   "referto": true,
+   "r": "C"
+  },
+  {
+   "n": 31,
+   "c": "Pedico",
+   "referto": true,
+   "r": "L"
+  },
+  {
+   "n": 40,
+   "c": "Colletti",
+   "referto": false,
+   "r": "?"
+  },
+  {
+   "n": 66,
+   "c": "Sardella",
+   "referto": true,
+   "r": "M"
+  }
+ ],
+ "modello": {
+  "soglie": {
+   "bat": -1,
+   "a1": 4,
+   "ac": 4,
+   "muri": 3,
+   "grat": 1
+  },
+  "coef": {
+   "b0": 0.0,
+   "bat": 1.287,
+   "a1": 2.061,
+   "ac": 2.403,
+   "muri": 0.477,
+   "grat": 0.437,
+   "o_bat": -1.287,
+   "o_a1": -2.061,
+   "o_ac": -2.403,
+   "o_muri": -0.477,
+   "o_grat": -0.437
+  },
+  "vale": {
+   "bat": 0.151,
+   "a1": 0.265,
+   "ac": 0.321,
+   "muri": 0.058,
+   "grat": 0.052,
+   "o_bat": -0.151,
+   "o_a1": -0.265,
+   "o_ac": -0.321,
+   "o_muri": -0.058,
+   "o_grat": -0.052
+  },
+  "set": 382,
+  "ritmo_noi": {
+   "bat": {
+    "m": -0.0397,
+    "v": 0.0841
+   },
+   "a1": {
+    "m": 0.0659,
+    "v": 0.1749
+   },
+   "ac": {
+    "m": 0.0589,
+    "v": 0.1901
+   },
+   "muri": {
+    "m": 0.0431,
+    "v": 0.041
+   },
+   "grat": {
+    "m": 0.0325,
+    "v": 0.0286
+   }
+  },
+  "ritmo_tutti": {
+   "bat": {
+    "m": -0.0382,
+    "v": 0.0798
+   },
+   "a1": {
+    "m": 0.066,
+    "v": 0.1705
+   },
+   "ac": {
+    "m": 0.0632,
+    "v": 0.1941
+   },
+   "muri": {
+    "m": 0.0438,
+    "v": 0.0445
+   },
+   "grat": {
+    "m": 0.0271,
+    "v": 0.0275
+   }
+  },
+  "scambi_set": 45.0
+ },
+ "momenti_caldi": {
+  "quote": [
+   0.253,
+   0.134,
+   0.072,
+   0.096,
+   0.182,
+   0.263
+  ],
+  "set": 202
  }
 }
