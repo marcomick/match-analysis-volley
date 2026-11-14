@@ -904,13 +904,13 @@
    "n": 2,
    "c": "D'Elia",
    "referto": true,
-   "r": "M"
+   "r": "O"
   },
   {
    "n": 3,
    "c": "Liberatori",
    "referto": false,
-   "r": "?"
+   "r": "M"
   },
   {
    "n": 4,
@@ -928,7 +928,7 @@
    "n": 11,
    "c": "Cepparano",
    "referto": true,
-   "r": "C"
+   "r": "M"
   },
   {
    "n": 13,
@@ -952,7 +952,7 @@
    "n": 19,
    "c": "Terribili",
    "referto": false,
-   "r": "?"
+   "r": "M"
   },
   {
    "n": 22,

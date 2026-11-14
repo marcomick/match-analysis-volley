@@ -3,7 +3,7 @@
 // riferimenti.json (valori "di solito") e partite.json (partite già giocate, dai .dvw), scritti da
 // src/live_reference.py, si prendono dalla rete quando c'è, così basta ricaricarli su Netlify;
 // senza rete si usa l'ultima copia salvata.
-const VERSION = 'scambi-live-v7';
+const VERSION = 'scambi-live-v17';
 const FILES = ['./', 'index.html', 'core.js', 'manifest.json', 'icon-180.png', 'icon-512.png', 'riferimenti.json', 'partite.json'];
 
 self.addEventListener('install', e => {
@@ -19,7 +19,9 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   const data = ['riferimenti.json', 'partite.json'].find(f => e.request.url.includes(f));
   if (data) {
+    // si salva solo una risposta buona: una pagina di errore (es. password non valida) non sostituisce la copia salvata
     e.respondWith(fetch(e.request).then(res => {
+      if (!res.ok) return caches.match(data).then(hit => hit || res);
       const copy = res.clone();
       caches.open(VERSION).then(c => c.put(data, copy));
       return res;

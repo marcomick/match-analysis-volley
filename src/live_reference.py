@@ -257,6 +257,17 @@ def _team_players(p, side):
     return {num: x for (sq, num), x in roster_by_number(p["players"]).items() if sq == side}
 
 
+def fixed_roles():
+    """Ruoli del Decimo fissati dall'utente (config/ruoli.csv, cognome -> P/M/C/O/L): valgono più del
+    ruolo scritto nel .dvw, che cambia da una partita all'altra (chi entra solo in battuta, chi gioca
+    qualche volta in un altro ruolo). Chiave: cognome minuscolo."""
+    path = os.path.join(REPO, "config", "ruoli.csv")
+    if not os.path.exists(path):
+        return {}
+    df = pd.read_csv(path)
+    return {pretty_name(c).lower(): r.strip().upper() for c, r in zip(df["cognome"], df["ruolo"])}
+
+
 def build_roster(files, rallies_of):
     """Rosa del Decimo nella stagione in corso. Numero dell'ultima partita in cui compare, ruolo più
     frequente nelle partite in cui ha giocato (nel .dvw il ruolo può cambiare da una partita all'altra);
@@ -281,8 +292,9 @@ def build_roster(files, rallies_of):
             prev = roster.get(c.lower(), {"referto": False})
             roster[c.lower()] = {"n": int(num), "c": c,
                                  "referto": prev["referto"] or (i >= len(files) - 2 and num in played)}
+    fixed = fixed_roles()
     for k, x in roster.items():
-        x["r"] = roles[k].most_common(1)[0][0] if k in roles else "?"
+        x["r"] = fixed.get(k) or (roles[k].most_common(1)[0][0] if k in roles else "?")
     return sorted(roster.values(), key=lambda x: x["n"])
 
 
@@ -525,7 +537,7 @@ def build_reference(n_matches=N_MATCHES):
     ref = {"generato": date.today().isoformat(), "n_partite": n_matches, "decimo": dec, "squadre": squadre,
            "rosa": build_roster(season_files or decimo_files[-2:], rallies_of),
            "modello": goal_model(D), "momenti_caldi": hot_moments(catalog, rallies_of)}
-    ref["_partite"] = past_matches(rallies_of, {x["c"].lower(): x["r"] for x in ref["rosa"] if x["r"] != "?"})
+    ref["_partite"] = past_matches(rallies_of, {**{x["c"].lower(): x["r"] for x in ref["rosa"] if x["r"] != "?"}, **fixed_roles()})
     return ref
 
 

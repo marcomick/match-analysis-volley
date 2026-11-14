@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockup · 1° attacco col palleggiatore davanti</title>
+<style>
+  :root {
+    --bg: #0f1117; --card: #1a1d27; --card2: #222634; --line: #2b2f3d; --text: #eef0f5; --muted: #9aa0b0;
+    --noi: #3b82f6; --loro: #f97316;
+    --pt: #15803d; --pt-hi: #22c55e; --err: #b91c1c; --err-hi: #ef4444; --warn: #facc15; --amb: #f59e0b;
+  }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; }
+  body { padding: 14px; max-width: 820px; }
+  .note { font-size: 13px; color: var(--muted); margin: 0 0 12px; line-height: 1.4; }
+  .note b { color: var(--text); }
+  .chips { display: flex; gap: 6px; margin-bottom: 10px; }
+  .chip { background: var(--card); padding: 7px 13px; border-radius: 10px; font-size: 14px; }
+  .chip.active { background: var(--text); color: var(--bg); font-weight: 600; }
+  .card { background: var(--card); border-radius: 14px; padding: 10px 14px 12px; margin-bottom: 10px; }
+  .q { font-size: 17px; font-weight: 700; margin-bottom: 8px; }
+  .q small { font-size: 12px; font-weight: 500; color: var(--muted); margin-left: 6px; }
+  .row { display: grid; grid-template-columns: 190px 1fr 92px; gap: 12px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); }
+  .row:first-of-type { border-top: 0; }
+  .lab b { font-size: 15px; }
+  .lab small { display: block; color: var(--muted); font-size: 11.5px; margin-top: 2px; }
+  .val { text-align: right; font-size: 26px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .val.green { color: var(--pt-hi); } .val.yellow { color: var(--warn); } .val.red { color: var(--err-hi); } .val.grey { color: var(--muted); font-size: 22px; }
+  .track { position: relative; height: 22px; background: var(--card2); border-radius: 6px; }
+  .fill { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 6px; }
+  .fill.green { background: rgba(34,197,94,.55); } .fill.yellow { background: rgba(250,204,21,.5); } .fill.red { background: rgba(239,68,68,.5); }
+  .fill.grey { background: rgba(154,160,176,.35); }
+  .tick { position: absolute; top: -4px; bottom: -4px; width: 2px; }
+  .tick.usual { background: var(--muted); }
+  .tick.goal { background: var(--pt-hi); width: 3px; }
+  .tick span { position: absolute; top: 26px; transform: translateX(-50%); font-size: 10.5px; white-space: nowrap; font-weight: 700; }
+  .tick.usual span { color: var(--muted); } .tick.goal span { color: var(--pt-hi); }
+  .counts { font-size: 12px; color: var(--muted); margin-top: 18px; }
+  .counts b { color: var(--text); font-weight: 600; }
+  .sets { display: flex; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); flex-wrap: wrap; }
+  .sets .s { background: var(--card2); border-radius: 9px; padding: 5px 10px; font-size: 13px; }
+  .sets .s b { font-size: 15px; margin-left: 4px; }
+  .sets .s small { color: var(--muted); margin-left: 4px; }
+  .foot { font-size: 11.5px; color: var(--muted); margin-top: 10px; line-height: 1.4; }
+  .lgd { display: flex; gap: 14px; font-size: 11.5px; color: var(--muted); margin: 2px 0 6px; }
+  .lgd i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+  .rots { display: flex; gap: 6px; margin-top: 6px; }
+  .rots span { background: var(--card2); border-radius: 7px; padding: 2px 8px; font-size: 12.5px; color: var(--muted); }
+  .rots span b { margin-left: 3px; }
+  .mini { background: var(--card); border-radius: 14px; padding: 8px 12px; font-size: 14px; display: flex; gap: 18px; flex-wrap: wrap; align-items: baseline; margin-bottom: 10px; }
+  .mini .t { color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .04em; }
+  .mini b { font-size: 17px; }
+  .mini small { color: var(--muted); font-size: 12px; }
+  h2 { font-size: 14px; color: var(--muted); font-weight: 600; margin: 18px 0 8px; letter-spacing: .03em; }
+</style>
+</head>
+<body>
+<p class="note"><b>Mockup</b> della nuova scheda del Riepilogo (numeri di esempio). Starebbe in cima, prima degli obiettivi del set.
+Efficienza = (punti − errori − murate sul 1° attacco) / ricezioni in gioco. Scambi col doppio cambio esclusi. Colore: <b style="color:#22c55e">verde</b> dall'obiettivo in su, <b style="color:#facc15">giallo</b> tra il solito e l'obiettivo, <b style="color:#ef4444">rosso</b> sotto il solito.</p>
+
+<h2>SCHERMATA PARTITA · RIGA SOTTO GLI OBIETTIVI DEL SET</h2>
+<div class="mini"><span class="t">1° ATTACCO · SET 2</span>
+  <span>Davanti <b style="color:var(--pt-hi)">38%</b> <small>P4 <b style="font-size:13px;color:var(--warn)">20</b> · P3 <b style="font-size:13px;color:var(--pt-hi)">67</b> · P2 <b style="font-size:13px;color:var(--err-hi)">0</b> · obiettivo 25</small></span>
+  <span>Dietro <b style="color:var(--muted)">25%</b> <small>P1 <b style="font-size:13px">33</b> · P6 <b style="font-size:13px">0</b> · P5 <b style="font-size:13px">50</b> · solito 24</small></span>
+</div>
+<p class="note">Il "1° attacco" che c'è già tra gli obiettivi del set è il <b>saldo</b> punti − errori/murate (obiettivo +4 a set), su tutte le rotazioni insieme: resta com'è. Questa riga aggiunge l'efficienza divisa per linea del palleggiatore e per rotazione.</p>
+
+<h2>VISTA "PARTITA"</h2>
+<div class="chips"><span class="chip active">Partita</span><span class="chip">Set 1</span><span class="chip">Set 2</span><span class="chip">Set 3</span><span class="chip">Confronto tra set</span></div>
+
+<div class="card">
+  <div class="q">1° attacco dopo ricezione <small>obiettivo del periodo: 25% col palleggiatore davanti</small></div>
+  <div class="lgd"><span><i style="background:#9aa0b0"></i>il nostro solito</span><span><i style="background:#22c55e"></i>obiettivo</span></div>
+
+  <div class="row">
+    <div class="lab"><b>Palleggiatore davanti</b><small>P2 · P3 · P4</small></div>
+    <div>
+      <div class="track">
+        <div class="fill yellow" style="width:38%"></div>
+        <div class="tick usual" style="left:32%"><span>solito 16%</span></div>
+        <div class="tick goal" style="left:50%"><span>obiettivo 25%</span></div>
+      </div>
+      <div class="counts"><b>9</b> punti · <b>4</b> errori o murate su <b>26</b> ricezioni in gioco</div><div class="rots"><span>P4<b style="color:var(--warn)">11%</b> <small>(9, solito 11)</small></span><span>P3<b style="color:var(--pt-hi)">30%</b> <small>(10, solito 23)</small></span><span>P2<b style="color:var(--err-hi)">14%</b> <small>(7, solito 16)</small></span></div>
+    </div>
+    <div class="val yellow">19%</div>
+  </div>
+
+  <div class="row">
+    <div class="lab"><b>Palleggiatore dietro</b><small>P1 · P6 · P5</small></div>
+    <div>
+      <div class="track">
+        <div class="fill grey" style="width:64%"></div>
+        <div class="tick usual" style="left:48%"><span>solito 24%</span></div>
+      </div>
+      <div class="counts"><b>12</b> punti · <b>3</b> errori o murate su <b>28</b> ricezioni in gioco</div><div class="rots"><span>P1<b style="color:var(--text)">27%</b> <small>(11, solito 18)</small></span><span>P6<b style="color:var(--text)">30%</b> <small>(10, solito 20)</small></span><span>P5<b style="color:var(--text)">43%</b> <small>(7, solito 37)</small></span></div>
+    </div>
+    <div class="val grey">32%</div>
+  </div>
+
+  <div class="sets">
+    <span class="muted" style="font-size:12px;color:var(--muted);align-self:center">Davanti, set per set:</span>
+    <span class="s">S1<b style="color:var(--err-hi)">11%</b><small>3 pt · 2 err su 9</small></span>
+    <span class="s">S2<b style="color:var(--pt-hi)">38%</b><small>4 pt · 1 err su 8</small></span>
+    <span class="s">S3<b style="color:var(--err-hi)">11%</b><small>2 pt · 1 err su 9</small></span>
+  </div>
+  <div class="foot">Per rotazione: verde dal 25% in su, giallo tra il solito della rotazione e il 25%, rosso sotto il solito (davanti); dietro senza colori. Con 5-10 ricezioni per rotazione un solo pallone sposta la percentuale di 10-20 punti. Da ricezione positiva (# +) l'app non lo sa: si vede dopo la partita dallo scout, in dashboard.</div>
+</div>
+
+<h2>VISTA "SET 2" (SET IN CORSO)</h2>
+<div class="chips"><span class="chip">Partita</span><span class="chip">Set 1</span><span class="chip active">Set 2</span></div>
+
+<div class="card">
+  <div class="q">1° attacco dopo ricezione <small>set 2 · obiettivo 25% col palleggiatore davanti</small></div>
+  <div class="row">
+    <div class="lab"><b>Palleggiatore davanti</b><small>P2 · P3 · P4</small></div>
+    <div>
+      <div class="track">
+        <div class="fill green" style="width:76%"></div>
+        <div class="tick usual" style="left:32%"><span>solito 16%</span></div>
+        <div class="tick goal" style="left:50%"><span>obiettivo 25%</span></div>
+      </div>
+      <div class="counts"><b>4</b> punti · <b>1</b> errore o murata su <b>8</b> ricezioni in gioco · <span style="color:var(--muted)">partita finora 19%</span></div>
+    </div>
+    <div class="val green">38%</div>
+  </div>
+  <div class="row">
+    <div class="lab"><b>Palleggiatore dietro</b><small>P1 · P6 · P5</small></div>
+    <div>
+      <div class="track">
+        <div class="fill grey" style="width:50%"></div>
+        <div class="tick usual" style="left:48%"><span>solito 24%</span></div>
+      </div>
+      <div class="counts"><b>3</b> punti · <b>1</b> errore o murata su <b>8</b> ricezioni in gioco</div>
+    </div>
+    <div class="val grey">25%</div>
+  </div>
+</div>
+
+<p class="note">Scala della barra: da 0% a 50% (sotto lo 0 la barra resta vuota e il numero è rosso). "Solito" = le partite di questa stagione in <code>partite.json</code>, ricalcolato a ogni aggiornamento dei riferimenti; obiettivo fisso al 25%.</p>
+</body>
+</html>

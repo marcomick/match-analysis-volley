@@ -1,0 +1,5 @@
+# Sito Netlify dell'app "Scambi live": si pubblica la cartella live/ con la funzione che chiede utente e password
+# (netlify/edge-functions/auth.js). Pubblicare dal terminale (netlify deploy --prod), non trascinando la
+# cartella: col trascinamento la funzione non viene caricata e il sito resterebbe aperto.
+[build]
+  publish = "live"

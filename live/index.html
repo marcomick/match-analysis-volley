@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Scambi live">
 <meta name="theme-color" content="#0f1117">
-<link rel="manifest" href="manifest.json">
+<link rel="manifest" href="manifest.json" crossorigin="use-credentials">
 <link rel="apple-touch-icon" href="icon-180.png">
 <title>Scambi live — Decimo Roma</title>
 <style>
@@ -101,6 +101,29 @@
   .hf .tl { position: absolute; top: -14px; left: 50%; transform: translateX(-50%); font-size: 10px; font-weight: 800; color: var(--text);
     background: #0b0d13; border: 1px solid var(--muted); border-radius: 4px; padding: 0 4px; white-space: nowrap; line-height: 12px; }
 
+  /* 1° attacco per linea del palleggiatore: riga breve nella schermata Partita, scheda nel Riepilogo */
+  .a1mini { background: var(--card); border-radius: 14px; padding: 7px 12px; font-size: 14px; display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: baseline; }
+  .a1mini .t { font-size: 11px; font-weight: 800; letter-spacing: .08em; color: var(--muted); width: 100%; }
+  .a1mini .ln b.v { font-size: 17px; }
+  .a1mini small { color: var(--muted); font-size: 12px; }
+  .a1mini small b { color: var(--text); }
+  .a1 .ok, .a1mini .ok { color: var(--pt-hi) !important; } .a1 .amb, .a1mini .amb { color: var(--amb) !important; } .a1 .bad, .a1mini .bad { color: var(--err-hi) !important; }
+  .a1 .row { display: grid; grid-template-columns: 170px 1fr 84px; gap: 12px; align-items: center; padding: 9px 0; border-top: 1px solid var(--line); }
+  .a1 .lab b { font-size: 15.5px; } .a1 .lab small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .a1 .val { text-align: right; font-size: 27px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .a1 .trk { position: relative; height: 20px; background: var(--card2); border-radius: 5px; }
+  .a1 .trk .fi { position: absolute; top: 2px; bottom: 2px; left: 0; border-radius: 4px; }
+  .a1 .trk .fi.ok { background: var(--pt-hi); } .a1 .trk .fi.amb { background: var(--amb); } .a1 .trk .fi.bad { background: var(--err-hi); }
+  .a1 .trk .tk { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--muted); }
+  .a1 .trk .tk.g { width: 3px; background: var(--text); }
+  .a1 .trk .tk span { position: absolute; top: 23px; transform: translateX(-50%); font-size: 10.5px; font-weight: 700; color: var(--muted); white-space: nowrap; }
+  .a1 .trk .tk.g span { color: var(--text); }
+  .a1 .cnt { font-size: 12.5px; color: var(--muted); margin-top: 17px; }
+  .a1 .cnt b { color: var(--text); font-weight: 600; }
+  .a1 .rots { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+  .a1 .rots span { background: var(--card2); border-radius: 7px; padding: 2px 8px; font-size: 13px; color: var(--muted); }
+  .a1 .rots span b { color: var(--text); margin-left: 3px; }
+  .a1 table.tb { margin-top: 8px; }
   .next { background: var(--card); border-radius: 14px; padding: 8px 12px; border-left: 5px solid var(--warn); }
   .next .l { font-size: 11px; font-weight: 800; letter-spacing: .08em; color: var(--warn); }
   .next .r { font-size: 14px; margin-top: 4px; line-height: 1.5; }
@@ -112,7 +135,7 @@
   .call.bad { --c: var(--err-hi); } .call.amb { --c: var(--amb); } .call.good { --c: var(--pt-hi); } .call.info, .call.neu { --c: var(--warn); }
   .call .k { display: inline-block; font-size: 12px; font-weight: 900; letter-spacing: .08em; padding: 3px 9px; border-radius: 6px; background: var(--c); color: #000; }
   .call .t { font-size: 19px; font-weight: 800; margin: 7px 0 3px; line-height: 1.2; }
-  .call .d { font-size: 14px; color: var(--muted); line-height: 1.5; }
+  .call .d { font-size: 14px; color: var(--muted); line-height: 1.5; white-space: pre-line; }
   .call .cmp { display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; margin: 6px 0 4px; font-size: 15px; }
   .call .cmp span { color: var(--muted); }
   .call .cmp b { font-variant-numeric: tabular-nums; }
@@ -121,7 +144,7 @@
   .call .row { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
   .call .row .more { flex: 1; font-size: 12px; color: var(--muted); }
   .call .row button { background: var(--text); color: var(--bg); font-weight: 700; padding: 10px 18px; border-radius: 10px; font-size: 16px; }
-  .call .when { font-size: 12px; color: var(--muted); margin-left: 8px; }
+  .call .when { font-size: 15px; font-weight: 800; color: var(--text); margin-left: 10px; }
 
   .rotline { font-size: 13px; color: var(--muted); padding: 0 2px; }
   .rotline b { color: var(--text); }
@@ -193,15 +216,36 @@
   .dragging { opacity: .3; }
   [data-drop].ok-target { outline: 3px solid var(--pt-hi); outline-offset: -3px; background-color: rgba(34,197,94,.18); }
   [data-drop].no-target { outline: 3px solid var(--err-hi); outline-offset: -3px; background-color: rgba(239,68,68,.18); }
+  .tip { position: fixed; z-index: 130; background: #0b0d13; border: 1px solid var(--text); color: var(--text); font-size: 14px; font-weight: 600;
+    padding: 8px 12px; border-radius: 9px; box-shadow: 0 8px 24px rgba(0,0,0,.6); pointer-events: none; max-width: 380px; white-space: pre-line; line-height: 1.5; }
+  [data-tip] { cursor: pointer; }
+  #view-stats .hf { height: 26px; }
+  #view-stats .hf .bv { top: 4px; font-size: 13.5px; }
+  #view-stats .tug { padding: 8px 0; }
+  #view-stats .tug .ln { padding: 3px 0; }
+  #view-stats .stk { padding: 4px 0; border-radius: 8px; }
+  #view-stats .stk .bar { height: 32px; }
+  [data-tip]:active { background: rgba(255,255,255,.06); }
+  .cmp-pick { display: flex; gap: 12px; align-items: center; font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+  .cmp-pick select { font-size: 16px; font-weight: 700; padding: 8px 12px; }
+  .heavy { display: inline-block; font-size: 10.5px; font-weight: 900; letter-spacing: .05em; background: var(--warn); color: #000; padding: 1px 6px; border-radius: 5px; vertical-align: 1px; }
+  .ptw { color: var(--muted); font-size: 13px; }
+  .mt .ph { font-size: 13px; font-weight: 600; margin-top: 3px; }
+  .mt .ph.up { color: #86efac; } .mt .ph.dn { color: #fca5a5; } .mt .ph.eq { color: var(--muted); font-weight: 500; }
   .toast { position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%); background: #7f1d1d; border: 2px solid var(--err-hi);
     color: #fff; font-weight: 700; padding: 12px 18px; border-radius: 12px; z-index: 120; font-size: 16px; }
 
   /* ---------- riepilogo ---------- */
   .chips { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 12px; }
-  .chip { background: var(--card); padding: 8px 14px; border-radius: 999px; }
+  .chip { background: var(--card); padding: 8px 14px; border-radius: 999px; font-size: 14px; }
   .chip.active { background: var(--text); color: var(--bg); font-weight: 600; }
   .card { background: var(--card); border-radius: 16px; padding: 12px 14px; margin-bottom: 12px; }
   .q { font-size: 19px; font-weight: 800; margin: 0 0 6px; }
+  .setres .res { display: flex; align-items: baseline; gap: 10px; font-size: 22px; padding: 2px 0; }
+  .setres .res b { font-weight: 600; color: var(--muted); } .setres .res b.win { font-weight: 900; color: var(--text); }
+  .setres .rn { font-size: 15px; font-weight: 800; color: var(--muted); min-width: 52px; }
+  .setres .rw { font-size: 15px; font-weight: 700; margin-left: 6px; }
+  .cmp-pick + .setres { margin: 10px 0 4px; }
   .q small { font-size: 13px; font-weight: 500; color: var(--muted); margin-left: 6px; }
   .sub { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
   .empty { color: var(--muted); font-size: 14px; }
@@ -282,6 +326,7 @@
       </div>
       <div id="banner" class="banner hidden"></div>
       <div class="goals" id="goals"></div>
+      <div class="a1mini hidden" id="att1"></div>
       <div class="next hidden" id="next"></div>
       <div id="call"></div>
       <div class="rotline" id="rotline"></div>
@@ -308,7 +353,7 @@
     <div class="sub"><b>Affidabile al X%</b> = probabilità che la differenza sia vera e non dovuta al caso, sugli scambi di tutta la partita (avvicinati al solito finché sono pochi). Sotto il 65%: "nessuna differenza".</div>
     <table class="leg">
       <tr><th>vs solito ↓ · vs loro →</th><th>▲ meglio</th><th>● come loro</th><th>▼ peggio</th></tr>
-      <tr><th class="up">▲ meglio del solito</th><td><span class="vb good">Ci fa vincere</span></td><td><span class="vb good">Sopra il solito</span></td><td><span class="vb amb">Meglio, ma non basta</span></td></tr>
+      <tr><th class="up">▲ meglio del solito</th><td><span class="vb good">Ci fa vincere</span></td><td><span class="vb good">Meglio del solito</span></td><td><span class="vb amb">Meglio, ma non basta</span></td></tr>
       <tr><th class="eq">● come al solito</th><td><span class="vb good">Ci fa vincere</span></td><td><span class="vb neu">Alla pari</span></td><td><span class="vb amb">Ok, ma non basta</span></td></tr>
       <tr><th class="dn">▼ peggio del solito</th><td><span class="vb amb">Sottotono, ma basta</span></td><td><span class="vb bad">Sottotono</span></td><td><span class="vb bad">Sottotono</span></td></tr>
     </table>
@@ -440,19 +485,24 @@ function half(it, side, cls, showT, pace) {
 }
 // rows: [{label, items (da goalState), done}]; decimoLeft: Decimo dalla parte sinistra
 function tugHtml(m, rows, dLeft) {
+  // tocco: con un solo set la riga intera (dettaglio delle due squadre); con più set la riga di ogni set
   const multi = rows.length > 1, sideOf = t => ((t === 'loro' ? !dLeft : dLeft) ? 'L' : 'R');
+  const tipOf = (r, g, t) => (r.det ? `${teamName(m, t)}${multi ? ' · ' + r.label : ''}: ${r.det[t][g.k]}` : '');
   const col = (g, t) => `<div>${rows.map((r, i) => {
     const it = r.items.find(x => x.g.k === g.k && x.t === t);
     const bar = half(it, sideOf(t), C.goalClass(it, r.done), i === 0, r.done ? null : it.pace);
     const lab = multi ? `<i>${r.label}</i>` : '';
-    return `<div class="ln">${sideOf(t) === 'L' ? bar + lab : lab + bar}</div>`;
+    return `<div class="ln"${multi && r.det ? ` data-tip="${esc(tipOf(r, g, t))}"` : ''}>${sideOf(t) === 'L' ? bar + lab : lab + bar}</div>`;
   }).join('')}</div>`;
   const head = t => `<span style="color:var(--${t});text-align:${sideOf(t) === 'L' ? 'right' : 'left'}">${sideOf(t) === 'L' ? '◀ ' : ''}${esc(teamName(m, t))}${sideOf(t) === 'R' ? ' ▶' : ''}</span>`;
   const [Lt, Rt] = dLeft ? ['noi', 'loro'] : ['loro', 'noi'];
   const vale = g => (REF && REF.modello ? Math.round(100 * Math.abs(REF.modello.vale[g.k])) + '%' : '');
-  return `<div class="tug-h">${head(Lt)}<span></span>${head(Rt)}</div>` + C.GOALS.map(g => `<div class="tug">${col(g, Lt)}
-    <div class="mid"><b>${g.name}</b><small>${g.how ? g.how + '<br>' : ''}${g.dir < 0 ? '<b class="lt">più corta è meglio</b><br>' : ''}vale ${vale(g)}</small></div>${col(g, Rt)}</div>`).join('');
+  return `<div class="tug-h">${head(Lt)}<span></span>${head(Rt)}</div>` + C.GOALS.map(g => {
+    const rowTip = !multi && rows[0].det ? ` data-tip="${esc(tipOf(rows[0], g, 'noi') + '\n' + tipOf(rows[0], g, 'loro'))}"` : '';
+    return `<div class="tug"${rowTip}>${col(g, Lt)}
+    <div class="mid"><b>${g.name}</b><small>${g.how ? g.how + '<br>' : ''}${g.dir < 0 ? '<b class="lt">più corta è meglio</b><br>' : ''}vale ${vale(g)}</small></div>${col(g, Rt)}</div>`; }).join('');
 }
+const det = (rs, pre = '') => { const o = {}; ['noi', 'loro'].forEach(t => { const d = C.goalDetails(rs, t); o[t] = Object.fromEntries(Object.entries(d).map(([k, v]) => [k, pre + v])); }); return o; };
 function focusText(m, f) {
   if (!f) return '';
   const what = f.t === 'noi'
@@ -461,7 +511,7 @@ function focusText(m, f) {
   return `<div class="focus">🎯 Concentrati su: <b>${f.t === 'loro' ? esc(m.opponent) + ', ' : ''}${f.g.name.toLowerCase()}</b> · ${what}, vale ${Math.round(100 * f.vale)}%</div>`;
 }
 function callHtml(c, tail) {
-  return `<div class="call ${c.cls}"><span class="k">${esc(c.k)}</span>${tail && c.score ? `<span class="when">set ${c.set} · ${c.score}</span>` : ''}
+  return `<div class="call ${c.cls}"><span class="k">${esc(c.k)}</span>${c.score ? `<span class="when">${tail ? '' : `set ${c.set} · `}${c.score}</span>` : ''}
     <div class="t">${esc(c.t)}</div>
     ${c.cmp ? `<div class="cmp">${c.cmp.map(([a, b]) => `<span>${esc(a)}</span><b>${esc(b)}</b>`).join('')}</div>` : ''}
     ${c.rel !== undefined ? `<div class="rel ${C.relClass(c.rel)}">${C.relText(c.rel)}</div>` : ''}
@@ -482,7 +532,7 @@ function nextHtml(m, st) {
     const ru = REF && REF.decimo ? REF.decimo.totali.rot[rot] : null;
     if (rr.length >= 3 && ru && C.compareRates(w, rr.length, ru.so, ru.ric, ru.so / ru.ric, 10) >= 0.8) warnR = ` <span class="warnic">⚠ ${w} su ${rr.length}</span> <span class="muted">(di solito ${pc(ru.so / ru.ric)})</span>`;
   }
-  return `<div class="l">IN ARRIVO${rot ? ' · P' + rot : ''}</div><div class="r">Batte <b>${esc(C.nameOf(m, srv))}</b>${warnS}<br>Ricezione con <b>${esc(C.frontLine(m, six))}</b>${warnR}</div>`;
+  return `<div class="l">IN ARRIVO${rot ? ' · P' + rot : ''}</div><div class="r">Batte <b>${esc(C.nameOf(m, srv))}</b>${warnS}<br>In attacco <b>${esc(C.attackLine(m, six))}</b>${warnR}</div>`;
 }
 function renderLive() {
   const m = cur(); if (!m) return;
@@ -499,8 +549,10 @@ function renderLive() {
   document.getElementById('setinfo').textContent = `Set ${n} · set ${won[L]}-${won[R]}` + (prev.length ? ' · ' + prev.join(', ') : '');
 
   const gs = C.goalState(m, REF, n);
-  document.getElementById('goals').innerHTML = gs ? focusText(m, gs.focus) + tugHtml(m, [{ label: 'S' + n, items: gs.items, done: gs.done }], decimoLeft())
+  document.getElementById('goals').innerHTML = gs ? focusText(m, gs.focus) + tugHtml(m, [{ label: 'S' + n, items: gs.items, done: gs.done, det: det(st.rallies) }], decimoLeft())
     : '<div class="empty">Obiettivi: servono i riferimenti (riferimenti.json).</div>';
+  const a1 = att1Mini(m, st.rallies, n), a1El = document.getElementById('att1');
+  a1El.innerHTML = a1; a1El.classList.toggle('hidden', !a1);
   const nx = nextHtml(m, st), nEl = document.getElementById('next');
   nEl.innerHTML = nx; nEl.classList.toggle('hidden', !nx);
   const open = (m.calls || []).filter(c => c.open), c = open[0];
@@ -519,6 +571,54 @@ function renderLive() {
   document.getElementById('end-set').disabled = !!st.winner || st.pts.noi === st.pts.loro;
 }
 
+// ---------- 1° attacco dopo ricezione per linea del palleggiatore ----------
+// "Solito" = le partite della stagione importate dallo scout (partite.json), esclusa quella in esame.
+function att1Usual(m) {
+  const rs = db.matches.filter(x => x.importata && x.id !== m.id).flatMap(x => C.allRallies(x));
+  const c = C.att1Counts(rs), u = { davanti: C.att1Eff(c.davanti), dietro: C.att1Eff(c.dietro), rot: {} };
+  Object.keys(c.rot).forEach(z => { u.rot[z] = C.att1Eff(c.rot[z]); });
+  return u;
+}
+const pct0 = v => (v === null ? '–' : Math.round(v) + '%');
+const A1_LABEL = { davanti: 'Palleggiatore davanti', dietro: 'Palleggiatore dietro' };
+function att1Mini(m, rs, n) {
+  const c = C.att1Counts(rs);
+  if (!c.davanti.n && !c.dietro.n) return '';
+  const u = att1Usual(m);
+  const line = k => {
+    const v = C.att1Eff(c[k]), goal = C.ATT1_GOALS[k];
+    const rots = C.ATT1_LINES[k].map(z => { const x = C.att1Eff(c.rot[z]); return `P${z} <b class="${C.att1Class(x, u.rot[z] ?? null, goal)}">${pct0(x)}</b>`; }).join(' · ');
+    return `<span class="ln">${k === 'davanti' ? 'Davanti' : 'Dietro'} <b class="v ${C.att1Class(v, u[k], goal)}">${pct0(v)}</b> <small>${rots} · obiettivo ${goal}%</small></span>`;
+  };
+  return `<span class="t">1° ATTACCO DOPO RICEZIONE · SET ${n}</span>${line('davanti')}${line('dietro')}`;
+}
+function att1Card(m, rs, setN) {
+  const c = C.att1Counts(rs);
+  if (!c.davanti.n && !c.dietro.n) return '';
+  const u = att1Usual(m), W = v => Math.max(0, Math.min(100, 2 * v));   // barra da 0% a 50%
+  const row = k => {
+    const a = c[k], v = C.att1Eff(a), goal = C.ATT1_GOALS[k], cls = C.att1Class(v, u[k], goal);
+    const rots = C.ATT1_LINES[k].map(z => { const x = C.att1Eff(c.rot[z]), r = c.rot[z];
+      return `<span>P${z}<b class="${C.att1Class(x, u.rot[z] ?? null, goal)}">${pct0(x)}</b> <small>(${r ? r.n : 0} ric · solito ${pct0(u.rot[z] ?? null)})</small></span>`; }).join('');
+    return `<div class="row"><div class="lab"><b>${A1_LABEL[k]}</b><small>${C.ATT1_LINES[k].map(z => 'P' + z).join(' · ')}</small></div>
+      <div><div class="trk">${v !== null ? `<div class="fi ${cls}" style="width:${W(v)}%"></div>` : ''}
+        ${u[k] !== null ? `<div class="tk" style="left:${W(u[k])}%"><span>solito ${pct0(u[k])}</span></div>` : ''}
+        <div class="tk g" style="left:${W(goal)}%"><span>obiettivo ${goal}%</span></div></div>
+        <div class="cnt"><b>${a.pt}</b> punti · <b>${a.e}</b> errori o murate su <b>${a.n}</b> ricezioni in gioco</div>
+        <div class="rots">${rots}</div></div>
+      <div class="val ${cls}">${pct0(v)}</div></div>`;
+  };
+  let perSet = '';
+  if (setN === null && m.sets.length > 1) {
+    const cells = (k, cs) => { const v = C.att1Eff(cs[k]); return `<td class="${C.att1Class(v, u[k], C.ATT1_GOALS[k])}" style="font-weight:800">${pct0(v)} <small class="muted" style="font-weight:500">(${cs[k].pt}-${cs[k].e} su ${cs[k].n})</small></td>`; };
+    perSet = `<table class="tb"><tr><th>Set</th><th>Davanti</th><th>Dietro</th></tr>${m.sets.map((_, i) => {
+      const cs = C.att1Counts(C.replay(m, i + 1).rallies); return `<tr><td>Set ${i + 1}</td>${cells('davanti', cs)}${cells('dietro', cs)}</tr>`; }).join('')}</table>`;
+  }
+  return `<div class="card a1"><div class="q">1° attacco dopo ricezione <small>${setN ? 'set ' + setN + ' · ' : ''}obiettivi: davanti ${C.ATT1_GOALS.davanti}%, dietro ${C.ATT1_GOALS.dietro}%</small></div>
+    ${row('davanti')}${row('dietro')}${perSet}
+    <div class="sub" style="margin:10px 0 0">(punti − errori − murate sul 1° attacco) / ricezioni in gioco, senza il doppio cambio. Verde dall'obiettivo in su, giallo tra il solito e l'obiettivo, rosso sotto il solito. "Solito" = le partite di questa stagione dallo scout. Con poche ricezioni per rotazione un pallone sposta la percentuale di 10-20 punti. Da ricezione positiva (# +) si vede solo dopo, dallo scout.</div></div>`;
+}
+
 // ---------- riepilogo ----------
 let statsSel = 'partita';
 function stageTable(m, rs, fase) {
@@ -529,17 +629,24 @@ function stageTable(m, rs, fase) {
   const head = so ? `Il nostro cambio palla <span style="font-size:15px;font-weight:600"><span style="color:var(--noi)">${cn.so}/${cn.ric} (${pc(cn.so / cn.ric)})</span> · loro <span style="color:var(--loro)">${cl.so}/${cl.ric} (${pc(cl.so / cl.ric)})</span></span>`
     : `Il nostro break-point <span style="font-size:15px;font-weight:600">= il loro cambio palla · noi <span style="color:var(--noi)">${cn.bp}/${cn.bat} (${pc(cn.bp / cn.bat)})</span> · loro <span style="color:var(--loro)">${cl.bp}/${cl.bat} (${pc(cl.bp / cl.bat)})</span></span>`;
   return `<div class="card"><div class="q">${head}</div><table class="mt"><tr><th></th><th>vs nostro solito</th><th>vs loro ${so ? 'in cambio palla' : 'in break-point'}</th><th></th></tr>
-    ${rep.map(x => `<tr><td class="m">${x.st.label}<small>noi ${esc(x.st.txt(x.cn))}${refNoi ? ` (di solito ${esc(C.usualTxt(x, refNoi))})` : ''} · loro ${esc(x.st.txt(x.cl))}</small></td>
-      <td class="sym ${x.vsUsual}">${C.SYM[x.vsUsual]}</td><td class="sym ${x.vsThem}">${C.SYM[x.vsThem]}</td><td class="ver"><span class="vb ${x.cls}">${x.label}</span></td></tr>`).join('')}</table></div>`;
+    ${rep.map(x => { const ph = C.stagePhrases(x.st.k, x.cn, x.cl, refNoi); const col = g => (g > 0 ? 'up' : g < 0 ? 'dn' : 'eq');
+      return `<tr><td class="m">${x.st.label}<div class="ph ${col(ph.good.u)}">${esc(ph.u)}</div><div class="ph ${col(ph.good.t)}">${esc(ph.t)}</div></td>
+      <td class="sym ${x.vsUsual}">${C.SYM[x.vsUsual]}</td><td class="sym ${x.vsThem}">${C.SYM[x.vsThem]}</td><td class="ver"><span class="vb ${x.cls}">${x.label}</span></td></tr>`; }).join('')}</table></div>`;
 }
-function pointsCard(m) {
+function pointsCard(m, sel) {   // sel: 'partita' (tutti i set), un numero di set (quello + totale) o 'confronto' (tutti i set)
   const COL = { primo: '#60a5fa', succ: '#a78bfa', muro: '#2dd4bf', ace: '#facc15', err: '#f87171' };
-  const blocks = [['PARTITA', C.allRallies(m)]].concat(m.sets.map((_, i) => { const s = C.replay(m, i + 1); return [`SET ${i + 1} · ${s.pts.noi}-${s.pts.loro}`, s.rallies]; }));
+  const sets = m.sets.map((_, i) => { const s = C.replay(m, i + 1); return [`SET ${i + 1} · ${setResult(m, i + 1)}`, s.rallies, i + 1]; }).filter(x => x[1].length);
+  const shown = typeof sel === 'number' ? sets.filter(x => x[2] === sel) : sets;
+  const blocks = [['PARTITA', C.allRallies(m)]].concat(shown);
   const max = Math.max(1, ...blocks.flatMap(([, rs]) => ['noi', 'loro'].map(t => rs.filter(r => r.winner === t).length)));
-  const bar = (rs, t) => { const c = C.pointCauses(rs, t); return C.CAUSES.map(([k]) => c[k] ? `<span style="width:${100 * c[k] / max}%;background:${COL[k]}">${c[k]}</span>` : '').join(''); };
-  return `<div class="card"><div class="q">Da dove arrivano i punti</div>
+  const label = Object.fromEntries(C.CAUSES);
+  const bar = rs_t => { const c = C.pointCauses(...rs_t); return C.CAUSES.map(([k]) => c[k] ? `<span style="width:${100 * c[k] / max}%;background:${COL[k]}">${c[k]}</span>` : '').join(''); };
+  const tip = (rs, t, l) => { const c = C.pointCauses(rs, t), e = c.errComp;
+    const err = [[e.attacco, 'in attacco'], [e.battuta, 'in battuta'], [e.invasione, 'invasioni'], [e.altro, 'altri']].filter(x => x[0]).map(x => x.join(' ')).join(', ');
+    return `${teamName(m, t)} · ${l.toLowerCase()}\n` + C.CAUSES.map(([k, lab]) => `${lab}: ${c[k]}${k === 'err' && err ? ` (${err})` : ''}`).join('\n'); };
+  return `<div class="card"><div class="q">Da dove arrivano i punti <small>tocca una riga per il dettaglio</small></div>
     <div class="lgd">${C.CAUSES.map(([k, l]) => `<span><i style="background:${COL[k]}"></i>${l}</span>`).join('')}</div>
-    ${blocks.map(([l, rs]) => `<div class="setlab">${l}</div>${['noi', 'loro'].map(t => `<div class="stk"><span style="color:var(--${t})">${esc(teamName(m, t))}</span><div class="bar">${bar(rs, t)}</div><span class="tot">${rs.filter(r => r.winner === t).length}</span></div>`).join('')}`).join('')}</div>`;
+    ${blocks.map(([l, rs]) => `<div class="setlab">${l}</div>${['noi', 'loro'].map(t => `<div class="stk" data-tip="${esc(tip(rs, t, l))}"><span style="color:var(--${t})">${esc(teamName(m, t))}</span><div class="bar">${bar([rs, t])}</div><span class="tot">${rs.filter(r => r.winner === t).length}</span></div>`).join('')}`).join('')}</div>`;
 }
 function p4Card(m) {
   const n = m.sets.length, st = C.replay(m, n);
@@ -581,46 +688,74 @@ function serversCard(m, rs) {
   }).join('');
   return rows ? `<div class="card"><div class="q">Battitori</div><table class="tb"><tr><th>Battitore</th><th>battute</th><th>ace</th><th>errori</th><th>di solito errori</th><th>di solito ace</th></tr>${rows}</table></div>` : '';
 }
-function compareSets(m, a, b) {   // set b rispetto al set a (chiusi): meglio / peggio per voce
-  const va = { noi: C.goalValues(C.replay(m, a).rallies, 'noi'), loro: C.goalValues(C.replay(m, a).rallies, 'loro') };
-  const vb = { noi: C.goalValues(C.replay(m, b).rallies, 'noi'), loro: C.goalValues(C.replay(m, b).rallies, 'loro') };
-  const better = [], worse = [];
-  C.GOALS.forEach(g => ['noi', 'loro'].forEach(t => {
-    const x = va[t][g.k], y = vb[t][g.k], d = (y - x) * g.dir * (t === 'noi' ? 1 : -1);
-    const line = `${g.name}${t === 'loro' ? ' loro' : ''}: ${fmtG(g.k, x)} → <b>${fmtG(g.k, y)}</b>`;
-    if (d > 0) better.push(line); if (d < 0) worse.push(line);
-  }));
-  return `<div class="mirror"><div class="upb"><h4>▲ SET ${b} RISPETTO AL SET ${a}: MEGLIO</h4>${better.join('<br>') || 'niente'}</div>
-    <div class="dnb"><h4>▼ SET ${b} RISPETTO AL SET ${a}: PEGGIO</h4>${worse.join('<br>') || 'niente'}</div></div>`;
+function setResult(m, n) {   // "14-25, vince Volley Prati" / "16-19, in corso"
+  const s = C.replay(m, n);
+  return `${s.pts.noi}-${s.pts.loro}, ${s.winner ? 'vince ' + teamName(m, s.winner) : 'in corso'}`;
 }
+function resHtml(m, n) {   // "Set 2  Decimo 21 – 25 Volley Prati  vince Volley Prati"
+  const s = C.replay(m, n), w = s.winner;
+  return `<div class="res"><span class="rn">Set ${n}</span><b class="${w === 'noi' ? 'win' : ''}">Decimo ${s.pts.noi}</b> – <b class="${w === 'loro' ? 'win' : ''}">${s.pts.loro} ${esc(teamName(m, 'loro'))}</b>
+    <span class="rw">${w ? 'vince ' + esc(teamName(m, w)) : 'in corso'}</span></div>`;
+}
+function compareSets(m, a, b) {   // set b rispetto al set a: per ogni voce quanti punti di scarto sposta
+  // battuta, 1° attacco, contrattacco ed errori gratuiti (nostri e loro) sommati danno esattamente lo scarto
+  // del set; i muri sono già dentro l'attacco avversario (le loro murate) e si mostrano senza contarli due volte
+  const ra = C.replay(m, a), rb = C.replay(m, b);
+  const va = { noi: C.goalValues(ra.rallies, 'noi'), loro: C.goalValues(ra.rallies, 'loro') };
+  const vb = { noi: C.goalValues(rb.rallies, 'noi'), loro: C.goalValues(rb.rallies, 'loro') };
+  const lines = [];
+  C.GOALS.forEach(g => ['noi', 'loro'].forEach(t => {
+    const x = va[t][g.k], y = vb[t][g.k], pts = (y - x) * g.dir * (t === 'noi' ? 1 : -1);
+    if (!pts) return;
+    lines.push({ name: `${g.name}${t === 'loro' ? ' ' + teamName(m, 'loro') : ''}`, x, y, k: g.k, pts, counts: g.k !== 'muri' });
+  }));
+  const ranked = lines.filter(l => l.counts).sort((p, q) => Math.abs(q.pts) - Math.abs(p.pts));
+  const tot = ranked.reduce((s, l) => s + Math.abs(l.pts), 0);
+  const top = new Set(ranked.filter((l, i) => i < 2 && Math.abs(l.pts) >= 2 && Math.abs(l.pts) >= 0.2 * tot));
+  const txt = l => `${top.has(l) ? '<span class="heavy">PESA DI PIÙ</span> ' : ''}${esc(l.name)}: ${fmtG(l.k, l.x)} → <b>${fmtG(l.k, l.y)}</b>`
+    + (l.counts ? ` <span class="ptw">${l.pts > 0 ? '+' : '−'}${Math.abs(l.pts)} ${Math.abs(l.pts) === 1 ? 'punto' : 'punti'}</span>` : ' <span class="ptw">(già nell\'attacco avversario)</span>');
+  const order = arr => arr.sort((p, q) => (q.counts - p.counts) || Math.abs(q.pts) - Math.abs(p.pts));
+  const better = order(lines.filter(l => l.pts > 0)), worse = order(lines.filter(l => l.pts < 0));
+  const da = ra.pts.noi - ra.pts.loro, db_ = rb.pts.noi - rb.pts.loro;
+  return `<div class="sub" style="margin-top:12px;font-size:15px;color:var(--text)">Scarto: set ${a} <b>${sgn(da)}</b> → set ${b} <b>${sgn(db_)}</b> (${sgn(db_ - da)} punti).
+    Le voci in punti sommate danno questa differenza.</div>
+    <div class="mirror"><div class="upb"><h4>▲ SET ${b} RISPETTO AL SET ${a}: MEGLIO</h4>${better.map(txt).join('<br>') || 'niente'}</div>
+    <div class="dnb"><h4>▼ SET ${b} RISPETTO AL SET ${a}: PEGGIO</h4>${worse.map(txt).join('<br>') || 'niente'}</div></div>`;
+}
+let cmpA = null, cmpB = null;
 function renderStats() {
   const m = cur(), body = document.getElementById('stats-body');
   if (!m) { body.innerHTML = ''; return; }
   const closed = m.sets.map((_, i) => i + 1).filter(n => C.replay(m, n).winner);
-  const chips = [['partita', 'Partita']].concat(m.sets.map((_, i) => [String(i + 1), 'Set ' + (i + 1)])).concat(closed.length >= 2 ? [['confronto', 'Confronto tra set']] : []);
+  const chips = [['partita', 'Partita']].concat(m.sets.map((_, i) => [String(i + 1), `Set ${i + 1}`])).concat(closed.length >= 2 ? [['confronto', 'Confronto tra set']] : []);
   if (!chips.some(c => c[0] === statsSel)) statsSel = 'partita';
   document.getElementById('set-chips').innerHTML = chips.map(([k, l]) => `<button class="chip ${k === statsSel ? 'active' : ''}" data-sel="${k}">${l}</button>`).join('');
-  let html = '';
+  let html = /^\d+$/.test(statsSel) ? `<div class="setres card">${resHtml(m, Number(statsSel))}</div>` : '';
   if (statsSel === 'confronto') {
-    const rows = closed.map(n => { const g = C.goalState(m, REF, n); const s = C.replay(m, n); return { label: 'S' + n, items: g.items, done: true, sc: `${s.pts.noi}-${s.pts.loro}` }; });
-    html = `<div class="card"><div class="q">Confronto tra set chiusi <small>${rows.map(r => `${r.label} ${r.sc}`).join(' · ')}</small></div>${REF ? tugHtml(m, rows, false) : ''}
-      ${compareSets(m, closed[closed.length - 2], closed[closed.length - 1])}</div>`;
+    if (!closed.includes(cmpB)) cmpB = closed[closed.length - 1];
+    if (!closed.includes(cmpA) || cmpA === cmpB) cmpA = closed.filter(n => n !== cmpB).pop();
+    const opt = sel => closed.map(n => `<option value="${n}" ${n === sel ? 'selected' : ''}>Set ${n}</option>`).join('');
+    const rows = [cmpA, cmpB].map(n => { const g = C.goalState(m, REF, n); return { label: 'S' + n, items: g.items, done: true, det: det(g.st.rallies) }; });
+    html = `<div class="card"><div class="cmp-pick"><select id="cmp-b">${opt(cmpB)}</select><span>rispetto a</span><select id="cmp-a">${opt(cmpA)}</select></div>
+      <div class="setres">${[cmpB, cmpA].map(n => resHtml(m, n)).join('')}</div>
+      ${REF ? tugHtml(m, rows, false) : ''}${compareSets(m, cmpA, cmpB)}</div>` + pointsCard(m, 'confronto');
   } else {
     const rs = statsSel === 'partita' ? C.allRallies(m) : C.replay(m, Number(statsSel)).rallies;
+    html += att1Card(m, rs, statsSel === 'partita' ? null : Number(statsSel));
     if (REF) {
       if (statsSel === 'partita') {
         const per = m.sets.map((_, i) => C.goalState(m, REF, i + 1)).filter(g => g.st.rallies.length);
         if (per.length) {
           const items = per[0].items.map(it => Object.assign({}, it, { v: per.reduce((a, g) => a + g.items.find(x => x.key === it.key).v, 0) / per.length }));
-          html += `<div class="card"><div class="q">Obiettivi · partita <small>media per set</small></div>${tugHtml(m, [{ label: '', items, done: true }], false)}</div>`;
+          html += `<div class="card"><div class="q">Obiettivi · partita <small>media per set · tocca una riga per il totale</small></div>${tugHtml(m, [{ label: '', items, done: true, det: det(C.allRallies(m), 'in tutta la partita: ') }], false)}</div>`;
         }
       } else {
         const g = C.goalState(m, REF, Number(statsSel));
-        html += `<div class="card"><div class="q">Obiettivi · set ${statsSel}${g.done ? '' : ' <small>in corso</small>'}</div>${tugHtml(m, [{ label: '', items: g.items, done: g.done }], false)}</div>`;
+        html += `<div class="card"><div class="q">Obiettivi · set ${statsSel}</div>${tugHtml(m, [{ label: '', items: g.items, done: g.done, det: det(g.st.rallies) }], false)}</div>`;
       }
     }
     if (statsSel === 'partita' || Number(statsSel) === m.sets.length) html += p4Card(m);
-    html += stageTable(m, rs, 'SO') + stageTable(m, rs, 'BP') + pointsCard(m) + rotCard(m, rs) + serversCard(m, rs);
+    html += stageTable(m, rs, 'SO') + stageTable(m, rs, 'BP') + pointsCard(m, statsSel === 'partita' ? 'partita' : Number(statsSel)) + rotCard(m, rs) + serversCard(m, rs);
   }
   body.innerHTML = html;
 }
@@ -628,7 +763,7 @@ function renderStats() {
 // ---------- chiamate e partite ----------
 function renderCalls() {
   const m0 = cur();
-  if (m0 && m0.importata && !m0.callsBuilt && REF) { C.rebuildCalls(m0, REF); save(); }
+  if (m0 && m0.importata && m0.callsBuilt !== C.CALLS_VERSION && REF) { C.rebuildCalls(m0, REF); save(); }
   const m = cur(), list = m ? (m.calls || []).slice().reverse() : [];
   document.getElementById('calls-list').innerHTML = list.length ? list.map(c => `<div style="margin-bottom:10px;max-width:680px;opacity:${c.open ? 1 : 0.6}">${callHtml(c, '')}</div>`).join('')
     : '<div class="card empty">Nessuna chiamata.</div>';
@@ -852,6 +987,17 @@ document.addEventListener('pointerup', () => {
   dropCtx.drop(src, dst);
 });
 
+// ---------- dettaglio al tocco ([data-tip]) ----------
+document.addEventListener('click', e => {
+  const old = document.querySelector('.tip'); if (old) old.remove();
+  const el = e.target.closest('[data-tip]'); if (!el) return;
+  const r = el.getBoundingClientRect(), d = document.createElement('div');
+  d.className = 'tip'; d.textContent = el.dataset.tip; document.body.appendChild(d);
+  const w = d.offsetWidth, x = Math.min(window.innerWidth - w - 8, Math.max(8, r.left + r.width / 2 - w / 2));
+  d.style.left = x + 'px'; d.style.top = (r.bottom + 8) + 'px';
+}, true);
+window.addEventListener('scroll', () => { const t = document.querySelector('.tip'); if (t) t.remove(); }, true);
+
 // ---------- navigazione ----------
 let view = 'live';
 function showView(v) {
@@ -893,6 +1039,11 @@ document.querySelector('.court').addEventListener('click', e => {
 });
 document.querySelectorAll('.tab').forEach(t => t.onclick = () => showView(t.dataset.view));
 document.getElementById('set-chips').addEventListener('click', e => { const b = e.target.closest('.chip'); if (b) { statsSel = b.dataset.sel; renderStats(); } });
+document.getElementById('stats-body').addEventListener('change', e => {
+  if (e.target.id === 'cmp-a') cmpA = Number(e.target.value);
+  if (e.target.id === 'cmp-b') { cmpB = Number(e.target.value); if (cmpA === cmpB) cmpA = null; }
+  renderStats();
+});
 document.getElementById('undo').onclick = undo;
 document.getElementById('swap').onclick = () => { db.swap = !db.swap; save(); render(); };
 document.getElementById('switch-serve').onclick = () => {

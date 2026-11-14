@@ -126,6 +126,11 @@
     const p2 = f.find(p => p !== p4 && p !== ce) || f[2];
     return `${p4.c} – ${ce.c} – ${p2.c}`;
   }
+  // chi attacca in prima linea: la prima linea senza il palleggiatore (posto 4, centro, posto 2)
+  function attackLine(m, six) {
+    const f = frontLine(m, six);
+    return f ? f.split(' – ').filter(c => (((m.roster || []).find(p => p.c === c)) || {}).r !== 'P').join(' – ') : '';
+  }
 
   // ---------- conteggi ----------
   // i cinque saldi degli obiettivi per una squadra, sugli scambi dati
@@ -174,6 +179,59 @@
       txt: c => `vinti ${c.bp3_w} su ${c.bp3_n}` },
   ];
 
+  // ---------- frasi brevi: cosa ci sposta rispetto al solito e rispetto a loro ----------
+  // Ogni momento ha le sue componenti (conteggi su un totale). Si cerca quella che si discosta di più
+  // dal riferimento, in numero di palloni, e la si scrive con una frase corta e il numero.
+  // dir: +1 = più è meglio per noi. noi/solito/loro: frasi quando noi ne abbiamo di più / di meno.
+  const COMP = {
+    ric: [{ n: c => c.ric, x: c => c.so_ace_sub, u: u => [u.so_ace_sub, u.ric], dir: -1, more: 'Subiamo più ace', less: 'Subiamo pochi ace', unit: 'ace subiti', tm: 'Subiamo più ace di loro', tl: 'Subiamo meno ace di loro' }],
+    att1: [
+      { n: c => c.ric_gioco, x: c => c.pt1, u: u => [u.pt1, u.ric_gioco], dir: 1, more: 'Finalizziamo tanto', less: 'Finalizziamo poco', unit: 'punti', tm: 'Finalizziamo più di loro', tl: 'Finalizziamo meno di loro' },
+      { n: c => c.ric_gioco, x: c => c.err1, u: u => [u.err1, u.ric_gioco], dir: -1, more: 'Sbagliamo di più', less: 'Sbagliamo poco', unit: 'errori', tm: 'Sbagliamo più di loro', tl: 'Sbagliamo meno di loro' },
+      { n: c => c.ric_gioco, x: c => c.mur1, u: u => [u.mur1, u.ric_gioco], dir: -1, more: 'Ci murano di più', less: 'Ci murano poco', unit: 'murate', tm: 'Ci murano più di quanto murano loro', tl: 'Ci murano meno di quanto murano loro' }],
+    so3: [{ n: c => c.so3_n, x: c => c.so3_w, u: u => [u.so3_w, u.so3_n], dir: 1, more: 'Lo scambio lungo lo vinciamo', less: 'Lo scambio lungo lo perdiamo', unit: 'vinti', tm: 'Nello scambio lungo vinciamo più di loro', tl: 'Nello scambio lungo vinciamo meno di loro' }],
+    bat: [
+      { n: c => c.bat, x: c => c.ace, u: u => [u.ace, u.bat], dir: 1, more: 'Facciamo più ace', less: 'Facciamo pochi ace', unit: 'ace', tm: 'Più ace di loro', tl: 'Meno ace di loro' },
+      { n: c => c.bat, x: c => c.err_bat, u: u => [u.err_bat, u.bat], dir: -1, more: 'Sbagliamo più battute', less: 'Sbagliamo poche battute', unit: 'errori', tm: 'Più errori in battuta di loro', tl: 'Meno errori in battuta di loro' }],
+    mdif: [
+      { n: c => c.bat_gioco, x: c => c.o_pt1, u: u => [u.o_pt1, u.bat_gioco], dir: -1, more: 'Il loro 1° attacco ci fa più punti', less: 'Il loro 1° attacco ci fa pochi punti', unit: 'punti subiti', tm: 'Sul 1° attacco loro segnano più di noi', tl: 'Sul 1° attacco loro segnano meno di noi', swap: true },
+      { n: c => c.bat_gioco, x: c => c.o_mur1, u: u => [u.o_mur1, u.bat_gioco], dir: 1, more: 'Muriamo di più', less: 'Muriamo poco', unit: 'muri', tm: 'Sul loro 1° attacco muriamo più di loro', tl: 'Sul loro 1° attacco muriamo meno di loro' },
+      { n: c => c.bat_gioco, x: c => c.o_err1, u: u => [u.o_err1, u.bat_gioco], dir: 1, more: 'Li facciamo sbagliare di più', less: 'Li facciamo sbagliare poco', unit: 'loro errori', tm: 'Sul 1° attacco loro sbagliano più di noi', tl: 'Sul 1° attacco loro sbagliano meno di noi', swap: true }],
+    bp3: [{ n: c => c.bp3_n, x: c => c.bp3_w, u: u => [u.bp3_w, u.bp3_n], dir: 1, more: 'Lo scambio lungo lo vinciamo', less: 'Lo scambio lungo lo perdiamo', unit: 'vinti', tm: 'Nello scambio lungo vinciamo più di loro', tl: 'Nello scambio lungo vinciamo meno di loro' }],
+  };
+  const fmtN = x => (x >= 10 || Math.abs(x - Math.round(x)) < 0.05 ? String(Math.round(x)) : x.toFixed(1).replace('.', ','));
+  // la componente più lontana dal riferimento (attesi = quota del riferimento sui nostri palloni)
+  function biggest(k, c, refRate) {
+    let best = null;
+    COMP[k].forEach(cp => {
+      const n = cp.n(c), x = cp.x(c), r = refRate(cp);
+      if (!n || r === null) return;
+      const exp = r * n, d = x - exp, z = Math.abs(d) / Math.sqrt(Math.max(0.5, exp * (1 - Math.min(r, 0.99))));
+      if (Math.abs(d) >= 1.5 && z >= 1 && (!best || z > best.z)) best = { cp, n, x, exp, d, z };
+    });
+    return best;
+  }
+  function stagePhrases(k, cn, cl, refNoi) {
+    const vsU = refNoi ? biggest(k, cn, cp => { const [a, b] = cp.u(refNoi); return b ? (a || 0) / b : null; }) : null;
+    const vsT = biggest(k, cn, cp => { const nn = cp.n(cl); return nn >= 4 ? cp.x(cl) / nn : null; });
+    const u = vsU ? `${vsU.d > 0 ? vsU.cp.more : vsU.cp.less}: ${vsU.x} ${vsU.cp.unit} (di solito ${fmtN(vsU.exp)})` : 'Come al solito';
+    const t = vsT ? `${vsT.d > 0 ? vsT.cp.tm : vsT.cp.tl}: ${vsT.x} su ${vsT.n} (${vsT.cp.swap ? 'noi' : 'loro'} ${vsT.cp.x(cl)} su ${vsT.cp.n(cl)})` : 'Come loro';
+    return { u, t, good: { u: vsU ? Math.sign(vsU.d) * vsU.cp.dir : 0, t: vsT ? Math.sign(vsT.d) * vsT.cp.dir : 0 } };
+  }
+
+  // dettaglio per le barre degli obiettivi (al tocco)
+  function goalDetails(rs, t) {
+    const o = other(t), c = f => rs.filter(f).length, A = (r, ...k) => k.includes(r.action), me = r => r.actor === t;
+    const pl = (x, a, b) => `${x} ${x === 1 ? a : b}`;
+    return {
+      bat: `${pl(c(r => me(r) && A(r, 'ace')), 'ace', 'ace')}, ${pl(c(r => me(r) && A(r, 'err_battuta')), 'errore', 'errori')}`,
+      a1: `${pl(c(r => me(r) && A(r, 'att_pt_1')), 'punto', 'punti')}, ${pl(c(r => me(r) && A(r, 'err_att_1')), 'errore', 'errori')}, ${pl(c(r => me(r) && A(r, 'mur_1')), 'murata', 'murate')}`,
+      ac: `${pl(c(r => me(r) && A(r, 'att_pt_s')), 'punto', 'punti')}, ${pl(c(r => me(r) && A(r, 'err_att_s')), 'errore', 'errori')}, ${pl(c(r => me(r) && A(r, 'mur_s')), 'murata', 'murate')}`,
+      muri: `${pl(c(r => r.actor === o && A(r, 'mur_1')), 'sul 1° attacco', 'sul 1° attacco')}, ${c(r => r.actor === o && A(r, 'mur_s'))} sugli altri`,
+      grat: `${pl(c(r => me(r) && A(r, 'invasione')), 'invasione', 'invasioni')}, ${pl(c(r => me(r) && A(r, 'altro')), 'altro errore', 'altri errori')}`,
+    };
+  }
+
   // ---------- statistica ----------
   const Phi = z => 0.5 * (1 + erf(z / Math.SQRT2));
   function erf(x) {   // Abramowitz-Stegun 7.1.26
@@ -206,7 +264,7 @@
   function verdictOf(vsUsual, vsThem) {
     if (vsUsual === 'dn') return vsThem === 'up' ? ['amb', 'Sottotono, ma basta'] : ['bad', 'Sottotono'];
     if (vsUsual === 'eq') return vsThem === 'up' ? ['good', 'Ci fa vincere'] : vsThem === 'dn' ? ['amb', 'Ok, ma non basta'] : ['neu', 'Alla pari'];
-    return vsThem === 'up' ? ['good', 'Ci fa vincere'] : vsThem === 'dn' ? ['amb', 'Meglio, ma non basta'] : ['good', 'Sopra il solito'];
+    return vsThem === 'up' ? ['good', 'Ci fa vincere'] : vsThem === 'dn' ? ['amb', 'Meglio, ma non basta'] : ['good', 'Meglio del solito'];
   }
   const totToStage = (st, tot) => (tot ? st.f(Object.assign({ so_ace_sub: 0, so3_n: 0, so3_w: 0, bat_gioco: 0, o_pt1: 0, o_err1: 0, o_mur1: 0, bp3_n: 0, bp3_w: 0 }, tot)) : null);
   function stageReport(rs, refNoi, refLoro) {
@@ -340,39 +398,105 @@
   const pc = x => Math.round(100 * x) + '%';
   const xy = (w, n) => `${w} su ${n} · ${n ? pc(w / n) : '–'}`;
 
+  // ---------- segnali negli ultimi scambi ----------
+  // Per ogni fondamentale: gli scambi in cui poteva succedere (opp), quelli in cui è successo (ev) e la quota
+  // abituale del Decimo (rate, dai riferimenti). Si guarda solo il set in corso e solo quando l'ultimo scambio
+  // è proprio uno di quei casi: si cerca il tratto finale (dall'1° evento del tratto all'ultimo scambio, al più
+  // SIG_WIN occasioni) più lontano dal solito; con almeno 3 casi e affidabilità >= SIG_REL è un segnale.
+  const SIG_WIN = 15, SIG_REL = 0.9;
+  // aumentare quando cambiano le regole delle chiamate: le partite importate le ricalcolano
+  const CALLS_VERSION = 4;
+  const A_ = (r, ...k) => k.includes(r.action);
+  const SIGNALS = [
+    { k: 'mur', title: 'CI MURANO', unit: ['murata', 'murate'], opp: r => true, ev: r => r.actor === 'noi' && A_(r, 'mur_1', 'mur_s'),
+      rate: u => (u.mur1 + u.murs) / u.scambi, per: 'scambi' },
+    { k: 'erratt', title: 'SBAGLIAMO IN ATTACCO', unit: ['errore in attacco', 'errori in attacco'], opp: r => true, ev: r => r.actor === 'noi' && A_(r, 'err_att_1', 'err_att_s'),
+      rate: u => (u.err1 + u.errs) / u.scambi, per: 'scambi' },
+    { k: 'acesub', title: 'SUBIAMO ACE', unit: ['ace subito', 'ace subiti'], opp: r => r.server === 'loro', ev: r => r.actor === 'loro' && A_(r, 'ace'),
+      rate: u => u.so_ace_sub / u.ric, per: 'ricezioni' },
+    { k: 'errbat', title: 'SBAGLIAMO IN BATTUTA', unit: ['errore in battuta', 'errori in battuta'], opp: r => r.server === 'noi', ev: r => r.actor === 'noi' && A_(r, 'err_battuta'),
+      rate: u => u.err_bat / u.bat, per: 'battute' },
+    { k: 'opt1', title: 'IL LORO 1° ATTACCO PASSA', unit: ['punto sul loro 1° attacco', 'punti sul loro 1° attacco'], opp: r => r.server === 'noi', ev: r => r.actor === 'loro' && A_(r, 'att_pt_1'),
+      rate: u => u.o_pt1 / u.bat, per: 'battute' },
+    { k: 'lungo', title: 'PERDIAMO LO SCAMBIO LUNGO', unit: ['scambio lungo perso', 'scambi lunghi persi'],
+      opp: r => !A_(r, 'ace', 'err_battuta', 'att_pt_1', 'err_att_1', 'mur_1'), ev: r => r.winner === 'loro',
+      rate: u => (u.so3_n - u.so3_w + u.bp3_n - u.bp3_w) / (u.so3_n + u.bp3_n), per: 'scambi lunghi' },
+    { k: 'grat', title: 'ERRORI GRATUITI', unit: ['errore gratuito', 'errori gratuiti'], opp: r => true, ev: r => r.actor === 'noi' && A_(r, 'invasione', 'altro'),
+      rate: u => u.gratuiti / u.scambi, per: 'scambi' },
+  ];
+  // P(X >= x) per X binomiale(n, p)
+  function binomTail(x, n, p) {
+    let term = Math.pow(1 - p, n), cdf = 0;
+    for (let i = 0; i < x; i++) { cdf += term; term *= (n - i) / (i + 1) * p / (1 - p); }
+    return Math.max(0, 1 - cdf);
+  }
+  // perché si perdono gli scambi del tratto (per capire cosa c'è dietro, anche in break-point)
+  function lossBreakdown(rr) {
+    const L = { err_battuta: ['errore in battuta', 'errori in battuta'], att_pt_1: ['punto sul loro 1° attacco', 'punti sul loro 1° attacco'],
+      ace: ['ace subito', 'ace subiti'], err_att_1: ['errore al 1° attacco', 'errori al 1° attacco'], mur_1: ['murata al 1° attacco', 'murate al 1° attacco'],
+      att_pt_s: ['punto sul loro contrattacco', 'punti sul loro contrattacco'], err_att_s: ['errore in contrattacco', 'errori in contrattacco'],
+      mur_s: ['murata in contrattacco', 'murate in contrattacco'], invasione: ['invasione', 'invasioni'], altro: ['altro errore', 'altri errori'] };
+    const c = {};
+    rr.filter(r => r.winner === 'loro').forEach(r => { c[r.action] = (c[r.action] || 0) + 1; });
+    return Object.entries(c).sort((a, b) => b[1] - a[1]).map(([a, x]) => `${x} ${(L[a] || ['altro', 'altro'])[x === 1 ? 0 : 1]}`).join(', ');
+  }
+  function signals(m, REF, rs) {
+    const u = REF && REF.decimo ? REF.decimo.totali : null, last = rs[rs.length - 1], out = [];
+    if (!u || !last) return out;
+    SIGNALS.forEach(sg => {
+      if (!sg.opp(last) || !sg.ev(last)) return;
+      const p0 = sg.rate(u);
+      if (!(p0 > 0)) return;
+      const ops = rs.filter(sg.opp).slice(-SIG_WIN);
+      let best = null;
+      ops.forEach((r, j) => {   // il tratto parte da un evento e arriva all'ultimo scambio
+        if (!sg.ev(r)) return;
+        const tr = ops.slice(j), x = tr.filter(sg.ev).length, n = tr.length;
+        if (x < 3) return;
+        const pv = binomTail(x, n, p0);
+        if (!best || pv < best.pv) best = { pv, x, n, tr };
+      });
+      if (!best) return;
+      const nStarts = ops.filter(sg.ev).length;   // tratti provati: l'affidabilità ne tiene conto
+      const rel = 1 - Math.min(1, best.pv * nStarts);
+      if (rel < SIG_REL) return;
+      const evs = best.tr.filter(sg.ev);
+      const first = rs[best.tr[0].idx - 1] || { noi: 0, loro: 0 };
+      const rots = [...new Set(evs.map(r => r.rot).filter(Boolean))].map(z => 'P' + z);
+      const all = rs.slice(best.tr[0].idx);
+      const det = [`Da ${first.noi}-${first.loro} a ${last.noi}-${last.loro}`, rots.length ? `in ${rots.join(', ')}` : ''];
+      if (sg.k === 'errbat') det.push('battono ' + [...new Set(evs.map(r => nameOf(m, r.six[0])))].join(', '));
+      if (sg.k === 'mur' || sg.k === 'erratt') {
+        const a = evs.filter(r => A_(r, 'mur_1', 'err_att_1')).length, b = evs.length - a;
+        det.push(!b ? 'tutte al 1° attacco' : !a ? 'tutte in contrattacco' : `${a} al 1° attacco, ${b} in contrattacco`);
+      }
+      const lost = all.filter(r => r.winner === 'loro').length;
+      out.push({ key: `sig-${sg.k}-${last.set}-${best.tr[0].idx}`, sig: sg.k, upd: true, cls: 'bad', k: sg.title,
+        t: sg.k === 'lungo' ? `Persi ${best.x} degli ultimi ${best.n} scambi lunghi` : `${best.x} ${sg.unit[1]} ${['battute', 'ricezioni'].includes(sg.per) ? 'nelle ultime' : 'negli ultimi'} ${best.n} ${sg.per}`,
+        cmp: [['Di solito', `${fmtN(p0 * best.n)} su ${best.n}`]].concat(sg.k === 'lungo' ? [] : [['Scambi persi', `${lost} su ${all.length}`]]),
+        rel, d: det.filter(Boolean).join(' · ') + '\nPersi per: ' + lossBreakdown(all) });
+    });
+    return out;
+  }
+
   function computeCalls(m, REF) {
     const out = [], n = m.sets.length, st = replay(m, n), rs = st.rallies, all = allRallies(m);
-    if (!rs.length) return out;
-    const last = rs[rs.length - 1], score = `${last.noi}-${last.loro}`;
+    if (!rs.length || st.winner) return out;   // a set finito non si chiama più niente
+    const last = rs[rs.length - 1];
     const opp = m.opponent;
 
-    // break avversario da 3 (si aggiorna 0-4, 0-5...) e rimonta: rischio
-    let k = 0; while (k < rs.length && rs[rs.length - 1 - k].winner === last.winner) k++;
-    if (last.winner === 'loro' && k >= 3) {
-      const from = rs[rs.length - 1 - k] ? rs[rs.length - 1 - k] : { noi: 0, loro: 0 };
-      const causes = rs.slice(rs.length - k).map(r => ACTIONS[r.action].label);
-      out.push({ key: `run-${n}-${rs.length - k}`, upd: true, cls: 'bad', k: `BREAK DI ${k}`,
-        t: `0-${k} da ${from.noi}-${from.loro}${st.rot ? `, siamo in P${st.rot}` : ''}: alza il rischio`,
-        d: [...new Set(causes)].join(', ') });
-    }
-    let minD = 0, lowAt = -1;
-    rs.forEach((r, i) => { if (r.noi - r.loro < minD) { minD = r.noi - r.loro; lowAt = i; } });
-    if (minD <= -3 && (last.noi - last.loro) - minD >= 3 && last.winner === 'noi') {
-      const low = rs[lowAt];
-      out.push({ key: `rec-${n}-${lowAt}`, cls: 'good', k: 'STIAMO RECUPERANDO', t: `Da ${low.noi}-${low.loro} a ${score}: abbassa il rischio`,
-        d: 'Battuta in campo, palla in gioco: non farli rifiatare.' });
-    }
+    // segnali: un fondamentale che negli ultimi scambi va molto peggio del solito
+    signals(m, REF, rs).forEach(c => out.push(c));
 
     // i momenti dello scambio sulla partita: quando la doppia indicazione cambia
     const refNoi = REF && REF.decimo ? REF.decimo.totali : null, refLoro = REF && m.refKey && REF.squadre[m.refKey] ? REF.squadre[m.refKey].totali : null;
     stageReport(all, refNoi, refLoro).forEach(x => {
       if (x.cls === 'neu' || x.xn.n < 8) return;
-      const lines = [['Noi oggi', x.st.txt(x.cn)]];
-      if (x.usualV !== null && refNoi) lines.push(['Di solito', usualTxt(x, refNoi)]);
-      lines.push(['Loro oggi', x.st.txt(x.cl)]);
+      const ph = stagePhrases(x.st.k, x.cn, x.cl, refNoi);
+      const lines = [['Rispetto al solito', ph.u], ['Rispetto a loro', ph.t]];
       const p = x.vsUsual !== 'eq' ? (x.vsUsual === 'up' ? x.pU : 1 - x.pU) : (x.vsThem === 'up' ? x.pT : 1 - x.pT);
       out.push({ key: `stage-${x.st.k}-${x.cls}-${x.label}`, cls: x.cls, k: x.label.toUpperCase(),
-        t: `${x.st.fase === 'SO' ? 'In ricezione' : 'In battuta'} · ${x.st.label}`, cmp: lines, rel: p });
+        t: `${x.st.fase === 'SO' ? 'In cambio palla' : 'In break-point'} · ${x.st.label}`, cmp: lines, rel: p });
     });
 
     // in arrivo: al prossimo cambio palla (se riceviamo) chi batte e quale prima linea riceverà
@@ -393,7 +517,7 @@
         if (rr.length >= 3 && ru && ru.ric) {
           const p = compareRates(w, rr.length, ru.so, ru.ric, ru.so / ru.ric, 10);
           if (p >= 0.8) out.push({ key: `rot-${n}-${nextRot}`, cls: 'info', k: `IN ARRIVO · P${nextRot}`,
-            t: `Riceviamo con ${frontLine(m, nextSix)}: oggi ${w} su ${rr.length}`, cmp: [['Di solito in P' + nextRot, pc(ru.so / ru.ric)]], rel: p });
+            t: `In attacco ${attackLine(m, nextSix)}: oggi ${w} su ${rr.length}`, cmp: [['Cambi palla di solito in P' + nextRot, pc(ru.so / ru.ric)]], rel: p });
         }
       }
       // 2° giro di P4 in arrivo: oggi col palleggiatore davanti contro dietro
@@ -448,8 +572,9 @@
     m.calls = m.calls || [];
     const n = m.sets.length, st = replay(m, n), at = st.rallies.length;
     computeCalls(m, REF).forEach(c => {
-      const old = m.calls.find(x => x.key === c.key);
-      if (old) { if (c.upd) Object.assign(old, c, { open: true, at, set: n }); return; }
+      const old = m.calls.find(x => x.key === c.key)
+        || (c.sig && m.calls.find(x => x.sig === c.sig && x.set === n && at - x.at <= SIG_WIN));
+      if (old) { if (c.upd) Object.assign(old, c, { open: true, at, set: n, score: `${st.pts.noi}-${st.pts.loro}` }); return; }
       // lo stesso momento dello scambio non prima di 8 scambi dall'ultima chiamata; la nuova chiude la vecchia
       if (c.key.startsWith('stage-')) {
         const same = m.calls.filter(x => x.key.startsWith('stage-' + c.key.split('-')[1] + '-'));
@@ -469,19 +594,49 @@
       if (e.t === 'r') updateCalls(copy, REF);
     });
     m.calls = copy.calls.map(c => Object.assign(c, { open: false }));
-    m.callsBuilt = true;
+    m.callsBuilt = CALLS_VERSION;
   }
 
   // ---------- da dove arrivano i punti ----------
-  const CAUSES = [['primo', '1° attacco'], ['succ', 'Attacco successivo'], ['muro', 'Muro'], ['ace', 'Ace'], ['err', 'Errori loro']];
+  const CAUSES = [['primo', '1° attacco'], ['succ', 'Attacco successivo'], ['muro', 'Muro'], ['ace', 'Ace'], ['err', 'Errori avversario']];
   function pointCauses(rs, t) {
-    const c = { primo: 0, succ: 0, muro: 0, ace: 0, err: 0 };
+    const c = { primo: 0, succ: 0, muro: 0, ace: 0, err: 0, errComp: { attacco: 0, battuta: 0, invasione: 0, altro: 0 } };
     rs.filter(r => r.winner === t).forEach(r => {
       if (r.actor === t) c[ACTIONS[r.action].cause] = (c[ACTIONS[r.action].cause] || 0) + 1;
       else if (r.action === 'mur_1' || r.action === 'mur_s') c.muro++;
-      else c.err++;
+      else {
+        c.err++;
+        const k = r.action === 'err_battuta' ? 'battuta' : r.action === 'invasione' ? 'invasione' : r.action.startsWith('err_att') ? 'attacco' : 'altro';
+        c.errComp[k]++;
+      }
     });
     return c;
+  }
+
+  // ---------- 1° attacco dopo ricezione per linea del palleggiatore ----------
+  // Obiettivo del periodo (indicazione dell'utente del 2026-11-14): efficienza = (punti − errori − murate
+  // sul 1° attacco) / ricezioni in gioco (senza ace ed errori in battuta), senza il doppio cambio.
+  // Obiettivi: 25% col palleggiatore davanti; dietro il livello playoff (28%) + 5, arrotondato a 35%.
+  const ATT1_LINES = { davanti: [4, 3, 2], dietro: [1, 6, 5] };
+  const ATT1_GOALS = { davanti: 25, dietro: 35 };
+  function att1Counts(rs) {
+    const rot = {};
+    rs.forEach(r => {
+      if (r.server !== 'loro' || !r.rot || r.dc || r.action === 'ace' || r.action === 'err_battuta') return;
+      const a = rot[r.rot] = rot[r.rot] || { pt: 0, e: 0, n: 0 };
+      a.n++;
+      if (r.actor === 'noi' && r.action === 'att_pt_1') a.pt++;
+      if (r.actor === 'noi' && (r.action === 'err_att_1' || r.action === 'mur_1')) a.e++;
+    });
+    const sum = zs => zs.reduce((s, z) => { const a = rot[z]; if (a) { s.pt += a.pt; s.e += a.e; s.n += a.n; } return s; }, { pt: 0, e: 0, n: 0 });
+    return { rot, davanti: sum(ATT1_LINES.davanti), dietro: sum(ATT1_LINES.dietro) };
+  }
+  const att1Eff = a => (a && a.n ? 100 * (a.pt - a.e) / a.n : null);
+  // verde dall'obiettivo in su, giallo tra il solito e l'obiettivo, rosso sotto il solito (o sotto l'obiettivo se il solito è già sopra)
+  function att1Class(v, usual, goal) {
+    if (v === null) return '';
+    if (v >= goal) return 'ok';
+    return usual !== null && usual < goal && v >= usual ? 'amb' : 'bad';
   }
 
   // ---------- partita nuova / set nuovo ----------
@@ -491,8 +646,9 @@
   }
 
   const Core = { ACTIONS, BUTTONS, MAX_SUBS, MAX_TO, other, nextZone, rotate, player, nameOf, roleOf, replay, allRallies, setsWon,
-    owner, subStatus, subLegal, frontLine, goalValues, stageCounts, STAGES, stageReport, SYM, verdictOf, GOALS, goalState,
-    goalClass, reached, whenP4, todayRates, serverStats, usualServe, serveSuggestions, computeCalls, updateCalls, rebuildCalls, relText,
-    relClass, compareRates, lineSplit, usualLine, pointCauses, CAUSES, nextSetStart, usualTxt, pc, xy };
+    owner, subStatus, subLegal, frontLine, attackLine, goalValues, stageCounts, STAGES, stageReport, SYM, verdictOf, GOALS, goalState,
+    goalClass, reached, whenP4, todayRates, serverStats, usualServe, serveSuggestions, computeCalls, updateCalls, rebuildCalls, CALLS_VERSION, stagePhrases, goalDetails, relText,
+    relClass, compareRates, lineSplit, usualLine, pointCauses, CAUSES, nextSetStart, usualTxt, pc, xy,
+    ATT1_LINES, ATT1_GOALS, att1Counts, att1Eff, att1Class };
   if (typeof module !== 'undefined' && module.exports) module.exports = Core; else root.Core = Core;
 })(this);
