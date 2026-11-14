@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<title>Sintetico ricezione-attacco · 13/11/2026</title>
+<style>
+  @page { size: A4 landscape; margin: 8mm; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Helvetica Neue", Arial, sans-serif; color: #1d2433; margin: 0; padding: 14px; background: #fff; }
+  h1 { font-size: 19px; margin: 0 0 2px; }
+  .sub { font-size: 12px; color: #5b6476; margin-bottom: 10px; }
+  .wrap { display: flex; gap: 18px; align-items: flex-start; }
+  .court { flex: 0 0 auto; }
+  .panel { flex: 1 1 auto; font-size: 12.5px; line-height: 1.38; }
+  .box { border: 1px solid #d5dae3; border-radius: 8px; padding: 8px 11px; margin-bottom: 9px; }
+  .box h2 { font-size: 13px; margin: 0 0 5px; text-transform: uppercase; letter-spacing: .04em; color: #39435a; }
+  .box p { margin: 3px 0; }
+  .a { color: #1f5fbf; font-weight: 700; }
+  .b { color: #c4610f; font-weight: 700; }
+  .cycle { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 4px 0 6px; }
+  .cycle span.st { border-radius: 5px; padding: 2px 7px; font-weight: 600; font-size: 12px; background: #eef1f6; }
+  .cycle span.st.ta { background: #dce8fb; color: #1f5fbf; }
+  .cycle span.st.tb { background: #fbe6d5; color: #b0560c; }
+  .cycle span.ar { color: #8a93a6; font-weight: 700; }
+  table { border-collapse: collapse; width: 100%; font-size: 11.5px; }
+  th, td { border: 1px solid #d5dae3; padding: 2px 5px; text-align: left; }
+  th { background: #f2f4f8; font-weight: 600; }
+  td.t { font-weight: 700; text-align: center; background: #f7f8fb; }
+  tr.ra td.c { background: #eef4fd; }
+  tr.rb td.c { background: #fdf3ea; }
+  .small { font-size: 11px; color: #5b6476; }
+</style>
+</head>
+<body>
+<h1>Sintetico ricezione-attacco · palleggiatore in prima linea, senza posto 4</h1>
+<div class="sub">Allenamento del 13/11/2026 · campo <span class="a">A in P4</span>, campo <span class="b">B in P2</span> · attacco dopo ricezione solo con <b>7</b> (base K7), <b>pipe</b>, <b>opposto da seconda linea</b></div>
+
+<div class="wrap">
+<div class="court">
+<svg width="470" height="830" viewBox="0 0 470 830" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, Helvetica Neue, Arial, sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2b3245"/>
+    </marker>
+    <marker id="arrg" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#8a93a6"/>
+    </marker>
+  </defs>
+
+  <!-- campo -->
+  <rect x="55" y="45" width="360" height="360" fill="#fdf3ea" stroke="#2b3245" stroke-width="2"/>
+  <rect x="55" y="405" width="360" height="360" fill="#eef4fd" stroke="#2b3245" stroke-width="2"/>
+  <line x1="55" y1="285" x2="415" y2="285" stroke="#2b3245" stroke-width="1.2"/>
+  <line x1="55" y1="525" x2="415" y2="525" stroke="#2b3245" stroke-width="1.2"/>
+  <!-- divisione zone (tratteggio leggero) -->
+  <g stroke="#b9c0cd" stroke-dasharray="4 4" stroke-width="1">
+    <line x1="175" y1="45" x2="175" y2="405"/><line x1="295" y1="45" x2="295" y2="405"/>
+    <line x1="175" y1="405" x2="175" y2="765"/><line x1="295" y1="405" x2="295" y2="765"/>
+  </g>
+  <!-- rete -->
+  <line x1="40" y1="405" x2="430" y2="405" stroke="#2b3245" stroke-width="5"/>
+  <text x="435" y="409" font-size="11" fill="#2b3245">rete</text>
+
+  <!-- numeri di zona -->
+  <g font-size="11" fill="#8a93a6">
+    <!-- B (guarda verso il basso: la sua sinistra è a destra) -->
+    <text x="62" y="300">2</text><text x="182" y="300">3</text><text x="302" y="300">4</text>
+    <text x="62" y="60">1</text><text x="182" y="60">6</text><text x="302" y="60">5</text>
+    <!-- A -->
+    <text x="62" y="420">4</text><text x="182" y="420">3</text><text x="302" y="420">2</text>
+    <text x="62" y="756">5</text><text x="182" y="756">6</text><text x="302" y="756">1</text>
+  </g>
+
+  <!-- etichette dei campi -->
+  <text x="235" y="32" text-anchor="middle" font-size="14" font-weight="700" fill="#c4610f">CAMPO B · P2</text>
+  <text x="235" y="790" text-anchor="middle" font-size="14" font-weight="700" fill="#1f5fbf">CAMPO A · P4</text>
+
+  <!-- battitori fuori dal campo -->
+  <g font-size="10.5" fill="#5b6476">
+    <circle cx="350" cy="22" r="7" fill="#fff" stroke="#5b6476" stroke-dasharray="2 2"/>
+    <text x="362" y="26">battono i fuori (su A)</text>
+    <circle cx="120" cy="806" r="7" fill="#fff" stroke="#5b6476" stroke-dasharray="2 2"/>
+    <text x="132" y="810">battono i fuori (su B)</text>
+  </g>
+
+  <!-- zone d'attacco -->
+  <g font-size="10.5" font-weight="700">
+    <!-- A -->
+    <rect x="178" y="410" width="44" height="20" rx="4" fill="#fff" stroke="#2b3245"/><text x="200" y="424" text-anchor="middle">7</text>
+    <rect x="198" y="532" width="44" height="20" rx="4" fill="#fff" stroke="#2b3245"/><text x="220" y="546" text-anchor="middle">pipe</text>
+    <rect x="318" y="532" width="44" height="20" rx="4" fill="#fff" stroke="#2b3245"/><text x="340" y="546" text-anchor="middle">da 1</text>
+    <!-- B -->
+    <rect x="248" y="380" width="44" height="20" rx="4" fill="#fff" stroke="#2b3245"/><text x="270" y="394" text-anchor="middle">7</text>
+    <rect x="228" y="258" width="44" height="20" rx="4" fill="#fff" stroke="#2b3245"/><text x="250" y="272" text-anchor="middle">pipe</text>
+    <rect x="78" y="258" width="44" height="20" rx="4" fill="#fff" stroke="#2b3245"/><text x="100" y="272" text-anchor="middle">da 1</text>
+  </g>
+
+  <!-- frecce A -->
+  <g stroke="#2b3245" stroke-width="1.6" fill="none" marker-end="url(#arr)">
+    <path d="M235,452 L210,432"/>
+    <path d="M128,640 Q180,600 214,556"/>
+    <path d="M355,632 L345,556"/>
+  </g>
+  <path d="M135,462 Q205,452 268,432" stroke="#8a93a6" stroke-width="1.4" fill="none" stroke-dasharray="5 3" marker-end="url(#arrg)"/>
+  <text x="276" y="446" font-size="10" fill="#8a93a6">penetra</text>
+
+  <!-- frecce B -->
+  <g stroke="#2b3245" stroke-width="1.6" fill="none" marker-end="url(#arr)">
+    <path d="M325,352 Q300,372 290,382"/>
+    <path d="M235,172 L248,254"/>
+    <path d="M318,170 Q210,200 124,262"/>
+  </g>
+  <path d="M112,346 L150,392" stroke="#8a93a6" stroke-width="1.4" fill="none" stroke-dasharray="5 3" marker-end="url(#arrg)"/>
+  <text x="130" y="374" font-size="10" fill="#8a93a6">penetra</text>
+
+  <!-- giocatori: A -->
+  <g font-size="12" font-weight="700" text-anchor="middle">
+    <!-- ricevitori: anello tratteggiato -->
+    <g fill="none" stroke="#1f5fbf" stroke-width="1.5" stroke-dasharray="3 3">
+      <circle cx="355" cy="465" r="25"/><circle cx="115" cy="645" r="25"/><circle cx="235" cy="645" r="25"/>
+    </g>
+    <circle cx="115" cy="465" r="18" fill="#1f5fbf"/><text x="115" y="469" fill="#fff">P</text>
+    <circle cx="235" cy="465" r="18" fill="#1f5fbf"/><text x="235" y="469" fill="#fff">C</text>
+    <circle cx="355" cy="465" r="18" fill="#9cbcf0"/><text x="355" y="469" fill="#123a75">M</text>
+    <circle cx="115" cy="645" r="18" fill="#1f5fbf"/><text x="115" y="649" fill="#fff">M</text>
+    <circle cx="235" cy="645" r="18" fill="#fff" stroke="#1f5fbf" stroke-width="2"/><text x="235" y="649" fill="#1f5fbf">L</text>
+    <circle cx="355" cy="645" r="18" fill="#1f5fbf"/><text x="355" y="649" fill="#fff">O</text>
+  </g>
+  <g font-size="10" fill="#1d2433" text-anchor="middle">
+    <text x="115" y="506">palleggiatore</text>
+    <text x="235" y="506">centrale · K7</text>
+    <text x="355" y="506">riceve e basta</text>
+    <text x="115" y="681">riceve + pipe</text>
+    <text x="235" y="681">libero</text>
+    <text x="355" y="681">opposto da 1</text>
+  </g>
+
+  <!-- giocatori: B -->
+  <g font-size="12" font-weight="700" text-anchor="middle">
+    <g fill="none" stroke="#c4610f" stroke-width="1.5" stroke-dasharray="3 3">
+      <circle cx="235" cy="340" r="25"/><circle cx="235" cy="160" r="25"/><circle cx="115" cy="160" r="25"/>
+    </g>
+    <circle cx="115" cy="340" r="18" fill="#c4610f"/><text x="115" y="344" fill="#fff">P</text>
+    <circle cx="235" cy="340" r="18" fill="#f2c39b"/><text x="235" y="344" fill="#6e3608">M</text>
+    <circle cx="355" cy="340" r="18" fill="#c4610f"/><text x="355" y="344" fill="#fff">C</text>
+    <circle cx="115" cy="160" r="18" fill="#fff" stroke="#c4610f" stroke-width="2"/><text x="115" y="164" fill="#c4610f">L</text>
+    <circle cx="235" cy="160" r="18" fill="#c4610f"/><text x="235" y="164" fill="#fff">M</text>
+    <circle cx="355" cy="160" r="18" fill="#c4610f"/><text x="355" y="164" fill="#fff">O</text>
+  </g>
+  <g font-size="10" fill="#1d2433" text-anchor="middle">
+    <text x="115" y="306">palleggiatore</text>
+    <text x="235" y="306">riceve e basta</text>
+    <text x="355" y="306">centrale · K7</text>
+    <text x="115" y="128">libero</text>
+    <text x="235" y="128">riceve + pipe</text>
+    <text x="355" y="128">opposto da 1</text>
+  </g>
+
+  <!-- legenda -->
+  <g font-size="10" fill="#5b6476">
+    <circle cx="62" cy="822" r="6" fill="none" stroke="#5b6476" stroke-dasharray="2 2"/>
+    <text x="72" y="826">anello = riceve · posizioni di rotazione a inizio scambio</text>
+  </g>
+</svg>
+</div>
+
+<div class="panel">
+  <div class="box">
+    <h2>Una coppia di scambi</h2>
+    <p><b>1.</b> <span class="a">A</span> riceve e attacca (7, pipe, opposto da 1) · <span class="b">B</span> muro e difesa, poi <b>contrattacco su palla alta</b> → stop.</p>
+    <p><b>2.</b> Subito l'inverso: <span class="b">B</span> riceve e attacca · <span class="a">A</span> muro, difesa, contrattacco su palla alta → stop.</p>
+    <p>A muro: palleggiatore, centrale, martello che riceve e basta. Il <b>centrale di muro</b> riceve dall'allenatore il segnale <b>segui / resta</b> prima della battuta: il palleggiatore legge se segue il 7.</p>
+    <p class="small">Contrattacco su palla alta anche in posto 4 (da confermare). Battono i due "fuori", alternati sui due campi.</p>
+  </div>
+
+  <div class="box">
+    <h2>Un turno</h2>
+    <p><b>6 coppie</b> (6 ricezioni per squadra). <b>Dopo 3 coppie i palleggiatori cambiano campo</b>: ognuno attacca con entrambi in ogni turno.</p>
+    <p><b>Prima di ruotare</b>: i due martelli di pipe hanno attaccato <b>almeno 2 pipe</b> a testa; se no, fino a 2 ricezioni in più a quella squadra con il segnale "segui".</p>
+  </div>
+
+  <div class="box">
+    <h2>Cambi a fine turno (tutti insieme, un posto avanti)</h2>
+    <p><b>Martelli</b></p>
+    <div class="cycle">
+      <span class="st">battuta</span><span class="ar">→</span>
+      <span class="st ta">A riceve e basta</span><span class="ar">→</span>
+      <span class="st ta">A riceve + pipe</span><span class="ar">→</span>
+      <span class="st tb">B riceve e basta</span><span class="ar">→</span>
+      <span class="st tb">B riceve + pipe</span><span class="ar">→</span>
+      <span class="st">battuta</span>
+    </div>
+    <p><b>Centrali</b></p>
+    <div class="cycle">
+      <span class="st">battuta</span><span class="ar">→</span>
+      <span class="st ta">A</span><span class="ar">→</span>
+      <span class="st tb">B</span><span class="ar">→</span>
+      <span class="st">battuta</span>
+    </div>
+    <p><b>Opposti e liberi</b>: cambiano campo a ogni turno. <b>Palleggiatori</b>: Racheli parte in A, Caranzetti in B, a metà turno si scambiano.</p>
+  </div>
+
+  <div class="box">
+    <h2>I 5 turni</h2>
+    <table>
+      <tr><th>T</th><th></th><th>Centrale</th><th>Opposto</th><th>Riceve + pipe</th><th>Riceve e basta</th><th>Libero</th><th>Battono</th></tr>
+      <tr class="ra"><td class="t" rowspan="2">1</td><td class="c a">A</td><td>Carrer</td><td>D'Elia</td><td>Sardella</td><td>Liberatori</td><td>Pedico</td><td rowspan="2">Moscetta, Viti</td></tr>
+      <tr class="rb"><td class="c b">B</td><td>Pessei</td><td>D'Arienzo</td><td>Cepparano</td><td>Terribili</td><td>Chimenton</td></tr>
+      <tr class="ra"><td class="t" rowspan="2">2</td><td class="c a">A</td><td>Moscetta</td><td>D'Arienzo</td><td>Liberatori</td><td>Viti</td><td>Chimenton</td><td rowspan="2">Pessei, Cepparano</td></tr>
+      <tr class="rb"><td class="c b">B</td><td>Carrer</td><td>D'Elia</td><td>Terribili</td><td>Sardella</td><td>Pedico</td></tr>
+      <tr class="ra"><td class="t" rowspan="2">3</td><td class="c a">A</td><td>Pessei</td><td>D'Elia</td><td>Viti</td><td>Cepparano</td><td>Pedico</td><td rowspan="2">Carrer, Terribili</td></tr>
+      <tr class="rb"><td class="c b">B</td><td>Moscetta</td><td>D'Arienzo</td><td>Sardella</td><td>Liberatori</td><td>Chimenton</td></tr>
+      <tr class="ra"><td class="t" rowspan="2">4</td><td class="c a">A</td><td>Carrer</td><td>D'Arienzo</td><td>Cepparano</td><td>Terribili</td><td>Chimenton</td><td rowspan="2">Moscetta, Sardella</td></tr>
+      <tr class="rb"><td class="c b">B</td><td>Pessei</td><td>D'Elia</td><td>Liberatori</td><td>Viti</td><td>Pedico</td></tr>
+      <tr class="ra"><td class="t" rowspan="2">5</td><td class="c a">A</td><td>Moscetta</td><td>D'Elia</td><td>Terribili</td><td>Sardella</td><td>Pedico</td><td rowspan="2">Pessei, Liberatori</td></tr>
+      <tr class="rb"><td class="c b">B</td><td>Carrer</td><td>D'Arienzo</td><td>Viti</td><td>Cepparano</td><td>Chimenton</td></tr>
+    </table>
+    <p class="small">6 coppie per turno ≈ 5-6 minuti; 5 turni ≈ 25-30 minuti. Se la caviglia di Chimenton non regge la difesa, al suo posto il martello in battuta.</p>
+  </div>
+</div>
+</div>
+</body>
+</html>
