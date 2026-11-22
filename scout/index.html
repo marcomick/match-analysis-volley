@@ -688,7 +688,9 @@ function onGrade(g) {
     // 1° attacco dopo ricezione dello scambio: è quello a cui si aggancia la base del centrale
     const soFirst = receivingNow(t) && !S.rally.some(a => a.skill === 'A' && a.t === t);
     if (sel.fbTeam) push(t, 0, 'F', 'H', sel.fbTeam, '', `palla libera ${DATA[t].name} appoggiata ${sel.fbTeam === '+' ? 'bene' : 'male'} (senza giocatore)`, false);
-    push(t, att, 'A', sel.combo[2], g, attackExtra(sel.combo[0], sel.tip), `${name(t,att)} · ${sel.combo[0]}${sel.tip ? ' · pallonetto' : ''}`);
+    if (sel.badSet && !sel.badSetDone && setter != null && setter !== att)
+      push(t, setter, 'E', 'H', '/', '', `${name(t,setter)} · alzata negativa`);
+    push(t, att, 'A', sel.combo[2], g, attackExtra(sel.combo[0], sel.tip), `${name(t,att)} · ${sel.combo[0]}${sel.tip ? ' · pallonetto' : ''}${sel.badSet ? ' · da alzata negativa' : ''}`);
     if (soFirst) Object.assign(S.rally[S.rally.length - 1], {soFirst:true, setter, btype:sel.combo[2], implied:sel.combo[3] || null});
     if (g === '=') endRally(other(t), 'errore in attacco');
     else if (PREFS.oppLight && (OUR == null || t === OUR) && g !== '/') {
@@ -737,6 +739,7 @@ function onGrade(g) {
 const RIGORE_OUT = {'#':['Punto','punto'], '-':['Difeso','difeso'], '=':['Fuori / rete','fuori o in rete'], '/':['Invasione','invasione']};
 const rigoreBtns = (dis, cls) => Object.entries(RIGORE_OUT).map(([g, o]) =>
   `<button class="${cls} rg${g === '#' ? ' pos' : g === '-' ? '' : ' neg'}" data-k="rigore" data-v="${g}" ${dis ? 'disabled' : ''}>${o[0]}</button>`).join('');
+const SET_LBL = {'-':'imprecisa', '/':'negativa', '=':'sbagliata'};
 function onPick(kind, val, extra) {
   tap();
   const ph = S.phase;
@@ -746,12 +749,23 @@ function onPick(kind, val, extra) {
     const i = SERVE_TYPES.findIndex(x => x[0] === cur); S.serveType[srv] = SERVE_TYPES[(i + 1) % SERVE_TYPES.length][0]; }
   if (kind === 'combo') { S.sel.combo = val; S.sel.player = null; S.sel.fromOvl = !!extra; }
   if (kind === 'setErr') { S.phase = {k:'setby', t:ph.t, g:val, back:clone(ph)}; S.sel = {}; }   // chi ha alzato?
-  if (kind === 'setbyCancel') { S.phase = ph.back; S.sel = {}; }
+  if (kind === 'setbyCancel') { S.phase = ph.back; S.sel = ph.backSel ? {...ph.backSel, badSet:false, badSetDone:false} : {}; }
   if (kind === 'setby') {
     snapshot();
-    push(ph.t, val, 'E', 'H', ph.g, '', `${name(ph.t,val)} · alzata ${ph.g === '-' ? 'negativa' : 'sbagliata'}`);
+    push(ph.t, val, 'E', 'H', ph.g, '', `${name(ph.t,val)} · alzata ${SET_LBL[ph.g]}`);
     if (ph.g === '=') endRally(other(ph.t), 'alzata sbagliata');
-    else { S.phase = ph.back; S.sel = {}; }      // negativa: l'attacco arriva lo stesso
+    else { S.phase = ph.back; S.sel = ph.backSel || {}; }      // imprecisa o negativa: l'attacco arriva lo stesso
+  }
+  // "alzata negativa" (E/, richiesta dell'utente del 2026-11-22): l'attacco che segue nasce da un'alzata che lo mette in
+  // difficoltà, così non sembra colpa dell'attaccante. Alza il palleggiatore in campo; se l'ultimo tocco della squadra è
+  // suo (ha difeso lui) si chiede chi ha alzato, e si torna all'attacco con la sigla già scelta
+  if (kind === 'badSet') {
+    const t = ph.t, setter = S.pos[t].find(x => role(t,x) === 'P');
+    const lastT = [...S.rally].reverse().find(a => a.t === t && !a.note && a.skill && a.skill !== 'c');
+    if (S.sel.badSetDone) { toast('Alzata negativa già segnata: ↶ per toglierla'); }
+    else if (!S.sel.badSet && (setter == null || (lastT && lastT.n === setter))) {
+      S.phase = {k:'setby', t, g:'/', back:clone(ph), backSel:{...S.sel, badSet:true, badSetDone:true}}; S.sel = {};
+    } else S.sel.badSet = !S.sel.badSet;
   }
   if (kind === 'tip') S.sel.tip = !S.sel.tip;
   if (kind === 'switch') {
@@ -857,11 +871,12 @@ function render() {
            `<div class="chips"><span class="lab">Colpo</span>
                <button class="chip ${sel.tip?'':'sel'}" data-k="tip" data-v="0" ${sel.tip?'':'disabled style="opacity:1"'}>forte</button>
                <button class="chip ${sel.tip?'sel':''}" data-k="tip" data-v="1" ${sel.tip?'disabled style="opacity:1"':''}>pallonetto</button>
+               <button class="chip ${sel.badSet?'sel':''}" data-k="badSet" data-v="1">alzata negativa</button>
                ${ph.afterOur ? `<span style="width:12px"></span><span class="lab">Palla libera</span>
                  <button class="chip ${sel.fbTeam === '+' ? 'sel' : ''}" data-k="fbTeam" data-v="+">appoggiata bene</button>
                  <button class="chip ${sel.fbTeam === '-' ? 'sel' : ''}" data-k="fbTeam" data-v="-">appoggiata male</button>` : ''}
                <span style="width:12px"></span><span class="lab">Alzata</span>
-               ${PREFS.oppLight && t !== OUR ? '' : '<button class="chip" data-k="setErr" data-v="-">negativa</button>'}
+               ${PREFS.oppLight && t !== OUR ? '' : '<button class="chip" data-k="setErr" data-v="-">imprecisa (–)</button>'}
                <button class="chip" data-k="setErr" data-v="=">sbagliata (punto loro)</button>
                <span style="width:12px"></span>
                <button class="chip" data-k="overNoAttack" data-v="1">Di là senza attacco</button></div>` +
@@ -905,7 +920,7 @@ function render() {
   }
   if (ph.k === 'setby') {
     const t = ph.t, setter = S.pos[t].find(x => role(t,x) === 'P');
-    prompt = `<span class="tm ${teamCls(t)}">Alzata ${ph.g === '-' ? 'negativa' : 'sbagliata'} ${DATA[t].name}</span>
+    prompt = `<span class="tm ${teamCls(t)}">Alzata ${SET_LBL[ph.g]} ${DATA[t].name}</span>
               <span class="hint">chi ha alzato? (il palleggiatore è evidenziato)${ph.g === '=' ? ' · punto agli altri' : ''}${viewNote(t)}</span>`;
     html = courtHtml(t, 'setby', '', n => n === setter) + `<div class="chips"><button class="chip" data-k="setbyCancel" data-v="">Annulla</button></div>`;
     gctx = 'none';
@@ -1480,10 +1495,11 @@ function ovlHtml(g, vr) {
     }
     if (ph.afterOur) { pill('Palla libera bene', 'data-k="fbTeam" data-v="+"', sel.fbTeam === '+' ? 'pos' : '');
                        pill('Palla libera male', 'data-k="fbTeam" data-v="-"', sel.fbTeam === '-' ? 'neg' : ''); }
-    if (!(PREFS.oppLight && t !== OUR)) pill('Alzata –', 'data-k="setErr" data-v="-"');
+    if (!(PREFS.oppLight && t !== OUR)) pill('Alzata imprecisa (–)', 'data-k="setErr" data-v="-"');
     pill('Alzata sbagliata (punto loro)', 'data-k="setErr" data-v="="', 'neg');
     pill('Di là senza attacco', 'data-k="overNoAttack" data-v="1"'); pill('⇄ Altra squadra', 'data-k="switch" data-v="1"');
-    if (sel.combo) popHtml = gradePop('A', `<button class="tip ${sel.tip ? 'sel' : ''}" data-k="tip" data-v="1">pallonetto</button>`);
+    if (sel.combo) popHtml = gradePop('A', `<button class="tip ${sel.tip ? 'sel' : ''}" data-k="tip" data-v="1">pallonetto</button>`
+      + `<button class="tip ${sel.badSet ? 'sel' : ''}" data-k="badSet" data-v="1">alzata negativa</button>`);
   } else if (ph.k === 'link') {
     const t = ph.t, z = layoutRally(t), L = LINKS[ph.g], prop = proposedBlocker(t, ph.from);
     head = `<span class="tm ${teamCls(t)}">${DATA[t].name}</span>${LINK_HEAD[ph.g]}`;
@@ -1508,7 +1524,7 @@ function ovlHtml(g, vr) {
     if (sel.player != null) popHtml = `<div class="rgrow"><span>"rigore"</span>${rigoreBtns(false, 'tip')}</div>` + gradePop('D');
   } else if (ph.k === 'setby') {
     const t = ph.t, z = layoutRally(t), setter = S.pos[t].find(x => role(t,x) === 'P');
-    head = `<span class="tm ${teamCls(t)}">Alzata ${ph.g === '-' ? 'negativa' : 'sbagliata'}</span>chi ha alzato?`;
+    head = `<span class="tm ${teamCls(t)}">Alzata ${SET_LBL[ph.g]}</span>chi ha alzato?`;
     court(t, z, null, n => `data-k="setby" data-v="${n}"`, () => false, n => n === setter);
     pill('Annulla', 'data-k="setbyCancel" data-v=""');
   }
