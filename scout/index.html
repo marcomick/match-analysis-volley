@@ -552,19 +552,25 @@ function doSub(t, out, inn) {
   const i = S.pos[t].indexOf(out); if (i < 0) return false;
   // esce il palleggiatore: si chiede chi palleggia ora (nel doppio cambio di solito chi entra in seconda linea);
   // finché non si risponde il ruolo P passa a chi entra al suo posto
-  S.askSetter = S.askSetter || {};
-  if (role(t, out) === 'P') S.askSetter[t] = {entered:[inn]};
-  else if (S.askSetter[t]) S.askSetter[t].entered.push(inn);
+  // i cambi fatti allo stesso punteggio contano insieme: nel doppio cambio dal referto esce prima l'opposto e poi il
+  // palleggiatore, e il nuovo palleggiatore è quello entrato per l'opposto
+  S.askSetter = S.askSetter || {}; S.subWin = S.subWin || {};
+  const key = `${S.score['*']}-${S.score.a}-${S.rallies.length}`;
+  if (!S.subWin[t] || S.subWin[t].key !== key) S.subWin[t] = {key, list:[]};
+  const ent = {n:inn, r:role(t, out)}; S.subWin[t].list.push(ent);
+  if (ent.r === 'P') S.askSetter[t] = {entered:[...S.subWin[t].list]};
+  else if (S.askSetter[t]) S.askSetter[t].entered.push(ent);
   S.pos[t][i] = inn; S.roles[t][inn] = S.roles[t][out];
   S.rally.push({t, n:inn, code:`${t}c${two(out)}:${two(inn)}`, desc:`cambio: entra ${name(t,inn)} per ${name(t,out)}`, auto:false, vt:Math.round(video.currentTime * 10) / 10});
   return true;
 }
 // chi palleggia dopo un cambio del palleggiatore: proposto chi è palleggiatore nella rosa (rientro), poi chi è entrato
-// in seconda linea (P1, P6, P5: doppio cambio), poi chi è entrato
+// al posto dell'opposto (doppio cambio), poi chi è entrato in seconda linea (P1, P6, P5), poi chi è entrato
 function setterGuess(t) {
   const a = S.askSetter && S.askSetter[t]; if (!a) return null;
-  const on = S.pos[t], ent = a.entered.filter(n => on.includes(n));
-  return on.find(n => pl(t,n).r === 'P') ?? ent.find(n => [0, 4, 5].includes(on.indexOf(n))) ?? ent[0] ?? null;
+  const on = S.pos[t], ent = (a.entered || []).map(e => typeof e === 'number' ? {n:e, r:''} : e).filter(e => on.includes(e.n));
+  return on.find(n => pl(t,n).r === 'P') ?? ent.find(e => e.r === 'O')?.n
+    ?? ent.find(e => [0, 4, 5].includes(on.indexOf(e.n)) && pl(t,e.n).r !== 'O')?.n ?? ent.find(e => pl(t,e.n).r !== 'O')?.n ?? ent[0]?.n ?? null;
 }
 // M1/M2 e C1/C2 si contano dal palleggiatore in campo (ordine P-M1-C2-O-M2-C1, come assignRoles): se il palleggiatore
 // entra al posto dell'opposto (doppio cambio) si invertono, e con loro lo schieramento salvato per ruolo (M1, C2...)
@@ -586,7 +592,7 @@ function renderSubBanner() {
   const el0 = $('subBanner'), ask = el0 && S.askSetter && ['*', 'a'].find(t => S.askSetter[t]);
   if (ask) {
     const g = setterGuess(ask), lay = n => ['P1','P2','P3','P4','P5','P6'][S.pos[ask].indexOf(n)];
-    el0.innerHTML = `<span style="min-width:12em">↔ <b>${DATA[ask].name}</b>: è uscito il palleggiatore. <b>Chi palleggia ora?</b></span>
+    el0.innerHTML = `<span style="min-width:12em">↔ <b>${DATA[ask].name}</b>: ${(S.askSetter[ask].entered || []).length ? 'è uscito il palleggiatore. ' : ''}<b>Chi palleggia ora?</b></span>
       ${S.pos[ask].map(n => `<button class="${n === g ? 'go' : ''}" data-setp="${ask}:${n}">${n} ${name(ask, n)}<small style="display:block;font-size:11px;opacity:.8">in ${lay(n)}${n === g ? ' · proposto' : ''}</small></button>`).join('')}`;
     el0.classList.remove('hidden'); return;
   }
@@ -2107,6 +2113,7 @@ function renderCorr() {
     return `<div class="crow"><span class="cn"><span class="tm ${teamCls(t)}">${DATA[t].name}</span></span>
       <button data-rot="${t}:-1" ${busy ? 'disabled' : ''}>◀ indietro</button><span class="cv">P${setterZone(t)}</span><button data-rot="${t}:1" ${busy ? 'disabled' : ''}>avanti ▶</button>
       <span class="cd">in zona 1:<br>${srv} ${name(t, srv)}</span>
+      <button data-setq="${t}" ${busy ? 'disabled' : ''}>chi palleggia?</button>
       <span class="cd" style="margin-left:auto">punti</span><button data-pts="${t}:-1" ${busy ? 'disabled' : ''}>−1</button><span class="cv">${S.score[t]}</span><button data-pts="${t}:1" ${busy ? 'disabled' : ''}>+1</button></div>`; };
   $('corrBox').innerHTML = `<h3>Correggi battuta, rotazione e punteggio</h3>
     <div class="hint">Per quando ti sei perso uno scambio. <b>Punto …</b> nella colonna a destra assegna già lo scambio con rotazione e battuta, come in partita; qui sistemi a mano quello che non torna. "Avanti" = la rotazione che fa la squadra quando conquista il cambio palla. Il punteggio qui cambia senza ruotare nessuno.</div>
@@ -2120,6 +2127,8 @@ $('corrBtn').onclick = () => { video.pause(); renderCorr(); $('corrModal').class
 $('corrBox').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b || b.disabled) return;
   if (b.id === 'corrClose') { $('corrModal').classList.add('hidden'); return render(); }
+  if (b.dataset.setq) { snapshot(); S.askSetter = S.askSetter || {}; S.askSetter[b.dataset.setq] = {entered:[]};
+    $('corrModal').classList.add('hidden'); return render(); }       // la domanda "Chi palleggia ora?" sopra il video
   if (b.dataset.srv) { const t = b.dataset.srv; if (S.serving !== t) { snapshot(); S.serving = t; S.phase = {k:'serve'}; S.sel = {}; corrNote(t, `batte ${DATA[t].name}`); } }
   if (b.dataset.rot) { const [t, d] = b.dataset.rot.split(':'), p = S.pos[t]; snapshot();
     if (d === '1') p.push(p.shift()); else p.unshift(p.pop());
