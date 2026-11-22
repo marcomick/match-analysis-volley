@@ -1,0 +1,2294 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Scout a tocchi</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="theme-color" content="#0f1117">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<!-- App dello scout da video a tocchi (mockup del 2026-11-18, app dal 2026-11-22). PWA: manifest.json, sw.js, icone.
+     Lo scout in corso si salva a ogni tocco in IndexedDB (database "volley-scout") e si riprende dal pannello "Scout";
+     la copia di sicurezza (JSON) contiene scout, tarature, partite, schieramenti e preferenze.
+     Dati di partenza (se non si sceglie una partita): G4 Anguillara - Decimo, 1° set.
+     Il sistema sa chi batte, chi è in campo, chi riceve (schieramento imparato per squadra e rotazione) e chi attacca (dalla sigla).
+     I pulsanti di una squadra sono disposti come la si vede nel video (di spalle o di fronte alla telecamera).
+     Non scrive ancora un .dvw: mostra i codici che scriverebbe. Video da file o da YouTube.
+     Preferenze, tarature, partite e schieramenti imparati restano nel browser (localStorage). -->
+<style>
+  :root {
+    --bg:#0f1117; --card:#1a1d27; --card2:#222634; --line:#2b2f3d; --text:#eef0f5; --muted:#9aa0b0;
+    --noi:#3b82f6; --loro:#f97316; --ok:#22c55e; --bad:#ef4444; --warn:#facc15;
+  }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif; }
+  body { -webkit-user-select:none; user-select:none; overflow:hidden; }
+  button { font:inherit; color:inherit; border:0; cursor:pointer; background:var(--card2); border-radius:10px; touch-action:manipulation; }
+  button:disabled { opacity:.25; cursor:default; }
+  .app { display:grid; grid-template-columns:1fr 330px; grid-template-rows:auto 1fr; height:100vh; height:100dvh; }   /* dvh: altezza visibile vera su iPad */
+  .mock { grid-column:1/3; background:#161a26; color:var(--muted); font-size:12px; padding:5px 10px;
+    border-bottom:1px solid var(--line); display:flex; gap:10px; align-items:center; }
+  .mock b { color:#fff; font-size:13px; }
+  .mock .mb { background:var(--card2); border-radius:8px; padding:5px 11px; font-size:12px; color:var(--text); }
+  .mock { min-width:0; overflow:hidden; } .mock .mb { white-space:nowrap; flex:0 0 auto; }
+  #mockTitle { min-width:0; flex:0 1 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .savest { font-size:11px; color:var(--muted); white-space:nowrap; }
+  .slist { display:flex; flex-direction:column; gap:6px; }
+  .sitem { display:flex; gap:10px; align-items:center; background:var(--card2); border-radius:10px; padding:9px 10px; }
+  .sitem.cur { outline:2px solid #3b5bdb; }
+  .sitem .si { flex:1; min-width:0; } .sitem .st { font-weight:700; font-size:15px; }
+  .sitem .sd { font-size:12px; color:var(--muted); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sitem button { padding:10px 14px; font-size:14px; } .sitem .go { background:#3b5bdb; } .sitem .del { background:#3e1c1c; }
+  .bigb { padding:12px 16px; font-size:15px; }
+  .left { display:flex; flex-direction:column; min-height:0; padding:8px; gap:8px; }
+  .right { border-left:1px solid var(--line); display:flex; flex-direction:column; min-height:0; }
+
+  /* barra punteggio */
+  .bar { display:flex; align-items:center; gap:7px; }
+  .score { display:flex; align-items:center; gap:9px; font-size:22px; font-weight:700; }
+  .tm { padding:3px 10px; border-radius:8px; font-size:15px; font-weight:700; }
+  .tm.noi { background:var(--noi); } .tm.loro { background:var(--loro); }
+  .rot { font-size:12px; color:var(--muted); font-weight:500; }
+  .srv { display:inline-block; width:9px; height:9px; border-radius:50%; background:var(--warn); }
+  .grow { flex:1; }
+  .ctl { padding:8px 10px; font-size:14px; white-space:nowrap; }
+  .score { white-space:nowrap; }
+  .ctl.on { background:#3d4560; outline:2px solid #6b7aa8; }
+  /* iPad da 11" (1180-1194 px in orizzontale): la riga dei comandi deve stare nella colonna del video */
+  @media (max-width:1250px) { .bar { gap:5px; } .ctl { padding:8px 7px; font-size:13px; } #play { min-width:70px !important; }
+    .score { font-size:20px; gap:6px; } }
+
+  /* video */
+  .vwrap { position:relative; background:#000; border-radius:10px; overflow:hidden; flex:1 1 auto; min-height:180px; touch-action:none; }
+  html, body { overscroll-behavior:none; }   /* il primo tocco sul video non deve far scorrere la pagina (il tocco andava perso) */
+  video { width:100%; height:100%; object-fit:contain; display:block; pointer-events:none; }
+  .vmsg { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:var(--muted);
+    font-size:15px; text-align:center; padding:20px; pointer-events:none; }
+  /* tutto schermo: il riquadro del video copre la pagina, i comandi stanno nella fascia in alto */
+  .fsbar { display:none; position:absolute; top:0; left:0; right:0; z-index:5; gap:5px; align-items:center; padding:5px 6px;
+    background:rgba(8,10,18,.82); flex-wrap:wrap; }
+  .app.fs .fsbar { display:flex; }
+  .app.fs .vwrap { position:fixed; inset:0; z-index:80; border-radius:0; }
+  .fsbar button { padding:7px 9px; font-size:13px; background:rgba(40,46,62,.95); }
+  .fsbar button.sel { outline:2px solid var(--warn); background:#3b3720; }
+  .fsbar button.imp { outline:2px dashed #8b96bf; }
+  .fsbar .fsc { font-weight:700; font-size:14px; margin-right:4px; white-space:nowrap; }
+  .fsbar .sep { width:8px; }
+  .app.fs .ohead, .app.fs .side, .app.fs .pausebadge, .app.fs .calmini, .app.fs .calpanel { top:var(--fsh, 50px); }
+  .pbl { font-size:12px; font-weight:500; color:#d6d9e2; margin:4px 0; max-height:30vh; overflow:auto; }
+  .pausebadge { position:absolute; top:10px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,.7); padding:6px 12px; border-radius:8px;
+    font-size:14px; font-weight:600; pointer-events:none; }
+  .side { position:absolute; top:10px; padding:3px 8px; border-radius:6px; font-size:12px; font-weight:700; pointer-events:none; opacity:.85; }
+  .seekflash { position:absolute; top:0; bottom:0; width:38%; display:flex; align-items:center; justify-content:center;
+    font-size:26px; font-weight:800; background:rgba(255,255,255,.12); opacity:0; transition:opacity .35s; pointer-events:none; }
+  .seekflash.l { left:0; border-radius:0 50% 50% 0; } .seekflash.r { right:0; border-radius:50% 0 0 50%; }
+  .seekflash.show { opacity:1; transition:none; }
+
+  /* pannello di input */
+  .input { background:var(--card); border-radius:12px; padding:8px; display:flex; flex-direction:column; gap:7px; flex:0 0 auto; }
+  .prompt { font-size:15px; display:flex; align-items:center; gap:8px; min-height:26px; }
+  .prompt .who { font-weight:700; }
+  .hint { color:var(--muted); font-size:13px; }
+  .switch { margin-left:auto; padding:6px 10px; font-size:13px; }
+  .zone { min-height:150px; display:flex; flex-direction:column; gap:6px; }
+  .row { display:grid; gap:6px; }
+  .pbtn { min-height:54px; padding:4px; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    font-size:15px; font-weight:600; line-height:1.15; }
+  .pbtn small { font-size:11px; color:var(--muted); font-weight:500; }
+  .pbtn.sel { outline:3px solid var(--warn); background:#3b3720; }
+  .pbtn.empty { visibility:hidden; }
+  .lab { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; }
+  .chips { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+  .chip { padding:7px 11px; font-size:13px; }
+  .chip.sel { outline:2px solid var(--warn); background:#3b3720; }
+  .noi-t .pbtn:not(.empty) { border-bottom:3px solid var(--noi); }
+  .loro-t .pbtn:not(.empty) { border-bottom:3px solid var(--loro); }
+  .netline { height:0; border-top:2px dashed #555c70; margin:2px 0; }
+
+  /* voti: sempre nello stesso posto */
+  .grades { display:grid; grid-template-columns:repeat(6,1fr); gap:6px; }
+  .g { min-height:62px; display:flex; flex-direction:column; align-items:center; justify-content:center; font-size:26px; font-weight:800; }
+  .g small { font-size:11px; font-weight:500; color:var(--muted); margin-top:1px; }
+  .g.pos { background:#173a26; } .g.neg { background:#3e1c1c; } .g.mid { background:var(--card2); }
+
+  /* base del centrale: sempre nello stesso posto */
+  .basebox { padding:8px 10px 10px; border-bottom:1px solid var(--line); background:#161a26; }
+  .basebox .bh { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px; }
+  .basebox .bt { font-size:11px; color:var(--muted); }
+  .bbtns { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; }
+  .bb { min-height:60px; font-size:21px; font-weight:800; background:#2a3045; }
+  .bb.sel { outline:3px solid var(--warn); background:#3b3720; }
+  .bb.imp { outline:2px dashed #8b96bf; }
+
+  /* colonna destra */
+  .stats { padding:8px 10px; border-bottom:1px solid var(--line); font-size:12px; color:var(--muted);
+    display:grid; grid-template-columns:1fr 1fr; gap:3px 10px; }
+  .stats b { color:var(--text); font-size:15px; }
+  .log { flex:1; overflow-y:auto; padding:6px 10px; font-size:13px; }
+  .rally { border-bottom:1px solid var(--line); padding:6px 0; }
+  .rally.cur { background:#1b2030; margin:0 -10px; padding:6px 10px; }
+  .rh { display:flex; justify-content:space-between; color:var(--muted); font-size:12px; margin-bottom:2px; }
+  .act { display:flex; gap:8px; align-items:baseline; }
+  .act code { font-family:Menlo,monospace; font-size:12px; min-width:92px; }
+  .act .d { color:var(--muted); font-size:12px; }
+  .act.auto code { color:#9aa0b0; }
+  .tools { padding:8px; border-top:1px solid var(--line); display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
+  .tools button { padding:9px 6px; font-size:13px; }
+
+  .toast { position:fixed; left:50%; top:60px; transform:translateX(-50%); background:#5b1a1a; padding:10px 16px;
+    border-radius:10px; font-size:15px; opacity:0; transition:opacity .2s; pointer-events:none; z-index:300; }
+  .toast.show { opacity:1; }
+  .modal { position:fixed; inset:0; background:rgba(0,0,0,.65); display:flex; align-items:center; justify-content:center; z-index:90; }
+  .modal .box { background:var(--card); border-radius:14px; padding:16px; width:min(720px,94vw); display:flex; flex-direction:column; gap:10px; max-height:94vh; overflow-y:auto; }
+  .modal h3 { margin:0; font-size:17px; }
+  .hidden { display:none !important; }
+
+  /* sigle sul video (dopo la taratura del campo) */
+  .ovl { position:absolute; inset:0; pointer-events:none; }
+  #ytbox, #ytcap { position:absolute; inset:0; } #ytbox iframe { width:100%; height:100%; border:0; display:block; }
+  .ovl > svg { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+  .ob { position:absolute; pointer-events:auto; background:rgba(8,10,18,.42); border:0; color:#fff; border-radius:8px;
+    padding:calc(5px*var(--obs,1.3)) calc(8px*var(--obs,1.3)); min-width:calc(42px*var(--obs,1.3)); font-size:calc(15px*var(--obs,1.3));
+    font-weight:800; line-height:1.05; text-align:center; text-shadow:0 1px 2px #000; white-space:nowrap; }
+  .ob::before { content:''; position:absolute; inset:-8px; }      /* area di tocco più larga del disegno */
+  .ob.noi { box-shadow:inset 0 -3px 0 var(--noi); } .ob.loro { box-shadow:inset 0 -3px 0 var(--loro); }
+  .ob small { display:block; font-size:calc(10px*var(--obs,1.3)); font-weight:600; opacity:.9; }
+  .ob.sm { font-size:calc(12px*var(--obs,1.3)); opacity:.85; }
+  .ob.prop { background:rgba(8,10,18,.6); outline:1px dashed rgba(255,255,255,.55); }
+  .pip { position:absolute; z-index:28; width:calc(var(--pipw, 30) * 1%); aspect-ratio:16/9; background:#000; border:2px solid rgba(255,255,255,.7);
+    border-radius:8px; overflow:hidden; box-shadow:0 4px 14px rgba(0,0,0,.6); }
+  .pip.c0 { left:8px; top:44px; } .pip.c1 { right:8px; top:44px; }
+  .app.fs .pip.c0, .app.fs .pip.c1 { top:calc(var(--fsh, 50px) + 34px); } .pip.c2 { left:8px; bottom:52px; } .pip.c3 { right:8px; bottom:52px; }
+  .pip video, .pip #pipYt, .pip iframe { width:100%; height:100%; display:block; border:0; pointer-events:none; object-fit:contain; }
+  .piplab { position:absolute; left:6px; top:4px; font-size:13px; font-weight:800; color:#fff; background:rgba(0,0,0,.6); padding:1px 6px; border-radius:6px; }
+  .subban { position:absolute; left:50%; top:48px; transform:translateX(-50%); z-index:30; background:rgba(20,24,36,.92);
+    border:2px solid var(--warn); border-radius:12px; padding:8px 12px; display:flex; gap:10px; align-items:center; font-size:15px; max-width:92%; }
+  .subban button { padding:9px 14px; font-size:15px; border-radius:8px; border:0; background:#2a3040; color:#fff; }
+  .subban button.go { background:#3b5bdb; }
+  .ob.sel { background:rgba(250,204,21,.85); color:#111; text-shadow:none; }
+  .ob:disabled { opacity:.18; }
+  .ob.blk { font-size:calc(12px*var(--obs,1.3)); min-width:calc(30px*var(--obs,1.3)); padding:calc(2px*var(--obs,1.3)) calc(5px*var(--obs,1.3)); }
+  .ob.blk small { font-size:calc(8px*var(--obs,1.3)); }
+  .ob.dz { font-size:calc(19px*var(--obs,1.3)); min-width:calc(50px*var(--obs,1.3)); padding:calc(8px*var(--obs,1.3)) calc(11px*var(--obs,1.3)); }
+  .ob.ghost { pointer-events:none; background:rgba(8,10,18,.25); opacity:.85; }   /* solo indicazione: si tocca il giocatore */
+  .ohead { position:absolute; top:8px; left:8px; background:rgba(8,10,18,.6); padding:5px 9px; border-radius:8px;
+    font-size:13px; font-weight:600; max-width:55%; }
+  .ohead .tm { font-size:12px; padding:1px 6px; margin-right:5px; }
+  .opills { position:absolute; left:8px; bottom:8px; display:flex; gap:6px; flex-wrap:wrap; max-width:80%; pointer-events:none; }
+  .opill { pointer-events:auto; background:rgba(8,10,18,.65); color:#fff; padding:8px 11px; font-size:13px; border-radius:8px; }
+  .opill.pos { background:rgba(21,128,61,.8); } .opill.neg { background:rgba(185,28,28,.75); }
+  .opop button.g2 small { display:block; font-size:9px; font-weight:500; opacity:.8; }
+  .opop { position:absolute; pointer-events:auto; display:flex; gap:4px; background:rgba(10,12,20,.65); padding:4px;
+    border-radius:10px; transform:translateX(-50%); }
+  .opop button { min-width:44px; height:44px; font-size:20px; font-weight:800; background:rgba(40,46,62,.9); color:#fff; padding:0 6px; }
+  .opop button.tip { font-size:12px; font-weight:700; }
+  .opop button.tip.sel { outline:2px solid var(--warn); background:rgba(90,80,20,.95); }
+  .app.vonly .input { display:none; }
+  /* lontano dal bordo basso dello schermo: lì Safari prende il tocco per mostrare la sua barra */
+  .app.fs .opills, .app.vonly .opills { bottom:38px; }
+  /* finestre aperte (impostazioni, cambio, schieramento...): i comandi sul video spariscono, non ci finiscono sopra */
+  .modal { z-index:300 !important; }
+  body:has(.modal:not(.hidden)) .ovl, body:has(.modal:not(.hidden)) .pip, body:has(.modal:not(.hidden)) .subban { visibility:hidden; }
+  .tapring { position:absolute; width:46px; height:46px; margin:-23px 0 0 -23px; border:3px solid var(--warn); border-radius:50%; pointer-events:none; animation:tapr .45s ease-out forwards; z-index:25; }
+  @keyframes tapr { from { opacity:1; transform:scale(.5); } to { opacity:0; transform:scale(1.3); } }
+  .calpt { position:absolute; width:20px; height:20px; margin:-10px 0 0 -10px; border:2px solid var(--warn); border-radius:50%; }
+  .calpanel { position:absolute; top:8px; right:8px; width:min(470px, calc(100% - 16px)); max-height:calc(100% - 16px); overflow:auto;
+    background:rgba(10,12,20,.9); border-radius:12px; padding:8px; flex-direction:row !important; align-items:center !important;
+    pointer-events:auto; display:flex; flex-direction:column; align-items:center; gap:6px; font-size:13px; line-height:1.35; }
+  .calpanel .calside { display:flex; flex-direction:column; gap:6px; flex:1; min-width:0; }
+  .calpanel .calmsg { text-align:left; } .calpanel .chips { justify-content:flex-start !important; }
+  .calpanel svg { flex:0 0 auto; touch-action:none; }
+  .calmini { position:absolute; top:6px; left:50%; transform:translateX(-50%); background:rgba(10,12,20,.85); padding:5px 10px;
+    border-radius:8px; font-size:13px; pointer-events:auto; display:flex; gap:8px; align-items:center; white-space:nowrap; }
+  .calmini b { color:var(--warn); } .calmini button { padding:5px 9px; font-size:12px; } .calpanel .chips { justify-content:center; }
+  .calpanel button { padding:8px 10px; font-size:13px; }
+  .calpt.bad { border-color:#ef4444; }
+  .calid { position:absolute; transform:translate(8px,-20px); font-size:11px; font-weight:700; color:var(--warn); text-shadow:0 1px 2px #000; pointer-events:none; }
+  .calbar { position:absolute; left:50%; bottom:12px; transform:translateX(-50%); background:rgba(0,0,0,.85); padding:8px 12px;
+    border-radius:10px; font-size:14px; pointer-events:auto; display:flex; gap:8px; align-items:center; max-width:94%; }
+  .calbar b { color:var(--warn); }
+  .calbar button { padding:8px 12px; font-size:13px; }
+  .ovlhint { position:absolute; left:50%; top:46px; transform:translateX(-50%); background:rgba(0,0,0,.7); padding:6px 10px;
+    border-radius:8px; font-size:13px; color:var(--muted); }
+
+  /* schieramento a trascinamento */
+  .pool { display:flex; gap:6px; flex-wrap:wrap; min-height:52px; padding:6px; background:#141722; border-radius:10px; }
+  .dchip { padding:8px 10px; border-radius:9px; background:#2d3346; font-weight:600; font-size:14px; touch-action:none; cursor:grab;
+    display:flex; flex-direction:column; align-items:center; line-height:1.15; }
+  .dchip small { font-size:11px; color:var(--muted); font-weight:500; }
+  .dchip.sel { outline:3px solid var(--warn); }
+  .dchip.used { opacity:.35; }
+  .ghost { position:fixed; z-index:400; pointer-events:none; opacity:.9; transform:translate(-50%,-50%) scale(1.08); box-shadow:0 8px 20px rgba(0,0,0,.5); }
+  .slots { display:grid; gap:8px; }
+  .slot { min-height:66px; border:2px dashed #4a5168; border-radius:12px; display:flex; flex-direction:column; align-items:center;
+    justify-content:center; gap:4px; padding:4px; }
+  .slot .sl { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
+  .slot.over { border-color:var(--warn); background:#2a2816; }
+
+  /* tutorial */
+  .tut-block { position:fixed; inset:0; z-index:200; }
+  .tut-hole { position:fixed; border-radius:12px; box-shadow:0 0 0 9999px rgba(0,0,0,.72); outline:3px solid var(--warn);
+    z-index:201; pointer-events:none; transition:all .25s; }
+  .tut-card { position:fixed; z-index:202; width:min(460px,92vw); background:#1f2433; border:1px solid #3d4560;
+    border-radius:14px; padding:14px 16px; font-size:15px; line-height:1.45; box-shadow:0 10px 30px rgba(0,0,0,.5); }
+  .tut-card h3 { margin:0 0 6px; font-size:16px; color:var(--warn); }
+  .tut-card p { margin:0 0 6px; }
+  .tut-card code { font-family:Menlo,monospace; font-size:13px; background:#2b3142; padding:1px 5px; border-radius:5px; }
+  .tut-nav { display:flex; gap:8px; margin-top:12px; align-items:center; }
+  .tut-nav button { padding:10px 16px; font-size:15px; }
+  .tut-nav .primary { background:#3b5bdb; }
+  .tut-step { color:var(--muted); font-size:13px; margin-right:auto; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="mock"><button class="mb" id="scoutsBtn" style="background:#3b5bdb;color:#fff">☰ Scout</button>
+    <b id="mockTitle">Nessun video</b> <span id="saveState" class="savest"></span>
+    <span class="grow"></span>
+    <button class="mb" id="matchBtn" style="background:#1d4d2c;color:#d1fae5">Partita e formazioni</button>
+    <button class="mb" id="calBtn">Taratura campo</button>
+    <button class="mb" id="tutBtn">Tutorial</button>
+    <button class="mb" id="ytBtn">YouTube</button>
+    <label class="mb">Carica video<input id="file" type="file" accept="video/*" class="hidden"></label>
+  </div>
+
+  <div class="left">
+    <div class="bar">
+      <div class="score" id="score"></div>
+      <span class="grow"></span>
+      <button class="ctl" id="rateBtn" title="Velocità: tocca per cambiare">1×</button>
+      <button class="ctl" id="back">⟲</button>
+      <button class="ctl" id="play" style="min-width:84px">▶︎ Play</button>
+      <button class="ctl" id="fwd">⟳</button>
+      <button class="ctl" id="ovlBtn" title="Comandi sul video">Sul video</button>
+      <button class="ctl" id="vonlyBtn" title="Nasconde il pannello sotto il video">Solo video</button>
+      <button class="ctl" id="pipBtn" title="Riquadro con il video in ritardo">Ritardo</button>
+      <button class="ctl" id="fsBtn" title="Tutto schermo con i comandi sul video">⛶</button>
+      <button class="ctl" id="setBtn" title="Impostazioni">⚙︎</button>
+    </div>
+
+    <div class="vwrap" id="vwrap">
+      <video id="video" playsinline preload="auto"></video>
+      <div id="ytbox" class="hidden"></div><div id="ytcap" class="hidden"></div>
+      <div class="ovl" id="ovl"></div>
+      <div class="subban hidden" id="subBanner"></div>
+      <div class="pip hidden" id="pip"><video id="pipVideo" muted playsinline preload="auto"></video><div id="pipYt"></div><span class="piplab" id="pipLab"></span></div>
+      <div class="vmsg" id="vmsg">Nessun video: tocca “☰ Scout” in alto a sinistra per sceglierne uno o riprendere uno scout salvato.</div>
+      <div class="seekflash l" id="flashL"></div><div class="seekflash r" id="flashR"></div>
+      <div class="side" id="sideFar" style="right:10px"></div>
+      <div class="pausebadge hidden" id="pausebadge">Fine scambio — controlla a destra, poi ▶︎</div>
+      <div class="fsbar" id="fsbar"></div>
+    </div>
+
+    <div class="input">
+      <div class="prompt"><span id="prompt"></span>
+        <button class="switch" id="switchTeam" title="Il tocco è dell'altra squadra">⇄ Altra squadra</button>
+      </div>
+      <div class="zone" id="zone"></div>
+      <div class="grades" id="grades"></div>
+    </div>
+  </div>
+
+  <div class="right">
+    <div class="basebox" id="basebox"></div>
+    <div class="stats">
+      <div>Azioni<br><b id="sActs">0</b></div>
+      <div>Tocchi per azione<br><b id="sTaps">–</b></div>
+      <div>Azioni dedotte<br><b id="sAuto">0</b></div>
+      <div>Tempo scout / video<br><b id="sRatio">–</b></div>
+    </div>
+    <div class="log" id="log"></div>
+    <div class="tools">
+      <button id="undo">↶ Annulla</button>
+      <button id="ptHome"></button>
+      <button id="ptAway"></button>
+      <button id="subBtn">Cambio</button>
+      <button id="arrBtn">Schieramento</button>
+      <button id="export">Scarica codici</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<div class="modal hidden" id="subModal"><div class="box" id="subBox"></div></div>
+<div class="modal hidden" id="matchModal"><div class="box" id="matchBox"></div></div>
+<div class="modal hidden" id="arrModal"><div class="box" id="arrBox"></div></div>
+<div class="modal hidden" id="setModal"><div class="box" id="setBox"></div></div>
+<div class="modal hidden" id="scoutsModal"><div class="box" id="scoutsBox"></div></div>
+<input id="importIn" type="file" accept=".json,application/json" class="hidden">
+<div id="tut" class="hidden"><div class="tut-block"></div><div class="tut-hole" id="tutHole"></div><div class="tut-card" id="tutCard"></div></div>
+
+<script>
+// ---------------------------------------------------------------- dati (dal .dvw di G4)
+let DATA = {"*": {"name": "Anguillara", "players": [{"n": 2, "c": "Imundi", "r": "C2", "sv": "M"}, {"n": 8, "c": "Mondati", "r": "C", "sv": "M"}, {"n": 11, "c": "Dolci", "r": "L", "sv": null}, {"n": 13, "c": "Rossi", "r": "M2", "sv": "M"}, {"n": 15, "c": "Lupi", "r": "C", "sv": "M"}, {"n": 19, "c": "Marasca", "r": null, "sv": "H"}, {"n": 24, "c": "Leva", "r": null, "sv": null}, {"n": 48, "c": "Sica", "r": null, "sv": null}, {"n": 50, "c": "D'Isidoro", "r": "P", "sv": "M"}, {"n": 71, "c": "Cilio", "r": "C1", "sv": "M"}, {"n": 72, "c": "Grussu", "r": "M", "sv": "M"}, {"n": 73, "c": "Capparella", "r": "M1", "sv": "M"}, {"n": 74, "c": "Fanton", "r": "O", "sv": "M"}], "lineup": [50, 73, 2, 74, 13, 71]},
+              "a": {"name": "Decimo", "players": [{"n": 1, "c": "Licenziati", "r": null, "sv": null}, {"n": 2, "c": "D'Elia", "r": "O", "sv": "M"}, {"n": 3, "c": "Liberatori", "r": null, "sv": null}, {"n": 4, "c": "Chimenton", "r": "M1", "sv": "M"}, {"n": 10, "c": "Racheli", "r": "P", "sv": "M"}, {"n": 11, "c": "Cepparano", "r": null, "sv": "M"}, {"n": 13, "c": "Pessei", "r": "C2", "sv": "M"}, {"n": 14, "c": "Caranzetti", "r": "P", "sv": "M"}, {"n": 18, "c": "Carrer", "r": "C1", "sv": "Q"}, {"n": 19, "c": "Terribili", "r": null, "sv": null}, {"n": 22, "c": "D'Arienzo", "r": "O", "sv": "M"}, {"n": 30, "c": "Moscetta", "r": "C", "sv": "M"}, {"n": 31, "c": "Pedico", "r": "L", "sv": null}, {"n": 40, "c": "Colletti", "r": null, "sv": null}, {"n": 66, "c": "Sardella", "r": "M2", "sv": "M"}], "lineup": [13, 22, 66, 18, 14, 4]}};
+let FIRST_SERVE = '*';             // nel 1° set batte per prima Anguillara
+let OUR = 'a';                     // Decimo = squadra "a" (ospite) nel file
+const G4_MATCH = {data:JSON.parse(JSON.stringify(DATA)), first:'*', our:'a', title:'G4 Anguillara - Decimo, 1° set'};
+const other = t => t === '*' ? 'a' : '*';
+const SERVE_TYPES = [['M','Salto float'],['Q','Salto spin'],['H','Float a terra']];
+// voto della ricezione -> voto della battuta (su tutti i .dvw 2026-2027 l'abbinamento è sempre questo)
+const SERVE_FROM_REC = {'#':'-','+':'-','!':'!','-':'+','/':'/','=':'#'};
+// sigle: [sigla, chi attacca, tipo di palla nel .dvw, chiamata implicita]
+// A4 = chi attacca in posto 4, A3 = centrale, A2 = posto 2, AP = pipe (dallo schieramento)
+// niente XC (indicazione dell'utente: si può non segnare e complica tutto); per il centrale X1, X2, X7
+const COMBOS_FRONT = [['V5','A4','H'],['X5','A4','T'],['X7','A3','Q','K7'],['X1','A3','Q','K1'],['X2','A3','Q','K2'],['X6','A2','T'],['V6','A2','H']];
+const COMBOS_BACK  = [['P2','P','O'],null,null,['XP','AP','T'],null,['X8','OB','T'],['V8','OB','H']];
+const ALL_COMBOS = [...COMBOS_FRONT, ...COMBOS_BACK].filter(Boolean);
+const CALLS = ['K1','KC','K7','K2'];
+const GRADE_TEXT = {
+  serve:{'#':'ace','=':'errore'},
+  R:{'#':'perfetta','+':'positiva','!':'no 1° tempo','-':'palla alta','/':'di là','=':'ace subito'},
+  A:{'#':'punto','+':'difesa loro scarsa','!':'coperto','-':'difeso','/':'murato','=':'errore'},
+  B:{'#':'punto','+':'buono per noi','!':'ripreso','-':'buono per loro','/':'invasione','=':'mani fuori'},
+  D:{'#':'perfetta','+':'buona','!':'rigiocabile','-':'scarsa','/':'di là','=':'errore'},
+  none:{},
+};
+const GRADES = ['#','+','!','-','/','='];
+
+// ---------------------------------------------------------------- preferenze e schieramenti imparati
+const load = k => { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } };
+const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
+let PREFS = Object.assign({comboMirror:'auto', pip:true, pipDelay:3, pipCorner:3, pipSize:30, tapPlayers:true, comboLayout:'griglia', neutralHow:false, obScale:1.3, step:5, near:'*', autopause:true, overlay:true, videoOnly:false, oppLight:true}, load('scoutMockupPrefs') || {});
+let ARR = load('scoutMockupArr') || {};      // {nome squadra: {rotazione: {rec:[3 gettoni], att:{A4,A3,A2,AP}}}}
+const savePrefs = () => save('scoutMockupPrefs', PREFS);
+const isFar = t => t !== PREFS.near;           // squadra di fronte alla telecamera: tutto a specchio
+
+// ---------------------------------------------------------------- stato
+let S, history = [], taps = 0, firstTapAt = null, videoAtFirstTap = null, askedArr = {};
+// video aperto ({kind:'file', name, size} | {kind:'yt', url} | {kind:'url', src}), chiave dello scout salvato, ripresa in attesa
+let VSRC = null, CUR_MATCH = null, SCOUT_KEY = null, resumeWanted = null, pendingSeek = null, saveTimer = null, backupText = null;
+function freshState() {
+  const roles = {'*':{}, 'a':{}};
+  for (const t of ['*','a']) for (const p of DATA[t].players) roles[t][p.n] = p.r;
+  return { score:{'*':0,'a':0}, serving:FIRST_SERVE, pos:{'*':[...DATA['*'].lineup], 'a':[...DATA.a.lineup]},
+           roles, serveType:{}, rally:[], rallyBase:null, rallies:[], phase:{k:'serve'}, sel:{}, nActs:0, nAuto:0, subsDone:{} };
+}
+S = freshState();
+const clone = o => JSON.parse(JSON.stringify(o));
+const pl = (t,n) => DATA[t].players.find(p => p.n === n) || {n, c:'#'+n, r:null};
+const role = (t,n) => (n == null ? '' : S.roles[t][n]) || '';
+const name = (t,n) => n == null ? '?' : pl(t,n).c;
+// libero in campo: scelto nel Cambio, altrimenti il primo usato nel set secondo il referto, altrimenti il primo L della rosa
+const liberi = t => [...new Set([...(DATA[t].liberi || []), ...DATA[t].players.filter(p => p.r === 'L').map(p => p.n)])];
+const libero = t => (S && S.libero && S.libero[t] != null) ? S.libero[t] : liberi(t)[0];
+
+// posizioni dopo lo scambio di posto: prima linea posto 4 (M) · 3 (C) · 2 (O o P); dietro 5 (L) · 6 (M) · 1 (P o O)
+function layout(t) {
+  const pos = S.pos[t], z = {};
+  const front = [pos[1],pos[2],pos[3]], back = [pos[0],pos[4],pos[5]];
+  const take = (arr, test) => { const i = arr.findIndex(n => n != null && test(role(t,n))); return i < 0 ? null : arr.splice(i,1)[0]; };
+  z[4] = take(front, r => r.startsWith('M')); z[3] = take(front, r => r.startsWith('C')); z[2] = take(front, r => r === 'O' || r === 'P');
+  for (const k of [4,3,2]) if (z[k] == null) z[k] = front.shift() ?? null;
+  // il centrale di seconda linea esce per il libero, tranne quando batte
+  const L = libero(t), serverNum = S.serving === t ? pos[0] : null;
+  // il libero entra per i giocatori indicati dal referto (di solito i centrali e chi li sostituisce), altrimenti per il centrale
+  const lf = DATA[t].libFor, forLib = n => lf && lf.length ? lf.includes(n) : role(t,n).startsWith('C');
+  const bb = back.map(n => (L && forLib(n) && n !== serverNum) ? L : n);
+  z[1] = take(bb, r => r === 'O' || r === 'P'); z[6] = take(bb, r => r.startsWith('M')); z[5] = take(bb, r => r === 'L' || r.startsWith('C'));
+  for (const k of [1,6,5]) if (z[k] == null) z[k] = bb.shift() ?? null;
+  return z;
+}
+const onCourt = t => Object.values(layout(t)).filter(n => n != null);
+// ---- tocco sul giocatore in ricezione: si tocca il giocatore nel video (dove lo si vede), non un pulsante.
+// Dal punto toccato al campo con la taratura (correggendo l'altezza: si tocca il busto, circa 1 m sopra i piedi),
+// poi il giocatore più vicino tra quelli dello schieramento di ricezione (contano soprattutto sinistra-destra).
+function receptionTargets(rt) {
+  const rec = arrangement(rt).rec, out = [], X = xs => isFar(rt) ? 9 - xs : xs, Y = d => isFar(rt) ? 9 + d : 9 - d;
+  const zs = [5, 6, 1];
+  rec.forEach((n, i) => { if (n != null) out.push({n, c:[X(ZX[zs[i]]), Y(6.2)]}); });
+  onCourt(rt).filter(n => !rec.includes(n)).forEach((n, i) => out.push({n, c:[X(ZX[[4,3,2][i]] ?? 4.5), Y(2.6)], front:true}));
+  return out;
+}
+function tapReceiver(e) {
+  if (!PREFS.overlay || PREFS.tapPlayers === false || S.phase.k !== 'serve' || calMode) return false;
+  const g = geomFrom(CALS[videoKey()]); if (!g || !g.toCourt) return false;
+  const r = $('vwrap').getBoundingClientRect(), vr = videoRect();
+  // tocco su un numero: vale quel giocatore (i numeri grandi possono essere spostati rispetto al giocatore)
+  const hit = [...document.querySelectorAll('#ovl .ob.ghost')].find(el => { const q = el.getBoundingClientRect();
+    return e.clientX >= q.left - 6 && e.clientX <= q.right + 6 && e.clientY >= q.top - 6 && e.clientY <= q.bottom + 6; });
+  if (hit) { tap(); S.sel.receiver = Number(hit.dataset.v); render(); return true; }
+  let p = [(e.clientX - r.left - vr.x) / vr.w, (e.clientY - r.top - vr.y) / vr.h];
+  const c0 = g.toCourt(p); if (!isFinite(c0[0]) || !isFinite(c0[1])) return false;
+  // 1 m in verticale in quel punto: dalla rete (2,43 m) nella stessa colonna, riportata alla scala del punto
+  const xc = Math.min(Math.max(c0[0], 0), 9), f9 = g.floor(xc, 9), nt = g.netTop(xc);
+  const sc = (a, b) => Math.hypot((a[0]-b[0]) * vAsp(), a[1]-b[1]);
+  const yy = Math.min(Math.max(c0[1], -3), 21), s = sc(g.floor(xc + 0.5, yy), g.floor(xc - 0.5, yy)) / (sc(g.floor(xc + 0.5, 9), g.floor(xc - 0.5, 9)) || 1);
+  p = [p[0] - (nt[0] - f9[0]) / 2.43 * s, p[1] - (nt[1] - f9[1]) / 2.43 * s];
+  const c = g.toCourt(p), rt = other(S.serving), depth = isFar(rt) ? c[1] - 9 : 9 - c[1];
+  if (!(depth > -0.3 && depth < 12 && c[0] > -3 && c[0] < 12)) return false;      // fuori dalla metà di chi riceve
+  let best = null, bd = Infinity;
+  for (const tg of receptionTargets(rt)) { const d = Math.hypot(c[0] - tg.c[0], 0.5 * (c[1] - tg.c[1])) + (tg.front ? 0.8 : 0);
+    if (d < bd) { bd = d; best = tg; } }
+  if (!best) return false;
+  tap(); S.sel.receiver = best.n; render();
+  const ring = document.createElement('div'); ring.className = 'tapring';
+  ring.style.left = (e.clientX - r.left) + 'px'; ring.style.top = (e.clientY - r.top) + 'px';
+  $('vwrap').appendChild(ring); setTimeout(() => ring.remove(), 500);
+  return true;
+}
+const setterZone = t => { const i = S.pos[t].findIndex(n => role(t,n) === 'P'); return i < 0 ? 1 : i + 1; };
+
+// schieramento di ricezione e di attacco dopo ricezione, per squadra e rotazione
+function defaultArr(t) {
+  const z = layout(t), rot = setterZone(t), fM = z[4], bM = z[6], L = onCourt(t).includes(libero(t)) ? libero(t) : z[5];
+  const att = {A4:z[4], A3:z[3], A2: role(t,z[2]) === 'P' ? null : z[2], AP:z[6]};
+  let rec;
+  if (rot === 1) {
+    if (t === OUR) rec = [bM, fM, L];                       // Decimo P1 "invertita": L in 1, M1 in 6 (attacca in 4), M2 in 5
+    else { rec = [bM, L, fM]; att.A4 = z[2]; att.A2 = z[4]; } // altri: L in 6, M1 in 1 (attacca in 2), l'opposto in 4
+  } else rec = {2:[fM,bM,L], 3:[fM,L,bM], 4:[fM,bM,L], 5:[fM,bM,L], 6:[fM,L,bM]}[rot];
+  return {rec, att};
+}
+// gettone = ruolo se in campo c'è un solo giocatore con quel ruolo (regge ai cambi), altrimenti il numero
+function tokenOf(t, n) { if (n == null) return null; const r = role(t,n);
+  return r && onCourt(t).filter(x => role(t,x) === r).length === 1 ? r : '#' + n; }
+function numOf(t, tok) { if (tok == null) return null; const onc = onCourt(t);
+  if (tok[0] === '#') { const n = Number(tok.slice(1)); return onc.includes(n) ? n : null; }
+  return onc.find(n => role(t,n) === tok) ?? null; }
+function arrKey(t) { return [DATA[t].name, setterZone(t)]; }
+function arrangement(t) {
+  const d = defaultArr(t), [nm, rot] = arrKey(t), saved = ARR[nm]?.[rot];
+  if (!saved) return {...d, learned:false};
+  const rec = saved.rec.map((tok,i) => numOf(t,tok) ?? d.rec[i]);
+  const att = {}; for (const k of ['A4','A3','A2','AP']) att[k] = saved.att[k] === null ? null : (numOf(t, saved.att[k]) ?? d.att[k]);
+  return {rec, att, learned:true};
+}
+function saveArr(t, rec, att) {
+  const [nm, rot] = arrKey(t); ARR[nm] = ARR[nm] || {};
+  const a = {}; for (const k in att) a[k] = tokenOf(t, att[k]);
+  ARR[nm][rot] = {rec: rec.map(n => tokenOf(t,n)), att:a}; save('scoutMockupArr', ARR);
+}
+
+// La squadra che riceve tiene il suo schieramento per tutto lo scambio (es. P1 "normale": opposto in 4, M1 in 2,
+// anche in contrattacco, a muro e in difesa); la squadra che batte gioca con la disposizione usuale.
+const receivingNow = t => t !== S.serving;
+function baseRally(t) {
+  const z = layout(t);
+  if (!receivingNow(t)) return z;
+  const att = arrangement(t).att, front = [z[4], z[3], z[2]], want = [att.A4, att.A3, att.A2];
+  if (!want.every(n => n == null || front.includes(n))) return z;   // schieramento con giocatori fuori dalla prima linea: lascia com'è
+  const rest = front.filter(n => !want.includes(n)), out = want.map(n => n ?? rest.shift() ?? null);
+  return {...z, 4:out[0], 3:out[1], 2:out[2]};
+}
+// Dove difende ciascuno, per squadra: zona -> zona "usuale" da cui prende il giocatore.
+// Usuale: martello davanti in 4, centrale in 3, opposto/palleggiatore in 2; dietro libero in 5, martello in 6, opp./pal. in 1.
+// Decimo: libero in 6 e martello in 5 (la pipe la attacca comunque il martello di seconda linea).
+const DEF_ZONES = [4,3,2,5,6,1];
+const defPattern = t => ARR[DATA[t].name]?.def || (t === OUR ? {4:4,3:3,2:2,5:6,6:5,1:1} : {4:4,3:3,2:2,5:5,6:6,1:1});
+function layoutRally(t) {
+  const b = baseRally(t), d = defPattern(t), z = {};
+  for (const k of DEF_ZONES) z[k] = b[d[k]];
+  return z;
+}
+function comboPlayer(t, who) {
+  const z = layout(t);
+  if (who === 'P') return S.pos[t].find(n => role(t,n) === 'P') ?? null;
+  if (who === 'OB') return role(t, z[1]) === 'O' ? z[1] : null;
+  if (receivingNow(t)) return arrangement(t).att[who] ?? null;   // chi riceve: come si schiera in quella rotazione
+  if (who === 'A4') return z[4];
+  if (who === 'A3') return z[3];
+  if (who === 'A2') return role(t, z[2]) === 'O' ? z[2] : null;
+  if (who === 'AP') return z[6];
+  return null;
+}
+// chi mura (proposta) dalla zona da cui arriva l'attacco
+function proposedBlocker(t, comboCode) {
+  const z = layoutRally(t);
+  if (/^[XV]5$/.test(comboCode)) return z[2];
+  if (/^[XV][68]$/.test(comboCode)) return z[4];
+  return z[3];
+}
+// disposizione dei campi come si vedono nel video
+const courtRows = t => isFar(t) ? [[1,6,5],[2,3,4]] : [[4,3,2],[5,6,1]];
+const frontRow = t => isFar(t) ? [2,3,4] : [4,3,2];
+const recOrder = t => isFar(t) ? [2,1,0] : [0,1,2];        // indici dello schieramento [z5, z6, z1]
+const REC_ZONES = ['zona 5','zona 6','zona 1'];
+
+// ---------------------------------------------------------------- codici
+const two = n => String(n).padStart(2,'0');
+function push(t, n, skill, type, grade, extra='', desc='', auto=false) {
+  const code = n == null ? `${t}$$${skill}` : `${t}${two(n)}${skill}${type}${grade}${extra}`;
+  S.rally.push({t, n, skill, grade, code, desc: desc || `${name(t,n)}`, auto, vt:Math.round(video.currentTime * 10) / 10});
+  S.nActs++; if (auto) S.nAuto++;
+}
+function endRally(winner, why) {
+  S.score[winner]++;
+  if (winner !== S.serving) { const p = S.pos[winner]; p.push(p.shift()); }
+  S.rallies.unshift({ actions:S.rally, base:S.rallyBase, winner, why, score:{...S.score} });
+  S.rally = []; S.rallyBase = null; S.serving = winner; S.phase = {k:'serve'}; S.sel = {};
+  fillBadge();
+  if (PREFS.autopause) { video.pause(); badge(true); }
+  const a = S.score['*'], b = S.score.a;
+  if ((a >= 25 || b >= 25) && Math.abs(a-b) >= 2) toast(`Fine set: ${DATA['*'].name} ${a} – ${b} ${DATA.a.name}`, '#1d4d2c');
+}
+// Cambi dal referto: al punteggio scritto sul referto (squadra : avversari) si propone il cambio, un tocco per farlo
+function refSubsDue() {
+  const due = [];
+  for (const t of ['*', 'a']) (DATA[t].subs || []).forEach((e, i) => {
+    if (S.subsDone[t + i]) return;
+    if (e.at[0] === S.score[t] && e.at[1] === S.score[other(t)] && S.pos[t].includes(e.out)) due.push({t, i, e});
+  });
+  return due;
+}
+function doSub(t, out, inn) {
+  const i = S.pos[t].indexOf(out); if (i < 0) return false;
+  S.pos[t][i] = inn; S.roles[t][inn] = S.roles[t][out];
+  S.rally.push({t, n:inn, code:`${t}c${two(out)}:${two(inn)}`, desc:`cambio: entra ${name(t,inn)} per ${name(t,out)}`, auto:false, vt:Math.round(video.currentTime * 10) / 10});
+  return true;
+}
+function renderSubBanner() {
+  const due = S.phase.k === 'serve' && !S.rally.some(a => a.skill !== 'c' && !/c\d/.test(a.code)) ? refSubsDue() : [];
+  const el = $('subBanner'); if (!el) return;
+  if (!due.length) { el.classList.add('hidden'); return; }
+  el.innerHTML = `<span>↔ Dal referto: ${due.map(d => `<b>${DATA[d.t].name}</b> entra ${d.e.in} ${name(d.t, d.e.in)} per ${d.e.out} ${name(d.t, d.e.out)}`).join(' · ')}</span>
+    <button class="go" data-subs="do">Fai ${due.length > 1 ? 'i cambi' : 'il cambio'}</button><button data-subs="skip">No</button>`;
+  el.classList.remove('hidden');
+}
+
+// attacco -> tocco implicito dell'altra squadra (come in Volleyball Scout / DataVolley): B = muro, D = difesa
+const LINKS = {'#':{B:'=', D:'='}, '+':{B:'-', D:'-'}, '!':{B:'!'}, '-':{B:'+', D:'+'}, '/':{B:'#'}};
+const LINK_DESC = {'B=':'mani fuori', 'D=':'difesa sbagliata', 'B-':'muro (buono per chi attacca)', 'D-':'difesa scarsa',
+                   'B!':'muro ripreso da chi attacca', 'B+':'muro positivo', 'D+':'difesa', 'B#':'muro punto'};
+const LINK_HEAD = {'#':'punto: a terra, mani fuori o difesa sbagliata?', '+':'attacco + → difesa – o muro – di chi?',
+                   '!':'attacco ! → muro ! di chi?', '-':'attacco – → difesa + o muro + di chi?', '/':'murato → muro punto di chi?'};
+// zona di partenza dalla sigla (codice DataVolley: sigla, ~, zona di partenza, ~, ~, colpo H forte / T pallonetto)
+const START_ZONE = {V5:4, X5:4, X7:3, X1:3, XC:3, X2:3, X6:2, V6:2, XP:8, X8:9, V8:9};
+const attackExtra = (combo, tip) => `${combo === 'P2' ? '~~' : combo}~${START_ZONE[combo] ?? '~'}~~${tip ? 'T' : 'H'}`;
+
+// ---------------------------------------------------------------- base del centrale
+// Vale solo per il 1° attacco dopo ricezione. Si tocca quando si vuole: durante lo scambio (dopo la ricezione)
+// oppure a scambio chiuso, finché non si segna la battuta successiva. Nel .dvw va sulla riga dell'alzata (E…K1).
+const recInPlay = acts => acts.find(a => a.skill === 'R' && '#+!-'.includes(a.grade));
+function baseTarget() {
+  const cur = recInPlay(S.rally);
+  if (cur) return {cur:true, team:cur.t, acts:S.rally, base:S.rallyBase, score:S.score};
+  const last = S.rallies[0], r = last && recInPlay(last.actions);
+  if (r && !S.rally.length) return {cur:false, team:r.t, acts:last.actions, base:last.base, score:last.score};
+  return null;
+}
+function onBase(c) {
+  const tg = baseTarget(); if (!tg) return toast('La base va su uno scambio con la ricezione in gioco');
+  tap(); snapshot();
+  if (tg.cur) S.rallyBase = S.rallyBase === c ? null : c; else S.rallies[0].base = S.rallies[0].base === c ? null : c;
+  render();
+}
+// inserisce (o completa) la riga dell'alzata con la chiamata prima del 1° attacco dopo ricezione
+function withBase(actions, base) {
+  const out = [];
+  for (const a of actions) {
+    if (a.soFirst && a.setter != null && (base || a.implied)) {
+      const call = base || a.implied, prev = out[out.length - 1];
+      if (prev && prev.skill === 'E' && prev.t === a.t) { prev.code += call; prev.desc += ' · base ' + call; }
+      else out.push({t:a.t, skill:'E', code:`${a.t}${two(a.setter)}E${a.btype}~${call}`,
+                     desc:`${name(a.t, a.setter)} · base ${call}${base ? '' : ' (dalla sigla)'}`, auto:true});
+    }
+    out.push({...a});
+  }
+  return out;
+}
+function renderBase() {
+  const tg = baseTarget(), first = tg && tg.acts.find(a => a.soFirst);
+  const implied = first && !tg.base ? first.implied : null;
+  const where = !tg ? 'nessuno scambio con ricezione in gioco'
+    : `${tg.cur ? 'scambio in corso' : 'scambio appena chiuso'} · ${DATA[tg.team].name}`;
+  $('basebox').innerHTML = `<div class="bh"><span class="lab">Base del centrale</span><span class="bt">${where}</span></div>
+    <div class="bbtns">${CALLS.map(c => `<button class="bb ${tg && tg.base === c ? 'sel' : ''} ${implied === c ? 'imp' : ''}"
+      data-base="${c}" ${tg ? '' : 'disabled'}>${c}</button>`).join('')}</div>`;
+}
+
+// ---------------------------------------------------------------- azioni dell'utente
+function snapshot() { history.push(clone(S)); if (history.length > 200) history.shift(); }
+function tap() { taps++; if (firstTapAt == null) { firstTapAt = Date.now(); videoAtFirstTap = video.currentTime; } }
+
+function onGrade(g) {
+  tap(); const ph = S.phase, sel = S.sel;
+  if (ph.k === 'serve') {
+    const st = S.serving, rt = other(st), server = S.pos[st][0];
+    const type = S.serveType[server] || pl(st,server).sv || 'M';
+    if (sel.receiver == null) {
+      if (g === '=') { snapshot(); push(st, server, 'S', type, '=', '', `${name(st,server)} · battuta sbagliata`); endRally(rt, 'errore in battuta'); return render(); }
+      if (g === '#') { snapshot(); push(st, server, 'S', type, '#', '', `${name(st,server)} · ace`); endRally(st, 'ace'); return render(); }
+      return toast('Prima tocca chi riceve (o = per l\'errore in battuta)');
+    }
+    snapshot();
+    push(st, server, 'S', type, SERVE_FROM_REC[g], '', `${name(st,server)} · battuta (dalla ricezione)`, true);
+    push(rt, sel.receiver, 'R', type, g, '', `${name(rt,sel.receiver)} · ricezione`);
+    if (g === '=') endRally(st, 'ace');
+    else if (g === '/') { S.phase = {k:'attack', t:st, over:true}; S.sel = {}; }
+    else { S.phase = {k:'attack', t:rt, so:true}; S.sel = {}; }
+    return render();
+  }
+  if (ph.k === 'attack') {
+    const t = ph.t;
+    if (!sel.combo) return toast('Prima tocca la sigla dell\'attacco');
+    const att = sel.player ?? comboPlayer(t, sel.combo[1]);
+    if (att == null) return toast('Nessun giocatore adatto in campo per questa sigla');
+    snapshot();
+    const setter = S.pos[t].find(x => role(t,x) === 'P');
+    // 1° attacco dopo ricezione dello scambio: è quello a cui si aggancia la base del centrale
+    const soFirst = receivingNow(t) && !S.rally.some(a => a.skill === 'A' && a.t === t);
+    if (sel.fbTeam) push(t, 0, 'F', 'H', sel.fbTeam, '', `palla libera ${DATA[t].name} appoggiata ${sel.fbTeam === '+' ? 'bene' : 'male'} (senza giocatore)`, false);
+    push(t, att, 'A', sel.combo[2], g, attackExtra(sel.combo[0], sel.tip), `${name(t,att)} · ${sel.combo[0]}${sel.tip ? ' · pallonetto' : ''}`);
+    if (soFirst) Object.assign(S.rally[S.rally.length - 1], {soFirst:true, setter, btype:sel.combo[2], implied:sel.combo[3] || null});
+    if (g === '=') endRally(other(t), 'errore in attacco');
+    else if (PREFS.oppLight && (OUR == null || t === OUR) && g !== '/') {
+      // avversario essenziale: chi difende o mura per loro non si segna (solo il muro punto).
+      // Partita tra avversari: vale per tutte e due le squadre; dopo l'attacco punto niente "a terra / mani fuori" (facoltativo)
+      if (g === '#' && OUR == null && !PREFS.neutralHow) endRally(t, 'attacco');
+      else if (g === '#') { S.phase = {k:'link', t:other(t), g, type:sel.combo[2], from:sel.combo[0], att:t}; S.sel = {}; }  // a terra, mani fuori o difesa?
+      else if (g === '!') { S.phase = {k:'defense', t, type:sel.combo[2]}; S.sel = {}; }   // murata ripresa: palla a noi
+      else { S.phase = {k:'attack', t:other(t), afterOur:true}; S.sel = {}; }
+    }
+    else { S.phase = {k:'link', t:other(t), g, type:sel.combo[2], from:sel.combo[0], att:t}; S.sel = {}; }  // chi ha toccato di là?
+    return render();
+  }
+  if (ph.k === 'defense') {
+    const t = ph.t;
+    if (sel.player == null) return toast('Prima tocca chi ha toccato la palla');
+    snapshot();
+    const type = ph.type || 'H';
+    if (sel.mode === 'B') {
+      push(t, sel.player, 'B', type, g, '', `${name(t,sel.player)} · muro`);
+      if (g === '#') endRally(t, 'muro');
+      else if (g === '=' || g === '/') endRally(other(t), g === '/' ? 'invasione a muro' : 'mani fuori');
+      else if (g === '-') { S.phase = {k:'defense', t:other(t), type}; S.sel = {}; }
+      else { S.phase = {k:'defense', t, type}; S.sel = {}; }
+    } else {
+      const fb = !!sel.freeball || ph.freeball;
+      push(t, sel.player, fb ? 'F' : 'D', fb ? 'H' : type, g, '', `${name(t,sel.player)} · ${fb ? 'palla libera' : 'difesa'}`);
+      if (g === '=') endRally(other(t), fb ? 'palla libera sbagliata' : 'errore in difesa');
+      else if (g === '/') { S.phase = {k:'defense', t:other(t), type:'H', freeball:true}; S.sel = {}; }
+      else { S.phase = {k:'attack', t}; S.sel = {}; }
+    }
+    return render();
+  }
+}
+
+function onPick(kind, val, extra) {
+  tap();
+  const ph = S.phase;
+  if (kind === 'receiver') S.sel.receiver = S.sel.receiver === val ? null : val;
+  if (kind === 'serveType') S.serveType[S.pos[S.serving][0]] = val;
+  if (kind === 'serveCycle') { const srv = S.pos[S.serving][0], cur = S.serveType[srv] || pl(S.serving, srv).sv || 'M';
+    const i = SERVE_TYPES.findIndex(x => x[0] === cur); S.serveType[srv] = SERVE_TYPES[(i + 1) % SERVE_TYPES.length][0]; }
+  if (kind === 'combo') { S.sel.combo = val; S.sel.player = null; S.sel.fromOvl = !!extra; }
+  if (kind === 'setErr') { S.phase = {k:'setby', t:ph.t, g:val, back:clone(ph)}; S.sel = {}; }   // chi ha alzato?
+  if (kind === 'setbyCancel') { S.phase = ph.back; S.sel = {}; }
+  if (kind === 'setby') {
+    snapshot();
+    push(ph.t, val, 'E', 'H', ph.g, '', `${name(ph.t,val)} · alzata ${ph.g === '-' ? 'negativa' : 'sbagliata'}`);
+    if (ph.g === '=') endRally(other(ph.t), 'alzata sbagliata');
+    else { S.phase = ph.back; S.sel = {}; }      // negativa: l'attacco arriva lo stesso
+  }
+  if (kind === 'tip') S.sel.tip = !S.sel.tip;
+  if (kind === 'switch') {
+    if (ph.k === 'attack') S.phase = {k:'defense', t:other(ph.t), type:'H'};
+    else if (ph.k === 'defense') S.phase = {...ph, t:other(ph.t)};
+    S.sel = {};
+  }
+  if (kind === 'freeball') S.sel.freeball = !S.sel.freeball;
+  if (kind === 'player') { S.sel.player = val; S.sel.mode = extra; S.sel.fromOvl = true; }
+  if (kind === 'overNoAttack') { // palla rimandata di là senza attacco = palla libera per gli altri
+    snapshot();
+    if (PREFS.oppLight && other(ph.t) !== OUR) { S.phase = {k:'attack', t:other(ph.t), afterOur:true}; S.sel = {fbTeam:'+'}; }
+    else { S.phase = {k:'defense', t:other(ph.t), type:'H', freeball:true}; S.sel = {}; }
+  }
+  if (kind === 'fbTeam') S.sel.fbTeam = S.sel.fbTeam === val ? null : val;   // '+' appoggiata bene, '-' male
+  if (kind === 'link') {          // dopo il voto dell'attacco: chi ha toccato dall'altra parte (voto implicito)
+    snapshot();
+    const o = ph.t, at = ph.att, g = ph.g, sk = extra;
+    if (val != null) { const gr = LINKS[g][sk]; push(o, val, sk, ph.type, gr, '', `${name(o,val)} · ${LINK_DESC[sk + gr]}`, true); }
+    if (g === '#') endRally(at, val == null ? 'attacco a terra' : (sk === 'B' ? 'attacco (mani fuori)' : 'attacco (difesa sbagliata)'));
+    else if (g === '/') endRally(o, 'muro');
+    else if (g === '!') { S.phase = {k:'defense', t:at, type:ph.type}; S.sel = {}; }        // palla tornata a chi attacca
+    else if (sk === 'B') { S.phase = {k:'defense', t:o, type:ph.type}; S.sel = {}; }       // muro + / -: gioca chi ha murato
+    else { S.phase = {k:'attack', t:o}; S.sel = {}; }                                       // difesa + / -: contrattacco
+  }
+  render();
+}
+
+// ---------------------------------------------------------------- disegno
+const $ = id => document.getElementById(id);
+const teamCls = t => (OUR == null ? t === '*' : t === OUR) ? 'noi' : 'loro';   // tra avversari: casa blu, ospite arancio
+function pbtn(t, n, sub, kind, val, extra, sel) {
+  if (n == null) return `<button class="pbtn empty"></button>`;
+  return `<button class="pbtn ${sel ? 'sel' : ''}" data-k="${kind}" data-v="${val}" data-x="${extra||''}">${n} ${name(t,n)}<small>${sub||''}</small></button>`;
+}
+const viewNote = t => isFar(t) ? ' · <b>di fronte</b>: a specchio' : '';
+function courtHtml(t, kind, mode, isSel) {
+  const [top, bottom] = courtRows(t), cls = `row ${teamCls(t)}-t`, g = 'grid-template-columns:repeat(3,1fr)';
+  const z = layoutRally(t);
+  const row = ks => `<div class="${cls}" style="${g}">${ks.map(k => pbtn(t, z[k], 'zona ' + k, kind, z[k], mode, isSel(z[k]))).join('')}</div>`;
+  // la rete è sopra la squadra di spalle e sotto quella di fronte
+  return isFar(t) ? `${row(top)}${row(bottom)}<div class="netline"></div>` : `<div class="netline"></div>${row(top)}${row(bottom)}`;
+}
+function render() {
+  setTimeout(renderSubBanner, 0);
+  document.documentElement.style.setProperty('--obs', PREFS.obScale || 1.3);
+  const H = '*', A = 'a', sv = S.serving;
+  $('score').innerHTML =
+    `<span class="tm ${teamCls(H)}">${DATA[H].name}</span>${sv===H?'<span class="srv"></span>':''}
+     <span>${S.score[H]} – ${S.score[A]}</span>
+     ${sv===A?'<span class="srv"></span>':''}<span class="tm ${teamCls(A)}">${DATA[A].name}</span>
+     <span class="rot">P${setterZone(H)} · P${setterZone(A)}</span>`;
+  $('ptHome').textContent = `Punto ${DATA[H].name}`; $('ptAway').textContent = `Punto ${DATA[A].name}`;
+  $('ovlBtn').classList.toggle('on', !!PREFS.overlay);
+  const calOk = !!geomFrom(CALS[videoKey()]);
+  $('vonlyBtn').classList.toggle('on', !!PREFS.videoOnly); $('vonlyBtn').disabled = !calOk || !PREFS.overlay;
+  document.querySelector('.app').classList.toggle('vonly', !!PREFS.videoOnly && calOk && !!PREFS.overlay);
+  $('back').textContent = `⟲ ${PREFS.step} s`; $('fwd').textContent = `${PREFS.step} s ⟳`;
+  const fT = other(PREFS.near);
+  $('sideFar').textContent = `di fronte (metà B): ${DATA[fT].name}`; $('sideFar').style.background = `var(--${teamCls(fT)})`;
+
+  const ph = S.phase, sel = S.sel; let prompt = '', html = '', gctx = 'R';
+  if (ph.k === 'serve') {
+    const st = sv, rt = other(st), server = S.pos[st][0];
+    const type = S.serveType[server] || pl(st,server).sv || 'M';
+    const arr = arrangement(rt), rec = arr.rec;
+    prompt = `<span class="tm ${teamCls(st)}">Battuta</span> <span class="who">${server} ${name(st,server)}</span>
+              <span class="hint">tocca chi riceve, poi il voto della ricezione</span>`;
+    const others = onCourt(rt).filter(n => !rec.includes(n));
+    html = `<div class="chips"><span class="lab">Tipo di battuta</span>${SERVE_TYPES.map(([c,l]) =>
+              `<button class="chip ${type===c?'sel':''}" data-k="serveType" data-v="${c}">${l}</button>`).join('')}
+              <span class="hint">proposto dal solito del battitore</span></div>
+            <div class="lab">Riceve ${DATA[rt].name} in P${setterZone(rt)}${arr.learned ? '' : ' · schieramento proposto'}${viewNote(rt)}</div>
+            <div class="row ${teamCls(rt)}-t" style="grid-template-columns:repeat(3,1fr)">
+              ${recOrder(rt).map(i => pbtn(rt, rec[i], REC_ZONES[i], 'receiver', rec[i], '', sel.receiver === rec[i])).join('')}</div>
+            <div class="row ${teamCls(rt)}-t" style="grid-template-columns:repeat(6,1fr)">
+              ${others.map(n => pbtn(rt, n, role(rt,n), 'receiver', n, '', sel.receiver === n)).join('')}</div>`;
+    gctx = sel.receiver == null ? 'serve' : 'R';
+  } else if (ph.k === 'attack') {
+    const t = ph.t, far = isFar(t);
+    prompt = `<span class="tm ${teamCls(t)}">Attacco ${DATA[t].name}</span>
+              <span class="hint">${ph.over ? 'palla tornata di qua dalla ricezione · ' : ''}${receivingNow(t) ? 'cambio palla · ' : 'break-point · '}tocca la sigla, poi il voto${viewNote(t)}</span>`;
+    const cell = c => { if (!c) return `<button class="pbtn empty"></button>`;
+      const n = comboPlayer(t, c[1]); const s = sel.combo && sel.combo[0] === c[0];
+      return `<button class="pbtn ${s?'sel':''}" data-k="combo" data-v="${c[0]}" ${n==null?'disabled':''}>${c[0]==='P2'?'2° tocco':c[0]}<small>${n==null?'—':name(t,n)}</small></button>`; };
+    const cls = `row ${teamCls(t)}-t`, g8 = `grid-template-columns:repeat(${COMBOS_FRONT.length},1fr)`;
+    const front = far ? [...COMBOS_FRONT].reverse() : COMBOS_FRONT, back = far ? [...COMBOS_BACK].reverse() : COMBOS_BACK;
+    const fr = `<div class="${cls}" style="${g8}">${front.map(cell).join('')}</div>`, br = `<div class="${cls}" style="${g8}">${back.map(cell).join('')}</div>`;
+    html = (far ? br + fr + '<div class="netline"></div>' : '<div class="netline"></div>' + fr + br) +
+           `<div class="chips"><span class="lab">Colpo</span>
+               <button class="chip ${sel.tip?'':'sel'}" data-k="tip" data-v="0" ${sel.tip?'':'disabled style="opacity:1"'}>forte</button>
+               <button class="chip ${sel.tip?'sel':''}" data-k="tip" data-v="1" ${sel.tip?'disabled style="opacity:1"':''}>pallonetto</button>
+               ${ph.afterOur ? `<span style="width:12px"></span><span class="lab">Palla libera</span>
+                 <button class="chip ${sel.fbTeam === '+' ? 'sel' : ''}" data-k="fbTeam" data-v="+">appoggiata bene</button>
+                 <button class="chip ${sel.fbTeam === '-' ? 'sel' : ''}" data-k="fbTeam" data-v="-">appoggiata male</button>` : ''}
+               <span style="width:12px"></span><span class="lab">Alzata</span>
+               ${PREFS.oppLight && t !== OUR ? '' : '<button class="chip" data-k="setErr" data-v="-">negativa</button>'}
+               <button class="chip" data-k="setErr" data-v="=">sbagliata (punto loro)</button>
+               <span style="width:12px"></span>
+               <button class="chip" data-k="overNoAttack" data-v="1">Di là senza attacco</button></div>` +
+''; 
+    gctx = 'A';
+  } else if (ph.k === 'defense') {
+    const t = ph.t;
+    prompt = `<span class="tm ${teamCls(t)}">${ph.freeball ? 'Palla libera' : 'Muro o difesa'} ${DATA[t].name}</span>
+              <span class="hint">tocca chi ha toccato, poi il voto${ph.from ? ' · attacco ' + ph.from : ''}${viewNote(t)}</span>`;
+    const isSelM = m => n => sel.player === n && sel.mode === m;
+    const z = layoutRally(t);
+    html = `<div style="display:grid;grid-template-columns:1fr 1.6fr;gap:10px">
+             <div><div class="lab">Muro</div><div class="row ${teamCls(t)}-t" style="grid-template-columns:repeat(3,1fr)">
+               ${frontRow(t).map(k => pbtn(t, z[k], 'posto '+k, 'player', z[k], 'B', isSelM('B')(z[k]))).join('')}</div>
+               <div style="margin-top:8px" class="chips"><button class="chip ${(sel.freeball||ph.freeball)?'sel':''}" data-k="freeball" data-v="1">Palla libera (F)</button></div></div>
+             <div><div class="lab">Difesa</div>${courtHtml(t, 'player', 'D', isSelM('D'))}</div>
+            </div>`;
+    gctx = sel.mode === 'B' ? 'B' : 'D';
+  } else if (ph.k === 'link') {
+    const t = ph.t, z = layoutRally(t), L = LINKS[ph.g], prop = proposedBlocker(t, ph.from);
+    prompt = `<span class="tm ${teamCls(t)}">${DATA[t].name}</span>
+              <span class="hint">${LINK_HEAD[ph.g]} · il voto si scrive da solo${viewNote(t)}</span>`;
+    const muro = `<div><div class="lab">Muro → B${L.B}</div><div class="row ${teamCls(t)}-t" style="grid-template-columns:repeat(3,1fr)">
+        ${frontRow(t).map(k => pbtn(t, z[k], 'posto ' + k + (z[k] === prop ? ' · proposto' : ''), 'link', z[k], 'B', false)).join('')}</div></div>`;
+    const dif = L.D ? `<div><div class="lab">Difesa → D${L.D}</div>${courtHtml(t, 'link', 'D', () => false)}</div>` : '';
+    const last = ph.g === '#'
+      ? `<button class="pbtn" data-k="link" data-v="" data-x="" style="min-height:60px;background:#173a26">A terra (nessun tocco)</button>`
+      : `<button class="chip" data-k="link" data-v="" data-x="">Nessun tocco da segnare</button>`;
+    html = `<div style="display:grid;grid-template-columns:${dif ? '1fr 1.6fr' : '1fr'};gap:10px">${muro}${dif}</div>${last}`;
+    gctx = 'none';
+  }
+  if (ph.k === 'setby') {
+    const t = ph.t, setter = S.pos[t].find(x => role(t,x) === 'P');
+    prompt = `<span class="tm ${teamCls(t)}">Alzata ${ph.g === '-' ? 'negativa' : 'sbagliata'} ${DATA[t].name}</span>
+              <span class="hint">chi ha alzato? (il palleggiatore è evidenziato)${ph.g === '=' ? ' · punto agli altri' : ''}${viewNote(t)}</span>`;
+    html = courtHtml(t, 'setby', '', n => n === setter) + `<div class="chips"><button class="chip" data-k="setbyCancel" data-v="">Annulla</button></div>`;
+    gctx = 'none';
+  }
+  $('prompt').innerHTML = prompt; $('zone').innerHTML = html;
+  $('switchTeam').style.visibility = (ph.k === 'attack' || ph.k === 'defense') ? 'visible' : 'hidden';
+
+  const txt = GRADE_TEXT[gctx];
+  $('grades').innerHTML = GRADES.map(g => {
+    const cls = g === '#' ? 'pos' : (g === '=' || g === '/') ? 'neg' : 'mid';
+    const dis = (gctx === 'serve' || gctx === 'none') && !txt[g];
+    return `<button class="g ${cls}" data-g="${g}" ${dis?'disabled':''}>${g}<small>${txt[g]||''}</small></button>`; }).join('');
+
+  // registro
+  const actRow = a => `<div class="act ${a.auto?'auto':''}"><code>${a.code}</code><span class="d">${a.desc}${a.auto?' · automatica':''}</span></div>`;
+  let log = `<div class="rally cur"><div class="rh"><span>Scambio in corso</span><span>${S.score['*']}-${S.score.a}</span></div>
+             ${S.rally.length ? withBase(S.rally, S.rallyBase).map(actRow).join('') : '<div class="d" style="color:var(--muted)">—</div>'}</div>`;
+  const mmss = v => v == null ? '' : `${Math.floor(v / 60)}:${String(Math.floor(v % 60)).padStart(2, '0')}`;
+  for (const r of S.rallies) { const v0 = (r.actions.find(a => a.vt != null) || {}).vt;
+    log += `<div class="rally"><div class="rh" ${v0 != null ? `data-vt="${v0}" style="cursor:pointer" title="Rivedi lo scambio nel video"` : ''}><span>Punto ${DATA[r.winner].name} · ${r.why}</span><span>${v0 != null ? '▶︎ ' + mmss(v0) + ' · ' : ''}${r.score['*']}-${r.score.a}</span></div>${withBase(r.actions, r.base).map(actRow).join('')}</div>`; }
+  $('log').innerHTML = log;
+
+  renderBase();
+  renderOvl();
+  renderFs();
+  $('sActs').textContent = S.nActs;
+  $('sAuto').textContent = S.nAuto;
+  $('sTaps').textContent = S.nActs ? (taps / S.nActs).toFixed(1).replace('.', ',') : '–';
+  updateRatio();
+  scheduleSave();
+}
+function updateRatio() {
+  if (firstTapAt == null) return;
+  const wall = (Date.now() - firstTapAt) / 1000, vid = video.currentTime - videoAtFirstTap;
+  $('sRatio').textContent = vid > 20 ? (wall / vid).toFixed(2).replace('.', ',') + '×' : '–';
+}
+setInterval(updateRatio, 2000);
+
+// ---------------------------------------------------------------- eventi del pannello
+// Pulsanti sul video: si attivano al tocco (pointerdown), senza aspettare il "click". Con YouTube il primo tocco dopo
+// aver usato il lettore va al riquadro di YouTube e il click non arriva: si perdeva un tocco.
+document.addEventListener('pointerdown', e => {
+  const b = e.target.closest('#ovl button, #subBanner button, #fsbar button[data-base]'); if (!b || b.disabled || b.closest('.calpanel, .calmini')) return;
+  if (!(b.dataset.g || b.dataset.k || b.dataset.base)) return;
+  e.preventDefault(); ovlDownAt = performance.now(); handleBtn(b);
+}, true);
+let ovlDownAt = 0;
+document.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b || b.disabled) return;
+  // il click che segue il tocco (anche su un pulsante ridisegnato nello stesso punto) non deve rifare l'azione
+  if (b.closest('#ovl, #subBanner, #fsbar') && performance.now() - ovlDownAt < 1200) return;
+  handleBtn(b);
+});
+function handleBtn(b) {
+  if (b.closest('.modal') || b.closest('#tut') || b.closest('.calbar') || b.closest('.calpanel')) return;
+  if (b.dataset.base) return onBase(b.dataset.base);
+  if (b.dataset.g) return onGrade(b.dataset.g);
+  if (b.dataset.k) {
+    const k = b.dataset.k, v = b.dataset.v;
+    if (k === 'combo') return onPick('combo', ALL_COMBOS.find(c => c[0] === v), b.dataset.ovl);
+    if (k === 'link') return onPick('link', v === '' ? null : Number(v), b.dataset.x);
+    return onPick(k, ['receiver','player','setby'].includes(k) ? Number(v) : v, b.dataset.ovl ? (b.dataset.x || '') : b.dataset.x);
+  }
+}
+
+// ---------------------------------------------------------------- video: tocco al centro = play/pausa, doppio tocco ai lati = salto
+// Lettore unico: file locale (<video>) oppure YouTube (IFrame API), con la stessa interfaccia.
+const videoEl = $('video');
+let YTP = null, ytKey = null, ytStarted = false;
+const video = {
+  pause() { if (YTP) YTP.pauseVideo?.(); else videoEl.pause(); },
+  play() { if (YTP) YTP.playVideo?.(); else videoEl.play(); },
+  get paused() { return YTP ? (YTP.getPlayerState?.() !== 1) : videoEl.paused; },
+  get currentTime() { return YTP ? (YTP.getCurrentTime?.() || 0) : videoEl.currentTime; },
+  set currentTime(v) { if (YTP) YTP.seekTo?.(v, true); else videoEl.currentTime = v; },
+  get duration() { return YTP ? (YTP.getDuration?.() || 0) : videoEl.duration; },
+  get playbackRate() { return YTP ? (YTP.getPlaybackRate?.() || 1) : videoEl.playbackRate; },
+  set playbackRate(r) { if (YTP) YTP.setPlaybackRate?.(r); else videoEl.playbackRate = r; },
+  get videoWidth() { return YTP ? 16 : videoEl.videoWidth; },     // YouTube: video 16:9 dentro il riquadro
+  get videoHeight() { return YTP ? 9 : videoEl.videoHeight; },
+  dataset: { get key() { return YTP ? ytKey : videoEl.dataset.key; } },
+};
+const ytId = u => { const m = u.match(/(?:v=|youtu\.be\/|embed\/|shorts\/|live\/)([\w-]{11})/); return m ? m[1] : (/^[\w-]{11}$/.test(u.trim()) ? u.trim() : null); };
+function loadYouTube(url, startAt) {
+  const id = ytId(url || ''); if (!id) return toast('Link di YouTube non riconosciuto');
+  beginVideo({kind:'yt', url});
+  const make = () => {
+    if (YTP) YTP.destroy?.();
+    videoEl.pause(); videoEl.classList.add('hidden'); $('vmsg').classList.add('hidden');
+    $('ytbox').innerHTML = '<div id="ytframe"></div>'; $('ytbox').classList.remove('hidden'); $('ytcap').classList.add('hidden');
+    ytKey = 'yt:' + id; ytStarted = false;
+    YTP = new YT.Player('ytframe', { videoId:id, width:'100%', height:'100%',
+      playerVars:{playsinline:1, rel:0, modestbranding:1, ...(startAt ? {start:Math.floor(startAt)} : {})},
+      events:{ onReady:() => render(), onStateChange:e => {
+        if (e.data === 1) { setTimeout(() => { const a = document.activeElement; if (a && a.tagName === 'IFRAME') { a.blur(); window.focus(); } }, 50);
+          if (!ytStarted && pendingSeek != null) { YTP.seekTo?.(pendingSeek, true); pendingSeek = null; }
+          ytStarted = true; $('play').textContent = '❚❚ Pausa'; badge(false); $('ytcap').classList.remove('hidden'); } // dal primo play i tocchi tornano nostri
+        else if (e.data === 2 || e.data === 0) $('play').textContent = '▶︎ Play'; } } });
+    PREFS.lastYt = url; savePrefs(); afterVideoChange(); render(); pipKey = null; setTimeout(pipSetup, 300);
+    toast('Avvia il video con il suo pulsante ▶︎: poi tocchi e comandi sono quelli di sempre', '#1d4d2c');
+  };
+  if (window.YT && YT.Player) make();
+  else { window.onYouTubeIframeAPIReady = make; const sc = document.createElement('script'); sc.src = 'https://www.youtube.com/iframe_api'; document.head.appendChild(sc); }
+}
+function unloadYouTube() { if (YTP) { YTP.destroy?.(); YTP = null; } $('ytbox').classList.add('hidden'); $('ytcap').classList.add('hidden'); videoEl.classList.remove('hidden'); }
+$('ytBtn').onclick = () => { const u = prompt('Incolla il link del video di YouTube', PREFS.lastYt || ''); if (u) loadYouTube(u); };
+const togglePlay = () => video.paused ? video.play() : video.pause();
+function seek(sec) {
+  video.currentTime = Math.min(Math.max(0, video.currentTime + sec), video.duration || 1e9);
+  const f = sec < 0 ? $('flashL') : $('flashR');
+  f.textContent = sec < 0 ? `« ${-sec} s` : `${sec} s »`;
+  f.classList.add('show'); clearTimeout(f._t); f._t = setTimeout(() => f.classList.remove('show'), 350);
+}
+let lastTap = {t:0, side:0}, tapTimer = null, seekSum = 0;
+$('vwrap').addEventListener('pointerup', e => {
+  if (performance.now() - ovlDownAt < 1200) return;      // fine di un tocco su un pulsante del video (ridisegnato nel frattempo)
+  if (e.target.closest('button') || e.target.closest('.calbar') || e.target.closest('.calpanel') || e.target.closest('.calmini') || e.target.closest('.fsbar')) return;   // pulsanti sul video
+  if (calMode) return calTap(e);
+  if (tapReceiver(e)) return;
+  const r = $('vwrap').getBoundingClientRect(), x = (e.clientX - r.left) / r.width;
+  const side = x < 0.38 ? -1 : x > 0.62 ? 1 : 0, now = performance.now();
+  if (side && lastTap.side === side && now - lastTap.t < 380) {   // doppio tocco (e i tocchi successivi) sullo stesso lato
+    clearTimeout(tapTimer); seekSum = (seekSum || 0) + PREFS.step;
+    video.currentTime = Math.min(Math.max(0, video.currentTime + side * PREFS.step), video.duration || 1e9);
+    const f = side < 0 ? $('flashL') : $('flashR');
+    f.textContent = side < 0 ? `« ${seekSum} s` : `${seekSum} s »`;
+    f.classList.add('show'); clearTimeout(f._t); f._t = setTimeout(() => { f.classList.remove('show'); seekSum = 0; }, 600);
+    lastTap = {t:now, side}; return;
+  }
+  lastTap = {t:now, side}; seekSum = 0;
+  clearTimeout(tapTimer);
+  tapTimer = setTimeout(togglePlay, side ? 380 : 0);              // ai lati aspetta un attimo: potrebbe essere un doppio tocco
+});
+videoEl.addEventListener('loadeddata', () => $('vmsg').classList.add('hidden'));
+videoEl.addEventListener('error', () => { if (!YTP) $('vmsg').classList.remove('hidden'); });
+videoEl.addEventListener('play', () => { $('play').textContent = '❚❚ Pausa'; badge(false); });
+videoEl.addEventListener('pause', () => { $('play').textContent = '▶︎ Play'; renderFs(); scheduleSave(); });
+videoEl.addEventListener('playing', () => renderFs());
+$('file').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  // ripresa di uno scout: il video riscelto deve essere lo stesso (si riconosce dal nome)
+  let key = f.name;
+  if (resumeWanted && resumeWanted.src && resumeWanted.src.kind === 'file') {
+    if (f.name !== resumeWanted.src.name && !confirm(`Lo scout era sul video “${resumeWanted.src.name}”, hai scelto “${f.name}”. Uso comunque questo video?`)) { resumeWanted = null; return; }
+    key = resumeWanted.videoKey;
+  }
+  playFile(f, key); });
+function playFile(f, key) {
+  beginVideo({kind:'file', name:f.name, size:f.size});
+  unloadYouTube(); $('scoutsModal').classList.add('hidden');
+  if (videoEl.src.startsWith('blob:')) URL.revokeObjectURL(videoEl.src);
+  videoEl.src = URL.createObjectURL(f); videoEl.dataset.key = key; videoEl.load();
+  afterVideoChange(); render(); pipKey = null; pipSetup();
+}
+function playUrl(src) {
+  beginVideo({kind:'url', src}); unloadYouTube(); $('scoutsModal').classList.add('hidden');
+  videoEl.src = src; videoEl.dataset.key = src.split('/').pop(); videoEl.load();
+  afterVideoChange(); render(); pipKey = null; pipSetup();
+}
+videoEl.addEventListener('loadedmetadata', () => { if (pendingSeek != null && !YTP) { videoEl.currentTime = pendingSeek; pendingSeek = null; } renderOvl(); });
+$('play').onclick = togglePlay;
+$('back').onclick = () => seek(-PREFS.step);
+$('fwd').onclick = () => seek(PREFS.step);
+const RATES = [1, 0.75, 0.5];
+$('rateBtn').onclick = () => { const i = (RATES.indexOf(video.playbackRate) + 1) % RATES.length;
+  video.playbackRate = RATES[i]; $('rateBtn').textContent = String(RATES[i]).replace('.', ',') + '×';
+  $('rateBtn').classList.toggle('on', RATES[i] !== 1); };
+$('switchTeam').onclick = () => { tap();
+  if (S.phase.k === 'attack') S.phase = {k:'defense', t:other(S.phase.t), type:'H'};
+  else if (S.phase.k === 'defense') S.phase = {...S.phase, t:other(S.phase.t)};
+  S.sel = {}; render(); };
+$('undo').onclick = () => { if (!history.length) return toast('Niente da annullare'); S = history.pop(); render(); };
+$('ptHome').onclick = () => { tap(); snapshot(); push('*', null, '&', '', '', '', 'punto generico'); endRally('*', 'punto generico'); render(); };
+$('ptAway').onclick = () => { tap(); snapshot(); push('a', null, '&', '', '', '', 'punto generico'); endRally('a', 'punto generico'); render(); };
+$('log').addEventListener('click', e => { const h = e.target.closest('[data-vt]'); if (!h) return;
+  video.currentTime = Math.max(0, Number(h.dataset.vt) - 3); });
+$('export').onclick = () => {
+  const lines = [];
+  // una riga per codice, con il minuto del video (secondi) dopo una tabulazione: servirà per il .dvw
+  for (const r of [...S.rallies].reverse()) { for (const a of withBase(r.actions, r.base)) lines.push(a.code + (a.vt != null ? '\t' + a.vt : '')); lines.push(`${r.winner}p${two(r.score['*'])}:${two(r.score.a)}`); }
+  shareFile(`codici ${fileSafe($('mockTitle').textContent)}.txt`, lines.join('\n'), 'text/plain'); };
+
+// ---------------------------------------------------------------- taratura del campo e sigle sul video
+// Campo: x 0..9 da sinistra a destra come si vede nel video, y 0..18 dal fondo vicino alla telecamera; rete a y = 9.
+// Punti da toccare (visibili da dietro): incroci linea laterale - linea centrale, angoli lontani, estremi del nastro.
+// Punti di riferimento del campo: x 0..9, y 0..18 (metà A da 0 a 9, rete a y = 9, metà B da 9 a 18).
+// Nella metà A va la squadra "di spalle" delle impostazioni. N0/N9 = estremi del nastro (sopra x = 0 e x = 9).
+const LANDMARKS = [
+  {id:'A0', c:[0,0]}, {id:'A9', c:[9,0]}, {id:'a0', c:[0,6]}, {id:'a9', c:[9,6]},
+  {id:'C0', c:[0,9]}, {id:'C9', c:[9,9]}, {id:'b0', c:[0,12]}, {id:'b9', c:[9,12]},
+  {id:'B0', c:[0,18]}, {id:'B9', c:[9,18]}, {id:'N0', c:[0,9], net:true}, {id:'N9', c:[9,9], net:true}];
+const LM_DESC = {A:'<b>a terra</b>: angolo del campo, dove la linea di fondo incontra la laterale',
+  a:'<b>a terra</b>: l\'incrocio della linea bianca dei 3 metri con la laterale (non le righe colorate di altri sport)',
+  C:'<b>a terra</b>: l\'incrocio della riga centrale (sotto la rete) con la laterale. <b>Non</b> in alto sul nastro e <b>non</b> la base dell\'asta, che sta più fuori dal campo',
+  N:'<b>in alto</b>: dove il nastro bianco della rete incontra l\'asta (o l\'antenna)'};
+const lmDesc = id => LM_DESC[id[0] === 'B' ? 'A' : id[0] === 'b' ? 'a' : id[0]];
+// Punti del pavimento che non tornano (per esempio C toccato sul nastro, o un angolo messo sul bordo del video).
+// Prima si prova a spiegare i punti con la curvatura dell'obiettivo (grandangolo: verso i bordi tutto è schiacciato
+// verso il centro); un punto si lascia fuori solo se nemmeno con la curvatura torna. Combinazioni di 1, 2, 3 punti
+// esclusi; un'esclusione vale se lo scarto scende molto e i punti esclusi restano lontanissimi. Restano almeno 6 punti
+// (con 5 il campo si adatta a qualunque cosa); la curvatura dai soli punti solo con almeno 7 punti.
+function floorOutliers(lm, kFix) {
+  const a = vAsp(), ids = LANDMARKS.filter(l => !l.net && lm[l.id]).map(l => l.id), C = id => LANDMARKS.find(l => l.id === id).c;
+  const fitAt = (keep, k) => { const U = id => undist(lm[id], k), H = homography(keep.map(C), keep.map(U));
+    const d = x => { const q = applyH(H, ...C(x)), p = U(x); return Math.hypot((q[0]-p[0])*a, q[1]-p[1]) / (1 + Math.max(0, k) * 0.5); };
+    return {d, rms:Math.sqrt(keep.reduce((s, x) => s + d(x)**2, 0) / keep.length), k}; };
+  const fit = keep => {
+    if (typeof kFix === 'number' || keep.length < 7) return fitAt(keep, typeof kFix === 'number' ? kFix : 0);
+    let best = null;
+    for (let k = 0; k <= 0.7001; k += 0.05) { const f = fitAt(keep, k); if (!best || f.rms < best.rms) best = f; }
+    for (let k = Math.max(0, best.k - 0.05); k <= Math.min(0.7, best.k + 0.05) + 1e-9; k += 0.01) { const f = fitAt(keep, k); if (f.rms < best.rms) best = f; }
+    return best;
+  };
+  const combos = (arr, r) => !r ? [[]] : arr.flatMap((x, i) => combos(arr.slice(i + 1), r - 1).map(c => [x, ...c]));
+  const f0 = fit(ids); let cur = {out:[], rms:f0.rms, k:f0.k};
+  for (let r = 1; r <= 3 && ids.length - r >= 6; r++) {
+    let best = null;
+    for (const out of combos(ids, r)) { const f = fit(ids.filter(x => !out.includes(x))); if (!best || f.rms < best.rms) best = {out, rms:f.rms, d:f.d, k:f.k}; }
+    const far = best.out.every(x => best.d(x) >= Math.max(0.05, 3 * best.rms));
+    if (cur.rms > 0.015 && best.rms <= 0.7 * cur.rms && far) cur = best; else break;
+  }
+  return {out:cur.out, k:Math.round(cur.k * 1000) / 1000};
+}
+let CALS = load('scoutMockupCal') || {}, calMode = null;     // calMode = {pts:[], done}
+const videoKey = () => video.dataset.key || 'video';
+function solve(A, b) {
+  const n = b.length, M = A.map((r,i) => [...r, b[i]]);
+  for (let c = 0; c < n; c++) {
+    let p = c; for (let r = c+1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[p][c])) p = r;
+    [M[c], M[p]] = [M[p], M[c]];
+    for (let r = 0; r < n; r++) { if (r === c) continue; const f = M[r][c] / M[c][c]; for (let k = c; k <= n; k++) M[r][k] -= f * M[c][k]; }
+  }
+  return M.map((r,i) => r[n] / r[i]);
+}
+function homography(src, dst) {     // 4 punti: esatta; di più: minimi quadrati
+  const A = [], b = [];
+  for (let i = 0; i < src.length; i++) { const [x,y] = src[i], [u,v] = dst[i];
+    A.push([x,y,1,0,0,0,-u*x,-u*y]); b.push(u); A.push([0,0,0,x,y,1,-v*x,-v*y]); b.push(v); }
+  if (A.length === 8) return [...solve(A, b), 1];
+  const AtA = [...Array(8)].map((_, i) => [...Array(8)].map((_, j) => A.reduce((s, r) => s + r[i]*r[j], 0)));
+  const Atb = [...Array(8)].map((_, i) => A.reduce((s, r, k) => s + r[i]*b[k], 0));
+  return [...solve(AtA, Atb), 1];
+}
+const applyH = (h, x, y) => { const w = h[6]*x + h[7]*y + 1; return [(h[0]*x + h[1]*y + h[2]) / w, (h[3]*x + h[4]*y + h[5]) / w]; };
+const calLm = cal => !cal ? null : Array.isArray(cal)        // vecchio formato: 6 punti fissi
+  ? (cal.length >= 6 ? {C0:cal[0], C9:cal[1], B9:cal[2], B0:cal[3], N0:cal[4], N9:cal[5]} : null) : cal.lm;
+const calReady = lm => !!lm && lm.N0 && lm.N9 && LANDMARKS.filter(l => !l.net && lm[l.id]).length >= 4;
+// Curvatura dell'obiettivo (grandangolo / GoPro): distorsione radiale con un parametro k.
+// Coordinate del video 0..1; r = distanza dal centro, 1 sull'angolo dell'immagine.
+const vAsp = () => (video.videoWidth || 16) / (video.videoHeight || 9);
+function undist([u, v], k) {
+  if (!k) return [u, v];
+  const a = vAsp(), X = (u - 0.5) * a, Y = v - 0.5, r2 = (X*X + Y*Y) / ((a*a + 1) / 4), f = 1 + k * r2;
+  return [0.5 + X * f / a, 0.5 + Y * f];
+}
+function dist([u, v], k) {        // inversa di undist, per iterazioni
+  if (!k) return [u, v];
+  let p = [u, v];
+  for (let i = 0; i < 40; i++) { const q = undist(p, k), f = 1 + Math.max(0, k) * 1.5;
+    p = [p[0] + (u - q[0]) / f, p[1] + (v - q[1]) / f]; }
+  return p;
+}
+function fitGeom(lm, k, skip = []) {
+  const all = LANDMARKS.filter(l => !l.net && lm[l.id]), fl = all.filter(l => !skip.includes(l.id)), U = p => undist(p, k);
+  const H = homography(fl.map(l => l.c), fl.map(l => U(lm[l.id])));
+  const floor = (x, y) => dist(applyH(H, x, y), k);
+  // Nastro: passa per i due estremi toccati (N0, N9); la spaziatura lungo il nastro segue la prospettiva del campo
+  // (è parallelo alla linea centrale, quindi ha lo stesso punto di fuga D della direzione x del campo).
+  const n0 = U(lm.N0), n9 = U(lm.N9), L = Math.hypot(n9[0]-n0[0], n9[1]-n0[1]) || 1e-9, dir = [(n9[0]-n0[0])/L, (n9[1]-n0[1])/L];
+  const D = [H[0], H[3], H[6]];
+  let sInf = Infinity;
+  if (Math.abs(D[2]) > 1e-12) { const v = [D[0]/D[2], D[1]/D[2]]; sInf = (v[0]-n0[0])*dir[0] + (v[1]-n0[1])*dir[1]; }
+  const affine = !isFinite(sInf) || Math.abs(sInf) > 1e4 || (sInf >= 0 && sInf <= L);
+  const sAt = x => affine ? L * x / 9 : sInf * x / (x + 9 * sInf / L - 9);
+  const netTop = x => { const s = sAt(x); return dist([n0[0] + dir[0]*s, n0[1] + dir[1]*s], k); };
+  // scarto di ogni punto toccato dal modello (in frazioni dell'altezza del video)
+  const a = vAsp(), err = all.map(l => { const q = floor(...l.c), p = lm[l.id]; return {id:l.id, d:Math.hypot((q[0]-p[0])*a, q[1]-p[1]), skip:skip.includes(l.id)}; });
+  const used = err.filter(e => !e.skip), rms = Math.sqrt(used.reduce((s, e) => s + e.d*e.d, 0) / Math.max(1, used.length));
+  // dal video al campo (inversa): punto del pavimento sotto un punto toccato nel video
+  const M = [[H[0],H[1],H[2]],[H[3],H[4],H[5]],[H[6],H[7],1]];
+  const det3 = M[0][0]*(M[1][1]*M[2][2]-M[1][2]*M[2][1]) - M[0][1]*(M[1][0]*M[2][2]-M[1][2]*M[2][0]) + M[0][2]*(M[1][0]*M[2][1]-M[1][1]*M[2][0]);
+  const Mi = [[(M[1][1]*M[2][2]-M[1][2]*M[2][1]), -(M[0][1]*M[2][2]-M[0][2]*M[2][1]), (M[0][1]*M[1][2]-M[0][2]*M[1][1])],
+              [-(M[1][0]*M[2][2]-M[1][2]*M[2][0]), (M[0][0]*M[2][2]-M[0][2]*M[2][0]), -(M[0][0]*M[1][2]-M[0][2]*M[1][0])],
+              [(M[1][0]*M[2][1]-M[1][1]*M[2][0]), -(M[0][0]*M[2][1]-M[0][1]*M[2][0]), (M[0][0]*M[1][1]-M[0][1]*M[1][0])]].map(r => r.map(v => v / det3));
+  const toCourt = p => { const [u, v] = undist(p, k), w = Mi[2][0]*u + Mi[2][1]*v + Mi[2][2];
+    return [(Mi[0][0]*u + Mi[0][1]*v + Mi[0][2]) / w, (Mi[1][0]*u + Mi[1][1]*v + Mi[1][2]) / w]; };
+  return {floor, netTop, toCourt, k, err, rms, n:fl.length, skip};
+}
+// Quanto una serie di punti si scosta da una retta (somma dei quadrati delle distanze, dopo aver tolto la curvatura k)
+function lineErr(pts, k) {
+  const a = vAsp(), q = pts.map(p => { const u = undist(p, k); return [u[0]*a, u[1]]; }), n = q.length;
+  const mx = q.reduce((s, p) => s + p[0], 0) / n, my = q.reduce((s, p) => s + p[1], 0) / n;
+  let sxx = 0, syy = 0, sxy = 0; for (const [x, y] of q) { sxx += (x-mx)**2; syy += (y-my)**2; sxy += (x-mx)*(y-my); }
+  return ((sxx + syy) - Math.sqrt((sxx - syy)**2 + 4*sxy*sxy)) / 2;
+}
+// Curvatura stimata dalle linee dritte tracciate (le linee del campo devono tornare dritte), più i punti.
+// Senza linee tracciate: 0 (dai soli punti la stima piega il campo per far tornare i tocchi imprecisi).
+function bestK(lm, lines, skip = []) {
+  if (!lines || !lines.length) return 0;
+  const cost = k => lines.reduce((s, l) => s + lineErr(l, k), 0) + fitGeom(lm, k, skip).err.reduce((s, e) => s + (e.skip ? 0 : e.d*e.d), 0);
+  let best = 0, bv = Infinity;
+  for (let k = -0.3; k <= 0.8001; k += 0.02) { const v = cost(k); if (v < bv) { bv = v; best = k; } }
+  for (let k = best - 0.02; k <= best + 0.02; k += 0.002) { const v = cost(k); if (v < bv) { bv = v; best = k; } }
+  return Math.round(best * 1000) / 1000;
+}
+const geomCache = new Map();
+function geomFrom(cal, kOver) {
+  const lm = calLm(cal); if (!calReady(lm)) return null;
+  const lines = (cal && cal.lines) || [];
+  const key = JSON.stringify([lm, lines, cal && cal.k, kOver, vAsp()]);
+  if (!geomCache.has(key)) {
+    if (geomCache.size > 50) geomCache.clear();
+    // curvatura: quella messa a mano, altrimenti stimata dalle linee tracciate (le vecchie stime dai soli punti non si usano più)
+    const kFix = typeof kOver === 'number' ? kOver : (cal && cal.kManual && typeof cal.k === 'number') ? cal.k : null;
+    const fo = floorOutliers(lm, kFix), skip = fo.out;
+    // curvatura: a mano; altrimenti dalle linee tracciate; altrimenti dai punti (solo se sono abbastanza)
+    const k = kFix !== null ? kFix : lines.length ? bestK(lm, lines, skip) : fo.k;
+    geomCache.set(key, fitGeom(lm, k, skip));
+  }
+  return geomCache.get(key);
+}
+// rettangolo in cui il video è davvero disegnato dentro il riquadro (object-fit: contain)
+function videoRect() {
+  const r = $('vwrap').getBoundingClientRect(), vw = video.videoWidth || 16, vh = video.videoHeight || 9;
+  const k = Math.min(r.width / vw, r.height / vh); return {x:(r.width - vw*k)/2, y:(r.height - vh*k)/2, w:vw*k, h:vh*k};
+}
+const toScr = (vr, p) => [vr.x + p[0]*vr.w, vr.y + p[1]*vr.h];
+// posizione delle sigle per chi attacca: u lungo la rete da posto 4 (0) a posto 2 (1), d metri dalla rete, spostamento in px
+// (il palleggiatore di riferimento è tra zona 2 e 3, u ≈ 0,67)
+const OVL_POS = {V5:[0.08,0.6,-19], X5:[0.08,0.6,19], X7:[0.36,0.6,0], XC:[0.5,0.6,18], X1:[0.6,0.6,-18], X2:[0.77,0.6,0],
+                 X6:[0.93,0.6,19], V6:[0.93,0.6,-19], P2:[0.67,1.8,0], XP:[0.5,4.5,0], X8:[0.88,4.5,19], V8:[0.88,4.5,-19]};
+const lerp = (a, b, t) => [a[0] + (b[0]-a[0])*t, a[1] + (b[1]-a[1])*t];
+const short = s => s.length > 9 ? s.slice(0, 8) + '.' : s;
+function renderOvl() {
+  const o = $('ovl'); if (!o) return;
+  if (!calMode) $('vwrap').style.touchAction = '';
+  const vr = videoRect();
+  $('sideFar').style.display = calMode ? 'none' : '';
+  if (calMode) {
+    const lm = calMode.lm, g = calMode.check && geomFrom({lm, lines:calMode.lines}, calMode.k);
+    calMode.g = g || null;
+    let svg = '';
+    const bad = {};
+    if (g) {
+      // linee campionate: con la curvatura dell'obiettivo sono curve, come nel video
+      const PL = (pts, col, w) => `<polyline points="${pts.map(p => toScr(vr, p).map(v => v.toFixed(1)).join(',')).join(' ')}" fill="none" stroke="${col}" stroke-width="${w}"/>`;
+      const seg = (x1, y1, x2, y2) => [...Array(25)].map((_, i) => g.floor(x1 + (x2-x1)*i/24, y1 + (y2-y1)*i/24));
+      svg = `<svg>${PL(seg(0,0,9,0),'#facc15',2)}${PL(seg(9,0,9,18),'#facc15',2)}${PL(seg(9,18,0,18),'#facc15',2)}${PL(seg(0,18,0,0),'#facc15',2)}
+        ${PL(seg(0,9,9,9),'#facc15',2)}${PL(seg(0,6,9,6),'#facc15',1)}${PL(seg(0,12,9,12),'#facc15',1)}
+        ${PL([...Array(25)].map((_, i) => g.netTop(9*i/24)),'#22c55e',3)}
+        ${g.err.map(e => { const l = LANDMARKS.find(x => x.id === e.id), [x1,y1] = toScr(vr, lm[e.id]), [x2,y2] = toScr(vr, g.floor(...l.c));
+          bad[e.id] = e.d * vr.h; return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#ef4444" stroke-width="2"/>`; }).join('')}</svg>`;
+    }
+    const traced = [...calMode.lines, ...(calMode.trace ? [calMode.trace] : [])].map(l =>
+      `<polyline points="${l.map(p => toScr(vr, p).map(v => v.toFixed(1)).join(',')).join(' ')}" fill="none" stroke="#38bdf8" stroke-width="2" stroke-dasharray="4 3"/>` +
+      l.map(p => { const [x, y] = toScr(vr, p); return `<circle cx="${x}" cy="${y}" r="5" fill="#38bdf8" stroke="#000"/>`; }).join('')).join('');
+    if (traced) svg = svg ? svg.replace('</svg>', traced + '</svg>') : `<svg>${traced}</svg>`;
+    const marks = Object.entries(lm).map(([id, p]) => { const [x,y] = toScr(vr, p), far = (bad[id] || 0) > 8;
+      return `<div class="calpt ${far ? 'bad' : ''}" style="left:${x}px;top:${y}px"></div><div class="calid" style="left:${x}px;top:${y}px">${id}${g && g.skip.includes(id) ? ' · ignorato' : bad[id] != null ? ' · ' + Math.round(bad[id]) + ' px' : ''}</div>`; }).join('');
+    $('vwrap').style.touchAction = 'none';
+    o.innerHTML = svg + marks + calPanel();
+    return;
+  }
+  const g = geomFrom(CALS[videoKey()]);
+  if (!PREFS.overlay || (tutSaved && !g)) { o.innerHTML = ''; return; }
+  if (!g) { o.innerHTML = `<div class="ovlhint">Per i comandi sul video: “Taratura campo” in alto</div>`; return; }
+  o.innerHTML = ovlHtml(g, vr);
+  pipAvoid();
+}
+// il riquadro del video in ritardo non deve coprire i pulsanti: se li copre, va nell'angolo libero (senza cambiare la scelta salvata)
+function pipAvoid() {
+  const pip = $('pip'); if (!pip || pip.classList.contains('hidden')) return;
+  const btns = [...document.querySelectorAll('#ovl .ob, #ovl .opill, #ovl .opop, #ovl .ohead')].map(b => b.getBoundingClientRect());
+  if (!btns.length) return;
+  const count = c => { pip.className = `pip c${c}`; const q = pip.getBoundingClientRect();
+    return btns.filter(b => b.left < q.right && b.right > q.left && b.top < q.bottom && b.bottom > q.top).length; };
+  const pref = PREFS.pipCorner, order = [pref, ...[0, 1, 2, 3].filter(c => c !== pref)];
+  let best = pref, bn = Infinity;
+  for (const c of order) { const n = count(c); if (n < bn) { bn = n; best = c; } if (n === 0) break; }
+  pip.className = `pip c${best}`;
+}
+// Comandi sul video, nel punto del campo dove succede l'azione. Coordinate di una squadra: xs da 0 (posto 4) a 9 (posto 2),
+// profondità dalla rete; la squadra di fronte alla telecamera è a specchio. File parallele alla rete, staccate tra loro.
+const ZX = {4:1.5, 3:4.5, 2:7.5, 5:1.5, 6:4.5, 1:7.5};
+function ovlHtml(g, vr) {
+  const ph = S.phase, sel = S.sel, items = [], pills = [];
+  let pop = null, head = '';
+  const X = (t, xs) => isFar(t) ? 9 - xs : xs, Y = (t, dep) => isFar(t) ? 9 + dep : 9 - dep;
+  const fFloor = (t, dep) => xs => g.floor(X(t,xs), Y(t,dep));
+  const fNet = t => xs => lerp(g.floor(X(t,xs), Y(t,0.6)), g.netTop(X(t,xs)), 0.45);
+  const angle = (f, xs) => { const a = toScr(vr, f(xs - 0.8)), b = toScr(vr, f(xs + 0.8));
+    let d = Math.atan2(b[1]-a[1], b[0]-a[0]) * 180 / Math.PI; if (d > 90) d -= 180; if (d < -90) d += 180; return d; };
+  const show = d => Math.abs(d) > 15 ? 0 : d;     // inclinati come la rete solo se è quasi orizzontale (ripresa da dietro)
+  const SC = PREFS.obScale || 1.3, MX = 30 * SC, MY = 20 * SC;
+  const clamp = ([x, y]) => [Math.min(Math.max(x, vr.x + MX), vr.x + vr.w - MX), Math.min(Math.max(y, vr.y + MY), vr.y + vr.h - MY)];
+  // posizione su una fila; se ref è dato, almeno gap px più lontana dalla rete della fila di riferimento
+  // dy = spostamento perpendicolare alla rete (coppie V/X); ref = fila più vicina alla rete da cui stare ad almeno gap px
+  function at(t, f, xs, ref, gap, dy = 0) {
+    let p = toScr(vr, f(xs));
+    if (ref) {
+      const r = [ref.rx, ref.ry], v = [p[0] - r[0], p[1] - r[1]], d = Math.hypot(v[0], v[1]);
+      if (d < gap) {
+        let dir = d > 2 ? [v[0]/d, v[1]/d] : null;
+        if (!dir) { const q = toScr(vr, fFloor(t, 8)(xs)), w = [q[0]-r[0], q[1]-r[1]], m = Math.hypot(w[0], w[1]) || 1; dir = [w[0]/m, w[1]/m]; }
+        p = [r[0] + dir[0]*gap, r[1] + dir[1]*gap];
+      }
+    }
+    const a = angle(f, xs), rad = a * Math.PI / 180, raw = p.slice();
+    p = clamp([p[0] - Math.sin(rad)*dy, p[1] + Math.cos(rad)*dy]);
+    return {sx:p[0], sy:p[1], rx:raw[0], ry:raw[1], ang:show(a)};
+  }
+  const objs = [];   // pulsanti, disegnati alla fine dopo aver tolto le sovrapposizioni
+  const btn = (t, pos, label, sub, attrs, cls = '', dis = false) => objs.push({t, pos:{...pos}, label, sub, attrs, cls, dis});
+  const pill = (label, attrs, cls = '') => pills.push(`<button class="opill ${cls}" ${attrs}>${label}</button>`);
+  const pname = (t, n) => `${n}`;
+  // campo di una squadra: muro sul nastro, difesa davanti e dietro
+  // campo di una squadra: muro (piccolo) sul nastro, difesa (grande) nelle zone. Ogni fila resta dritta: le file si
+  // allargano e si staccano tutte insieme, mai un pulsante alla volta (uno più avanti e uno più dietro non si legge)
+  function court(t, z, kindB, kindD, selFn, propFn) {
+    const SCc = PREFS.obScale || 1.3, BL = {w:40 * SCc, h:30 * SCc}, DZ = {w:64 * SCc, h:50 * SCc};
+    const pts = (f, ks) => ks.map(k => toScr(vr, f(ZX[k])));
+    const ok = (p, q, sz) => Math.abs(p[0] - q[0]) >= sz.w || Math.abs(p[1] - q[1]) >= sz.h;
+    function spread(row, sz) {                     // allarga la fila attorno al centro finché i pulsanti non si toccano
+      const m = row[1];
+      for (let f = 1, i = 0; i < 30; i++, f *= 1.1) {
+        const r = row.map(p => [m[0] + (p[0] - m[0]) * f, m[1] + (p[1] - m[1]) * f]);
+        if (ok(r[0], r[1], sz) && ok(r[1], r[2], sz)) return r;
+        if (i === 29) return r;
+      }
+    }
+    // sposta tutta la fila finché non tocca le altre restando dentro il video: prima nella direzione preferita,
+    // altrimenti nella direzione opposta o di lato (vince lo spostamento più corto, con un piccolo vantaggio alla preferita)
+    function apart(row, others, dir) {
+      const n = Math.hypot(...dir) || 1, d = [dir[0] / n, dir[1] / n];
+      const free = r => others.every(o => r.every(p => o.rows.every(q => ok(p, q, {w:(row.sz.w + o.sz.w) / 2 + 4, h:(row.sz.h + o.sz.h) / 2 + 4}))));
+      const inVid = r => r.every(p => p[0] >= vr.x + row.sz.w / 2 && p[0] <= vr.x + vr.w - row.sz.w / 2 && p[1] >= vr.y + 30 + row.sz.h / 2 && p[1] <= vr.y + vr.h - 42 - row.sz.h / 2);
+      const start = inside(row.rows, row.sz);
+      if (free(start)) return start;
+      let best = null;
+      // mai nella direzione opposta: le file si scambierebbero (seconda linea davanti alla prima)
+      [[d, 0], [[-d[1], d[0]], 40], [[d[1], -d[0]], 40]].forEach(([u, pen]) => {
+        for (let sh = 4; sh < 600; sh += 4) {
+          const r = start.map(p => [p[0] + u[0] * sh, p[1] + u[1] * sh]);
+          if (!inVid(r)) break;
+          if (free(r)) { if (!best || sh + pen < best.c) best = {r, c:sh + pen}; break; }
+        }
+      });
+      return best ? best.r : start;
+    }
+    function inside(row, sz) {                     // dentro il video, spostando tutta la fila
+      const xs = row.map(p => p[0]), ys = row.map(p => p[1]);
+      const dx = Math.max(0, vr.x + sz.w / 2 - Math.min(...xs)) - Math.max(0, Math.max(...xs) - (vr.x + vr.w - sz.w / 2));
+      const dy = Math.max(0, vr.y + 34 + sz.h / 2 - Math.min(...ys)) - Math.max(0, Math.max(...ys) - (vr.y + vr.h - 46 - sz.h / 2));
+      return row.map(p => [p[0] + dx, p[1] + dy]);
+    }
+    const ang = row => { let d = Math.atan2(row[2][1] - row[0][1], row[2][0] - row[0][0]) * 180 / Math.PI;
+      if (d > 90) d -= 180; if (d < -90) d += 180; return Math.abs(d) > 15 ? 0 : d; };
+    // direzioni nel video: "lontano dalla rete" sul pavimento di questa squadra, e "in alto" (dal pavimento al nastro)
+    const v = (a, b) => [b[0] - a[0], b[1] - a[1]];
+    const away = v(toScr(vr, fFloor(t, 1)(4.5)), toScr(vr, fFloor(t, 8)(4.5)));
+    const up = v(toScr(vr, g.floor(4.5, 9)), toScr(vr, g.netTop(4.5)));
+    // prima la difesa: prima linea dov'è, seconda linea staccata verso il fondo; poi il muro, alzato sopra il nastro finché è libero
+    let front = inside(spread(pts(fFloor(t, 2.6), [4, 3, 2]), DZ), DZ);
+    let back = inside(spread(pts(fFloor(t, 6.5), [5, 6, 1]), DZ), DZ);
+    // prima e seconda linea staccate senza mai invertirle: la seconda verso il fondo finché c'è posto nel video,
+    // poi la prima verso la rete; solo se non basta, la seconda di lato
+    {
+      const sz2 = {w:DZ.w + 4, h:DZ.h + 4}, free = (f, b) => b.every(p => f.every(q => ok(p, q, sz2)));
+      const inV = r => r.every(p => p[0] >= vr.x + DZ.w / 2 && p[0] <= vr.x + vr.w - DZ.w / 2 && p[1] >= vr.y + 30 + DZ.h / 2 && p[1] <= vr.y + vr.h - 42 - DZ.h / 2);
+      const nrm = Math.hypot(...away) || 1, ad = [away[0] / nrm, away[1] / nrm], mv = (r, u, sh) => r.map(p => [p[0] + u[0] * sh, p[1] + u[1] * sh]);
+      if (!free(front, back)) {
+        let done = false, bMax = back;
+        for (let sh = 4; sh < 600; sh += 4) { const r = mv(back, ad, sh); if (!inV(r)) break; bMax = r; if (free(front, r)) { back = r; done = true; break; } }
+        if (!done) for (let sh = 4; sh < 600; sh += 4) { const f = mv(front, ad, -sh); if (!inV(f)) break; if (free(f, bMax)) { front = f; back = bMax; done = true; break; } }
+        if (!done) { back = bMax; for (const u of [[-ad[1], ad[0]], [ad[1], -ad[0]]]) { for (let sh = 4; sh < 600 && !done; sh += 4) {
+          const r = mv(bMax, u, sh); if (!inV(r)) break; if (free(front, r)) { back = r; done = true; } } if (done) break; } }
+      }
+    }
+    // muro: sopra la difesa (verso il nastro); se sopra non c'è posto nel video, scende la difesa (le due file insieme)
+    let net = null;
+    if (kindB) {
+      const n0 = inside(spread(pts(fNet(t), [4, 3, 2]), BL), BL), un = Math.hypot(...up) || 1, uu = [up[0] / un, up[1] / un];
+      const mv = (r, u, sh) => r.map(p => [p[0] + u[0] * sh, p[1] + u[1] * sh]);
+      const inR = (r, sz) => r.every(p => p[0] >= vr.x + sz.w / 2 && p[0] <= vr.x + vr.w - sz.w / 2 && p[1] >= vr.y + 30 + sz.h / 2 && p[1] <= vr.y + vr.h - 42 - sz.h / 2);
+      const szN = {w:(BL.w + DZ.w) / 2 + 4, h:(BL.h + DZ.h) / 2 + 4};
+      const clear = (nr, rows) => rows.every(r => nr.every(p => r.every(q => ok(p, q, szN))));
+      outer: for (let down = 0; down < 400; down += 6) {
+        const F = mv(front, uu, -down), B = mv(back, uu, -down);
+        if (down && (!inR(F, DZ) || !inR(B, DZ))) break;
+        for (let sh = 0; sh < 500; sh += 4) {
+          const nr = mv(n0, uu, sh); if (!inR(nr, BL)) break;
+          if (!kindD || clear(nr, [F, B])) { net = nr; front = F; back = B; break outer; }
+        }
+      }
+      if (!net) net = apart({rows:n0, sz:BL}, kindD ? [{rows:front, sz:DZ}, {rows:back, sz:DZ}] : [], up);
+    }
+    const put = (row, i, a) => ({sx:row[i][0], sy:row[i][1], rx:row[i][0], ry:row[i][1], ang:a, lock:true});
+    if (net) [4, 3, 2].forEach((k, i) => { if (z[k] != null) btn(t, put(net, i, ang(net)), pname(t, z[k]), 'muro', kindB(z[k]), 'blk' + (selFn(z[k], 'B') ? ' sel' : '')); });
+    if (kindD) {
+      [4, 3, 2].forEach((k, i) => { const n = z[k]; if (n != null) btn(t, put(front, i, ang(front)), pname(t, n), '', kindD(n), 'dz' + (selFn(n, 'D') ? ' sel' : '') + (propFn && propFn(n) ? ' prop' : '')); });
+      [5, 6, 1].forEach((k, i) => { const n = z[k]; if (n != null) btn(t, put(back, i, ang(back)), pname(t, n), '', kindD(n), 'dz' + (selFn(n, 'D') ? ' sel' : '') + (propFn && propFn(n) ? ' prop' : '')); });
+    }
+  }
+  const gradePop = (ctx, extra = '') => GRADES.map(gr => `<button class="g2" data-g="${gr}">${gr}<small>${(GRADE_TEXT[ctx]||{})[gr] || ''}</small></button>`).join('') + extra;
+  let popHtml = '';
+
+  if (ph.k === 'serve') {
+    const st = S.serving, rt = other(st), rec = arrangement(rt).rec, server = S.pos[st][0];
+    const ghost = PREFS.tapPlayers === false ? '' : 'ghost';     // con il tocco sul giocatore i numeri sono solo un riferimento
+    head = `<span class="tm ${teamCls(st)}">Battuta</span>${name(st, server)} · ${ghost ? 'tocca chi riceve nel video' : 'chi riceve?'}`;
+    const front = {}; [4,3,2].forEach(k => front[k] = at(rt, fFloor(rt, 2.6), ZX[k]));
+    const zs = [5,6,1], fr = {5:4, 6:3, 1:2};
+    rec.forEach((n, i) => { if (n == null) return;
+      btn(rt, at(rt, fFloor(rt, 6.2), ZX[zs[i]], front[fr[zs[i]]], 46), pname(rt, n), '', `data-k="receiver" data-v="${n}"`, (sel.receiver === n ? 'sel ' : '') + ghost); });
+    onCourt(rt).filter(n => !rec.includes(n)).forEach((n, i) =>
+      btn(rt, front[[4,3,2][i]] || front[3], pname(rt, n), '', `data-k="receiver" data-v="${n}"`, 'sm' + (sel.receiver === n ? ' sel' : '') + ' ' + ghost));
+    const stype = S.serveType[server] || pl(st, server).sv || 'M';
+    pill(`Battuta: ${(SERVE_TYPES.find(x => x[0] === stype) || ['', stype])[1]} ⟳`, 'data-k="serveCycle" data-v="1"');
+    if (sel.receiver == null) { pill('Battuta sbagliata', 'data-g="="', 'neg'); pill('Ace (senza ricevitore)', 'data-g="#"', 'pos'); }
+    else popHtml = gradePop('R');
+  } else if (ph.k === 'attack') {
+    const t = ph.t;
+    head = `<span class="tm ${teamCls(t)}">Attacco</span>${DATA[t].name} · ${receivingNow(t) ? 'cambio palla' : 'break-point'}`;
+    const SCg = PREFS.obScale || 1.3;
+    if (PREFS.comboLayout !== 'rete') {
+      // griglia fissa, sempre uguale (si impara a memoria): sopra le veloci, sotto alte e seconda linea; colonne da posto 4
+      // a posto 2 come si vedono nel video, fila delle veloci dalla parte della rete; al centro della metà campo di chi attacca
+      // griglia fissa per tutte e due le squadre (indicazione dell'utente): dispari a sinistra, pari a destra, 2° tocco al centro;
+      // X6/V6 diventano X8/V8 quando il palleggiatore è in prima linea (l'opposto attacca da dietro); sotto XP, V5, V6/V8
+      const sf = [2, 3, 4].includes(setterZone(t)), R = sf ? 'X8' : 'X6', RH = sf ? 'V8' : 'V6';
+      const GRID = [['X5', 'X7', 'X1', 'P2', 'X2', R], ['V5', null, 'XP', null, null, RH]];
+      const cw = 56 * SCg, rh = 46 * SCg, W = 6 * cw, H = 2 * rh;
+      // specchiata per la squadra che si vede al contrario (ripresa da dietro) oppure fissa (ripresa di lato): da impostazioni;
+      // "automatico" = specchiata se la ripresa è da dietro: il campo lungo (18 m) va in profondità, cioè dall'alto in basso nel
+      // video; di lato va da sinistra a destra (l'inclinazione della rete non basta: con la telecamera all'altezza del nastro
+      // la rete è orizzontale anche di lato)
+      const eA = toScr(vr, g.floor(4.5, 2)), eB = toScr(vr, g.floor(4.5, 16)), behind = Math.abs(eB[1] - eA[1]) > Math.abs(eB[0] - eA[0]);
+      const mirror = PREFS.comboMirror === 'si' || (PREFS.comboMirror !== 'no' && behind);
+      const n4 = toScr(vr, fNet(t)(0.5)), n2 = toScr(vr, fNet(t)(8.5)), netP = toScr(vr, fNet(t)(4.5)), deepP = toScr(vr, fFloor(t, 5)(4.5));
+      const flip = mirror && n2[0] < n4[0], fastTop = !mirror || netP[1] <= deepP[1];
+      const anc = toScr(vr, fFloor(t, 3)(4.5));
+      let cx = Math.min(Math.max(anc[0], vr.x + W/2 + 6), vr.x + vr.w - W/2 - 6);
+      let cy = Math.min(Math.max(anc[1], vr.y + H/2 + 40), vr.y + vr.h - H/2 - 50);
+      // il riquadro del video in ritardo non deve coprire la griglia: la griglia si sposta di lato (o sopra/sotto)
+      const pipEl = $('pip');
+      if (pipEl && !pipEl.classList.contains('hidden')) {
+        const wr = $('vwrap').getBoundingClientRect(), q = pipEl.getBoundingClientRect();
+        const P = {l:q.left - wr.left - 8, r:q.right - wr.left + 8, t:q.top - wr.top - 8, b:q.bottom - wr.top + 8};
+        const hits = (x, y) => x - W/2 < P.r && x + W/2 > P.l && y - H/2 < P.b && y + H/2 > P.t;
+        if (hits(cx, cy)) {
+          const cand = [[P.l - W/2, cy], [P.r + W/2, cy], [cx, P.t - H/2], [cx, P.b + H/2]]
+            .filter(([x, y]) => x - W/2 >= vr.x && x + W/2 <= vr.x + vr.w && y - H/2 >= vr.y + 30 && y + H/2 <= vr.y + vr.h - 40)
+            .sort((u, v) => Math.hypot(u[0]-cx, u[1]-cy) - Math.hypot(v[0]-cx, v[1]-cy));
+          if (cand.length) { cx = cand[0][0]; cy = cand[0][1]; }
+        }
+      }
+      GRID.forEach((row, r) => row.forEach((code, c) => {
+        if (!code) return; const cmb = ALL_COMBOS.find(x => x[0] === code); if (!cmb) return;
+        const x = cx + ((flip ? 5 - c : c) - 2.5) * cw, y = cy + ((fastTop ? r : 1 - r) - 0.5) * rh;
+        const n = comboPlayer(t, cmb[1]);
+        btn(t, {sx:x, sy:y, rx:x, ry:y, ang:0}, code === 'P2' ? '2°' : code, n == null ? '' : String(n), `data-k="combo" data-v="${code}"`,
+            sel.combo && sel.combo[0] === code ? 'sel' : '', n == null);
+      }));
+    }
+    else for (const c of ALL_COMBOS) {
+      const P = OVL_POS[c[0]]; if (!P) continue;
+      const [u, d, dy] = P, xs = 9 * u;
+      const pos = d < 1 ? at(t, fNet(t), xs, null, 0, dy) : at(t, fFloor(t, d), xs, at(t, fNet(t), xs), 54, dy);
+      const n = comboPlayer(t, c[1]);
+      btn(t, pos, c[0] === 'P2' ? '2°' : c[0], n == null ? '' : String(n), `data-k="combo" data-v="${c[0]}"`,
+          sel.combo && sel.combo[0] === c[0] ? 'sel' : '', n == null);
+    }
+    if (ph.afterOur) { pill('Palla libera bene', 'data-k="fbTeam" data-v="+"', sel.fbTeam === '+' ? 'pos' : '');
+                       pill('Palla libera male', 'data-k="fbTeam" data-v="-"', sel.fbTeam === '-' ? 'neg' : ''); }
+    if (!(PREFS.oppLight && t !== OUR)) pill('Alzata –', 'data-k="setErr" data-v="-"');
+    pill('Alzata sbagliata (punto loro)', 'data-k="setErr" data-v="="', 'neg');
+    pill('Di là senza attacco', 'data-k="overNoAttack" data-v="1"'); pill('⇄ Altra squadra', 'data-k="switch" data-v="1"');
+    if (sel.combo) popHtml = gradePop('A', `<button class="tip ${sel.tip ? 'sel' : ''}" data-k="tip" data-v="1">pallonetto</button>`);
+  } else if (ph.k === 'link') {
+    const t = ph.t, z = layoutRally(t), L = LINKS[ph.g], prop = proposedBlocker(t, ph.from);
+    head = `<span class="tm ${teamCls(t)}">${DATA[t].name}</span>${LINK_HEAD[ph.g]}`;
+    court(t, z, n => `data-k="link" data-v="${n}" data-x="B"`, L.D ? (n => `data-k="link" data-v="${n}" data-x="D"`) : null, () => false);
+    // il muratore proposto
+    objs.forEach(o => { if (o.attrs.includes(`data-v="${prop}" data-x="B"`)) o.cls += ' prop'; });
+    if (ph.g === '#') pill('A terra (nessun tocco)', 'data-k="link" data-v="" data-x=""', 'pos');
+    else pill('Nessun tocco da segnare', 'data-k="link" data-v="" data-x=""');
+  } else if (ph.k === 'defense') {
+    const t = ph.t, z = layoutRally(t);
+    head = `<span class="tm ${teamCls(t)}">${ph.freeball ? 'Palla libera' : 'Muro o difesa'}</span>${DATA[t].name} · chi ha toccato?`;
+    court(t, z, n => `data-k="player" data-v="${n}" data-x="B"`, n => `data-k="player" data-v="${n}" data-x="D"`,
+          (n, m) => sel.player === n && sel.mode === m);
+    pill('⇄ Altra squadra', 'data-k="switch" data-v="1"');
+    if (sel.player != null) popHtml = gradePop(sel.mode === 'B' ? 'B' : 'D', sel.mode === 'B' ? '' :
+      `<button class="tip ${(sel.freeball || ph.freeball) ? 'sel' : ''}" data-k="freeball" data-v="1">palla libera</button>`);
+  } else if (ph.k === 'setby') {
+    const t = ph.t, z = layoutRally(t), setter = S.pos[t].find(x => role(t,x) === 'P');
+    head = `<span class="tm ${teamCls(t)}">Alzata ${ph.g === '-' ? 'negativa' : 'sbagliata'}</span>chi ha alzato?`;
+    court(t, z, null, n => `data-k="setby" data-v="${n}"`, () => false, n => n === setter);
+    pill('Annulla', 'data-k="setbyCancel" data-v=""');
+  }
+  // niente pulsanti uno sopra l'altro (succede quando una metà campo esce dall'inquadratura)
+  const BW = 50 * SC, BH = 34 * SC;
+  for (let it = 0; it < 40; it++) {
+    let moved = false;
+    for (let i = 0; i < objs.length; i++) for (let j = i + 1; j < objs.length; j++) {
+      const a = objs[i].pos, b = objs[j].pos, dx = b.sx - a.sx, dy = b.sy - a.sy;
+      if (a.lock && b.lock) continue;
+      const ox = BW - Math.abs(dx), oy = BH - Math.abs(dy);
+      if (ox <= 0 || oy <= 0) continue;
+      moved = true;
+      const fa = a.lock ? 0 : b.lock ? 2 : 1, fb = b.lock ? 0 : a.lock ? 2 : 1;     // se uno è fermo si sposta solo l'altro
+      if (ox < oy) { const m = (ox / 2 + 1) * (dx >= 0 ? 1 : -1); a.sx -= m * fa; b.sx += m * fb; }
+      else { const m = (oy / 2 + 1) * (dy >= 0 ? 1 : -1); a.sy -= m * fa; b.sy += m * fb; }
+      [a.sx, a.sy] = clamp([a.sx, a.sy]); [b.sx, b.sy] = clamp([b.sx, b.sy]);
+    }
+    if (!moved) break;
+  }
+  for (const o of objs) {
+    if (o.cls.includes('sel')) pop = {pos:o.pos, t:o.t};
+    items.push(`<button class="ob ${teamCls(o.t)} ${o.cls}" ${o.attrs} data-ovl="1" style="left:${o.pos.sx}px;top:${o.pos.sy}px;transform:translate(-50%,-50%) rotate(${o.pos.ang.toFixed(1)}deg)" ${o.dis ? 'disabled' : ''}>${o.label}${o.sub ? `<small>${o.sub}</small>` : ''}</button>`);
+  }
+  // voti accanto al pulsante appena toccato
+  if (pop && popHtml) {
+    const h = 52, below = pop.pos.sy + 28 + h < vr.y + vr.h, top = below ? pop.pos.sy + 28 : pop.pos.sy - 28 - h;
+    const left = Math.min(Math.max(pop.pos.sx, vr.x + 200), vr.x + vr.w - 200);
+    items.push(`<div class="opop" style="left:${left}px;top:${top}px">${popHtml}</div>`);
+  }
+  return `<div class="ohead">${head}</div>${items.join('')}<div class="opills">${pills.join('')}</div>`;
+}
+// Schema del campo da toccare (ruotabile come il video): metà A in basso, rete al centro.
+function calPanel() {
+  if (calMode.trace)                   // si sta tracciando una linea dritta
+    return `<div class="calmini">Tocca <b>4-6 punti</b> lungo la stessa linea dritta, da un capo all'altro (${calMode.trace.length})
+      <button id="calTraceEnd" ${calMode.trace.length >= 3 ? '' : 'disabled'}>Fine linea</button><button id="calTraceCancel">Annulla</button></div>`;
+  if (calMode.sel && !calMode.check)   // punto scelto: pannello ridotto, il video resta libero
+    return `<div class="calmini">Tocca nel video il punto <b>${calMode.sel}</b>, ${lmDesc(calMode.sel)} ${calMode.lm[calMode.sel] ? '<button id="calDel" style="background:#7f1d1d">Togli il punto</button>' : ''}<button id="calBack">Schema</button></div>`;
+  const lm = calMode.lm, nFloor = LANDMARKS.filter(l => !l.net && lm[l.id]).length, ready = calReady(lm);
+  const P = ([x, y], dx = 0) => [93 - 40.5 + (x + dx) * 9, 93 + 81 - y * 9];
+  const court = `<rect x="52.5" y="12" width="81" height="162" fill="#1e3a2b" stroke="#e5e7eb" stroke-width="1.5"/>
+    <line x1="52.5" y1="66" x2="133.5" y2="66" stroke="#e5e7eb" stroke-width=".8"/><line x1="52.5" y1="120" x2="133.5" y2="120" stroke="#e5e7eb" stroke-width=".8"/>
+    <line x1="28" y1="93" x2="158" y2="93" stroke="#22c55e" stroke-width="3"/>
+    <text x="93" y="152" fill="#9aa0b0" font-size="14" text-anchor="middle">A</text><text x="93" y="40" fill="#9aa0b0" font-size="14" text-anchor="middle">B</text>`;
+  // estremi del nastro ben fuori dal campo: le aree di tocco (raggio 11) non devono sovrapporsi a quelle della linea centrale
+  const dots = LANDMARKS.map(l => { const [x, y] = l.net ? P(l.c, l.c[0] === 0 ? -2.7 : 2.7) : P(l.c);
+    const col = calMode.sel === l.id ? '#facc15' : lm[l.id] ? '#22c55e' : '#ffffff';
+    // estremi del nastro: quadrati (in alto, sull'asta); punti del pavimento: cerchi
+    return (l.net ? `<rect x="${x-7}" y="${y-7}" width="14" height="14" rx="2" fill="${col}" stroke="#111" stroke-width="1.5"/>`
+                  : `<circle cx="${x}" cy="${y}" r="7" fill="${col}" stroke="#111" stroke-width="1.5"/>`) + `
+            <circle data-lm="${l.id}" cx="${x}" cy="${y}" r="11" fill="transparent" style="cursor:pointer"/>`; }).join('');
+  const g = calMode.g, vh = videoRect().h;
+  const kept = g ? g.err.filter(e => !e.skip) : [], worst = kept.length ? kept.reduce((a, b) => b.d > a.d ? b : a) : null;
+  const skipMsg = g && g.skip.length ? `<br><b style="color:#f87171">Non tornano con gli altri punti, li ho lasciati fuori: ${g.skip.join(', ')}</b>. La riga rossa va da dove li hai messi a dove li aspettano gli altri punti: se è lì che stanno davvero, lo sbaglio è in un altro punto.${g.skip.some(id => id[0] === 'C') ? ' I punti C sono l\'incrocio delle righe a terra, non il nastro né la base dell\'asta.' : ''}` : '';
+  const msg = calMode.check
+    ? `Le linee gialle e verde seguono quelle vere? Scarto medio <b>${Math.round(g.rms * vh)} px</b>${worst && worst.d * vh > 8 ? `, il più lontano <b>${worst.id}</b> (${Math.round(worst.d * vh)} px): trascinalo o rifallo` : ''}.${skipMsg}
+       Curvatura obiettivo <b>${g.k.toFixed(2)}</b>${typeof calMode.k === 'number' ? ' (a mano)' : calMode.lines.length ? ' (stimata dalle linee tracciate)' : g.k ? ' (stimata dai punti)' : ' (con i punti messi non serve)'}.`
+    : calMode.sel ? `Ora tocca nel video il punto <b>${calMode.sel}</b> segnato in giallo: ${lmDesc(calMode.sel)}.`
+    : 'Tocca un punto dello schema, poi lo stesso punto nel video: almeno <b>4 punti del pavimento</b> (meglio 6-8, sparsi; un angolo fuori inquadratura non serve) e i <b>2 estremi del nastro</b>. Se nel video le linee del campo sono <b>curve</b> (grandangolo), <b>traccia una linea dritta</b> lunga, per esempio la laterale vicina. Un punto già messo si <b>trascina</b> per affinarlo; per <b>toglierlo</b> toccalo nello schema e poi "Togli il punto".';
+  const sz = 150;
+  return `<div class="calpanel" style="${calMode.left ? 'left:8px;right:auto' : ''}">
+    <svg viewBox="0 0 186 186" width="${sz}" height="${sz}"><g transform="rotate(${calMode.rot * 90} 93 93)">${court}${dots}</g></svg>
+    <div class="calside"><div class="calmsg">${msg}</div>
+      <div class="hint">pavimento ${nFloor}/4 · nastro ${(lm.N0 ? 1 : 0) + (lm.N9 ? 1 : 0)}/2 · metà A: ${DATA[PREFS.near].name}</div>
+      <div class="chips">${calMode.check
+        ? '<button id="calKm">− curva</button><button id="calKp">+ curva</button><button id="calKa">Auto</button><button id="calRedo">Aggiungi punti</button><button id="calOk" style="background:#3b5bdb">OK</button>'
+        : `<button id="calRot">⟳ Ruota</button><button id="calSide">⇆ Sposta</button><button id="calTrace">Traccia linea dritta${calMode.lines.length ? ' (' + calMode.lines.length + ')' : ''}</button><button id="calCancel">Annulla</button><button id="calCheck" ${ready ? '' : 'disabled'} style="background:#3b5bdb">Verifica</button>`}</div></div></div>`;
+}
+function calTap(e) {
+  if (calMode.check || (!calMode.sel && !calMode.trace)) return;
+  const r = $('vwrap').getBoundingClientRect(), vr = videoRect();
+  const p = [(e.clientX - r.left - vr.x) / vr.w, (e.clientY - r.top - vr.y) / vr.h];
+  if (p[0] < -0.05 || p[0] > 1.05 || p[1] < -0.05 || p[1] > 1.05) return;
+  if (calMode.trace) { calMode.trace.push(p); return renderOvl(); }
+  calMode.lm[calMode.sel] = p; calMode.sel = null;
+  renderOvl();
+}
+function calStart() { video.pause(); if (YTP) $('ytcap').classList.remove('hidden'); const c = CALS[videoKey()];
+  calMode = {lm:{...(calLm(c) || {})}, lines:(c && c.lines) || [], trace:null, rot:(c && c.rot) || 0, sel:null, check:false,
+             k:(c && c.kManual && typeof c.k === 'number') ? c.k : null}; renderOvl(); }
+$('calBtn').onclick = calStart;
+let calDrag = null;
+$('vwrap').addEventListener('pointerdown', e => {
+  if (!calMode || calMode.sel || calMode.trace || e.target.closest('.calpanel, .calmini, .fsbar, button')) return;
+  const r = $('vwrap').getBoundingClientRect(), vr = videoRect(), px = e.clientX - r.left, py = e.clientY - r.top;
+  let best = null, bd = 34;
+  for (const [id, p] of Object.entries(calMode.lm)) { const [x, y] = toScr(vr, p), d = Math.hypot(x - px, y - py); if (d < bd) { bd = d; best = id; } }
+  if (best) { calDrag = {id:best, x0:e.clientX, y0:e.clientY, p0:[...calMode.lm[best]]}; e.preventDefault(); }
+});
+document.addEventListener('pointermove', e => {
+  if (!calDrag || !calMode) return;
+  const vr = videoRect();
+  calMode.lm[calDrag.id] = [calDrag.p0[0] + (e.clientX - calDrag.x0) * 0.5 / vr.w, calDrag.p0[1] + (e.clientY - calDrag.y0) * 0.5 / vr.h];
+  renderOvl();
+});
+document.addEventListener('pointerup', () => { calDrag = null; });
+$('ovl').addEventListener('pointerup', e => {
+  const dot = calMode && e.target.closest('[data-lm]'); if (!dot) return;
+  e.stopPropagation(); calMode.check = false; calMode.sel = dot.dataset.lm; renderOvl();   // ritoccare un punto già messo: rifarlo o toglierlo
+});
+$('ovl').addEventListener('click', e => {
+  if (!calMode) return;
+  if (e.target.closest('[data-lm]')) return;   // gestito da pointerup
+  const b = e.target.closest('button'); if (!b) return;
+  e.stopPropagation();
+  if (b.id === 'calRot') calMode.rot = (calMode.rot + 1) % 4;
+  if (b.id === 'calSide') calMode.left = !calMode.left;
+  if (b.id === 'calBack') calMode.sel = null;
+  if (b.id === 'calDel') { delete calMode.lm[calMode.sel]; calMode.sel = null; }
+  if (b.id === 'calCancel') calMode = null;
+  if (!calMode && YTP && !ytStarted) $('ytcap').classList.add('hidden');
+  if (b.id === 'calCheck') { calMode.check = true; calMode.sel = null; }
+  if (b.id === 'calRedo') calMode.check = false;
+  if (b.id === 'calTrace') { calMode.trace = []; calMode.sel = null; }
+  if (b.id === 'calTraceEnd') { if (calMode.trace.length >= 3) calMode.lines.push(calMode.trace); calMode.trace = null; }
+  if (b.id === 'calTraceCancel') calMode.trace = null;
+  if (b.id === 'calKm' || b.id === 'calKp') calMode.k = Math.round(((calMode.g ? calMode.g.k : 0) + (b.id === 'calKp' ? 0.02 : -0.02)) * 1000) / 1000;
+  if (b.id === 'calKa') calMode.k = null;
+  if (b.id === 'calOk') { CALS[videoKey()] = {lm:calMode.lm, lines:calMode.lines, rot:calMode.rot, k:(calMode.g ? calMode.g.k : 0), kManual:typeof calMode.k === 'number'}; save('scoutMockupCal', CALS); calMode = null; toast('Taratura salvata per questo video', '#1d4d2c');
+    if (YTP && !ytStarted) $('ytcap').classList.add('hidden'); }
+  render();
+});
+$('ovlBtn').onclick = () => { PREFS.overlay = !PREFS.overlay; savePrefs(); render(); };
+$('vonlyBtn').onclick = () => { PREFS.videoOnly = !PREFS.videoOnly; savePrefs(); render(); };
+addEventListener('resize', () => renderOvl());
+
+// ---------------------------------------------------------------- impostazioni
+function renderSettings() {
+  const opt = (key, val, label) => `<button class="chip ${PREFS[key]===val?'sel':''}" data-pref="${key}" data-val='${JSON.stringify(val)}'>${label}</button>`;
+  $('setBox').innerHTML = `<h3>Impostazioni</h3>
+    <div class="lab">Salto con il doppio tocco ai lati del video (e con ⟲ ⟳)</div>
+    <div class="chips">${[1,3,5,30].map(s => opt('step', s, s + ' s')).join('')}</div>
+    <div class="lab">Di spalle alla telecamera = metà A dello schema di taratura (da cambiare a ogni set)</div>
+    <div class="chips">${['*','a'].map(t => opt('near', t, DATA[t].name)).join('')}
+      <span class="hint">i pulsanti della squadra di fronte sono a specchio, come la vedi nel video</span></div>
+    <div class="lab">Avversario: chi difende e chi mura dopo i nostri attacchi</div>
+    <div class="chips">${opt('oppLight', true, 'Non lo segno (si segna solo il loro muro punto)')}${opt('oppLight', false, 'Lo segno')}</div>
+    <div class="lab">Video in ritardo nel riquadro (per rivedere l'azione appena passata senza fermare il video)</div>
+    <div class="chips">${opt('pip', true, 'Acceso')}${opt('pip', false, 'Spento')}<span style="width:10px"></span>
+      ${[1, 2, 3, 5, 8].map(d => opt('pipDelay', d, d + ' s')).join('')}<span style="width:10px"></span>
+      ${opt('pipSize', 25, 'Piccolo')}${opt('pipSize', 32, 'Medio')}${opt('pipSize', 42, 'Grande')}
+      <span class="hint">tocca il riquadro per spostarlo in un altro angolo</span></div>
+    <div class="lab">Sigle d'attacco sul video</div>
+    <div class="chips">${opt('comboLayout', 'griglia', 'In griglia, sempre uguale')}${opt('comboLayout', 'rete', 'Lungo la rete, dove si attacca')}</div>
+    <div class="lab">Ricezione: tocco direttamente sul giocatore nel video (nella metà di chi riceve il tocco non mette in pausa)</div>
+    <div class="chips">${opt('tapPlayers', true, 'Sì')}${opt('tapPlayers', false, 'No, solo i pulsanti')}</div>
+    <div class="lab">Griglia delle sigle: specchiata per la squadra che vedi al contrario?</div>
+    <div class="chips">${opt('comboMirror', 'auto', 'Automatico (da dietro sì, di lato no)')}${opt('comboMirror', 'si', 'Sempre specchiata')}${opt('comboMirror', 'no', 'Sempre fissa')}</div>
+    <div class="lab">Grandezza dei pulsanti sul video</div>
+    <div class="chips">${opt('obScale', 1, 'Piccoli')}${opt('obScale', 1.3, 'Medi')}${opt('obScale', 1.6, 'Grandi')}${opt('obScale', 1.9, 'Molto grandi')}</div>
+    <div class="lab">Partita tra avversari: dopo un attacco punto segno se è a terra, mani fuori o difesa sbagliata</div>
+    <div class="chips">${opt('neutralHow', false, 'No (più veloce)')}${opt('neutralHow', true, 'Sì')}</div>
+    <div class="lab">Pausa automatica a fine scambio</div>
+    <div class="chips">${opt('autopause', true, 'Sì')}${opt('autopause', false, 'No')}</div>
+    <div class="lab">Schieramenti imparati</div>
+    <div class="chips"><button class="chip" id="resetArr">Dimentica tutti gli schieramenti</button></div>
+    <div class="chips"><span class="grow"></span><button class="chip" id="setClose" style="padding:10px 18px">Chiudi</button></div>`;
+}
+$('setBtn').onclick = () => { renderSettings(); $('setModal').classList.remove('hidden'); };
+$('setBox').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.id === 'setClose') { $('setModal').classList.add('hidden'); return render(); }
+  if (b.id === 'resetArr') { ARR = {}; save('scoutMockupArr', ARR); askedArr = {}; toast('Schieramenti dimenticati', '#1d4d2c'); }
+  if (b.dataset.pref) { PREFS[b.dataset.pref] = JSON.parse(b.dataset.val); savePrefs(); if (b.dataset.pref.startsWith('pip')) { if (b.dataset.pref === 'pip') pipKey = null; pipSetup(); } }
+  renderSettings(); render();
+});
+
+// ---------------------------------------------------------------- schieramento (trascinamento)
+let AE = null;   // {t, rec:[z5,z6,z1], att:{A4,A3,A2,AP}, pick}
+function openArr(t, auto) {
+  video.pause();
+  const a = arrangement(t); AE = {t, rec:[...a.rec], att:{...a.att}, def:{...layoutRally(t)}, auto, pick:null};
+  renderArr(); $('arrModal').classList.remove('hidden');
+}
+function slotGet(key) { const [g,k] = key.split(':'); return g === 'rec' ? AE.rec[Number(k)] : g === 'def' ? AE.def[k] : AE.att[k]; }
+function slotSet(key, n) { const [g,k] = key.split(':'); if (g === 'rec') AE.rec[Number(k)] = n; else if (g === 'def') AE.def[k] = n; else AE.att[k] = n; }
+function dropOn(key, n, from) {
+  const g = key.split(':')[0], prev = slotGet(key);
+  const keys = g === 'rec' ? ['rec:0','rec:1','rec:2'] : g === 'def' ? DEF_ZONES.map(k => 'def:' + k) : ['att:A4','att:A3','att:A2','att:AP'];
+  const src = (from && from.split(':')[0] === g) ? from : keys.find(k => k !== key && slotGet(k) === n);
+  slotSet(key, n); if (src && src !== key) slotSet(src, prev ?? null);
+}
+function renderArr() {
+  const t = AE.t, far = isFar(t), [nm, rot] = arrKey(t);
+  const chip = (n, slot) => n == null ? '<span class="hint">—</span>'
+    : `<div class="dchip ${AE.pick===n?'sel':''}" data-n="${n}" ${slot?`data-from="${slot}"`:''}>${n} ${name(t,n)}<small>${role(t,n)||''}</small></div>`;
+  const slot = (key, label) => `<div class="slot" data-slot="${key}"><span class="sl">${label}</span>${chip(slotGet(key), key)}</div>`;
+  const recSlots = recOrder(t).map(i => slot('rec:' + i, REC_ZONES[i]));
+  const attKeys = far ? [['A2','posto 2'],['A3','centro'],['A4','posto 4']] : [['A4','posto 4'],['A3','centro'],['A2','posto 2']];
+  const attRow = `<div class="slots" style="grid-template-columns:repeat(3,1fr)">${attKeys.map(([k,l]) => slot('att:' + k, l)).join('')}</div>`;
+  const pipeRow = `<div class="slots" style="grid-template-columns:1fr 1fr 1fr"><span></span>${slot('att:AP','pipe (seconda linea)')}<span></span></div>`;
+  const recRow = `<div class="slots" style="grid-template-columns:repeat(3,1fr)">${recSlots.join('')}</div>`;
+  const att = `<div class="lab">Prima linea e pipe in cambio palla (vale per tutto lo scambio)</div>`, rec = `<div class="lab">Ricezione</div>${recRow}`, net = '<div class="netline"></div>';
+  // come nel video: squadra di spalle con la rete in alto (attacco sopra, ricezione sotto); di fronte il contrario
+  const field = far ? rec + att + pipeRow + attRow + net : net + att + attRow + pipeRow + rec;
+  const dRow = ks => `<div class="slots" style="grid-template-columns:repeat(3,1fr)">${ks.map(k => slot('def:' + k, 'zona ' + k)).join('')}</div>`;
+  const defLab = `<div class="lab" style="margin-top:6px">Difesa, dopo lo scambio di posto (vale in tutte le rotazioni di ${DATA[t].name})</div>`;
+  const defense = far ? defLab + dRow([1,6,5]) + dRow([2,3,4]) + net : defLab + net + dRow([4,3,2]) + dRow([5,6,1]);
+  $('arrBox').innerHTML = `<h3>${DATA[t].name} riceve in P${rot}${AE.auto ? ' — prima volta' : ''}: come si schiera?</h3>
+    <div class="hint">Trascina i giocatori (oppure tocca un giocatore e poi il riquadro). Disposti come li vedi nel video${far ? ' (squadra di fronte: a specchio)' : ''}.
+      Lo schieramento resta memorizzato per ${DATA[t].name} in P${rot}.</div>
+    <div class="lab">In campo</div>
+    <div class="pool">${onCourt(t).map(n => chip(n)).join('')}</div>
+    ${field}
+    ${defense}
+    <div class="chips"><span class="grow"></span>
+      <button class="chip" id="arrLater" style="padding:10px 16px">Annulla</button>
+      <button class="chip" id="arrOk" style="padding:10px 18px;background:#3b5bdb">Conferma</button></div>`;
+}
+let drag = null;
+$('arrBox').addEventListener('pointerdown', e => {
+  const c = e.target.closest('.dchip'); if (!c) return;
+  e.preventDefault();
+  drag = {n:Number(c.dataset.n), from:c.dataset.from || null, x0:e.clientX, y0:e.clientY, ghost:null, el:c};
+});
+document.addEventListener('pointermove', e => {
+  if (!drag) return;
+  if (!drag.ghost && Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) > 6) {
+    drag.ghost = drag.el.cloneNode(true); drag.ghost.classList.add('ghost'); document.body.appendChild(drag.ghost); }
+  if (drag.ghost) { drag.ghost.style.left = e.clientX + 'px'; drag.ghost.style.top = e.clientY + 'px';
+    document.querySelectorAll('.slot.over').forEach(s => s.classList.remove('over'));
+    const over = document.elementFromPoint(e.clientX, e.clientY)?.closest('.slot'); if (over) over.classList.add('over'); }
+});
+document.addEventListener('pointerup', e => {
+  if (!drag) return;
+  const d = drag; drag = null;
+  if (d.ghost) {
+    d.ghost.remove();
+    const over = document.elementFromPoint(e.clientX, e.clientY)?.closest('.slot');
+    if (over) dropOn(over.dataset.slot, d.n, d.from);
+    AE.pick = null;
+  } else AE.pick = AE.pick === d.n ? null : d.n;   // tocco semplice: scegli, poi tocca il riquadro
+  renderArr();
+});
+$('arrBox').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (b && b.id === 'arrOk') { saveArr(AE.t, AE.rec, AE.att);
+    // difesa: per ogni zona, da quale posizione "usuale" arriva il giocatore messo lì
+    const base = baseRally(AE.t), def = {};
+    for (const k of DEF_ZONES) { const n = AE.def[k]; def[k] = Number(DEF_ZONES.find(s => base[s] === n) ?? k); }
+    if (new Set(Object.values(def)).size === 6) { ARR[DATA[AE.t].name].def = def; save('scoutMockupArr', ARR); } $('arrModal').classList.add('hidden'); AE = null; return render(); }
+  if (b && b.id === 'arrLater') { askedArr[arrKey(AE.t).join('|')] = true; $('arrModal').classList.add('hidden'); AE = null; return render(); }
+  const s = e.target.closest('.slot');
+  if (s && AE.pick != null && !e.target.closest('.dchip')) { dropOn(s.dataset.slot, AE.pick, null); AE.pick = null; renderArr(); }
+});
+function maybeAskArr() {
+  if (S.phase.k !== 'serve' || !$('tut').classList.contains('hidden')) return;
+  const rt = other(S.serving), [nm, rot] = arrKey(rt);
+  if (ARR[nm]?.[rot] || askedArr[nm + '|' + rot]) return;
+  openArr(rt, true);
+}
+$('arrBtn').onclick = () => openArr(S.phase.k === 'serve' ? other(S.serving) : S.phase.t, false);
+
+// cambio: squadra, chi esce, chi entra (il nuovo prende il ruolo di chi esce)
+let subT = OUR, subOut = null;
+function renderSub() {
+  const onC = S.pos[subT], bench = DATA[subT].players.filter(p => !onC.includes(p.n) && !liberi(subT).includes(p.n));
+  $('subBox').innerHTML = `<div class="chips">${['a','*'].map(t => `<button class="chip ${subT===t?'sel':''}" data-sub-t="${t}">${DATA[t].name}</button>`).join('')}
+      <span class="grow"></span><button class="chip" data-sub-close="1">Chiudi</button></div>
+    ${liberi(subT).length > 1 ? `<div class="lab">Libero in campo</div><div class="chips">${liberi(subT).map(n =>
+      `<button class="chip ${libero(subT) === n ? 'sel' : ''}" data-lib="${n}">${n} ${name(subT, n)}</button>`).join('')}</div>` : ''}
+    <div class="lab">Esce</div><div class="row" style="grid-template-columns:repeat(6,1fr)">${onC.map(n =>
+      `<button class="pbtn ${subOut===n?'sel':''}" data-sub-out="${n}">${n} ${name(subT,n)}<small>${role(subT,n)}</small></button>`).join('')}</div>
+    <div class="lab">Entra</div><div class="row" style="grid-template-columns:repeat(6,1fr)">${bench.map(p =>
+      `<button class="pbtn" data-sub-in="${p.n}" ${subOut==null?'disabled':''}>${p.n} ${p.c}<small>${p.r||''}</small></button>`).join('')}</div>`;
+}
+$('subBtn').onclick = () => { subOut = null; renderSub(); $('subModal').classList.remove('hidden'); };
+$('subBox').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.subT) { subT = b.dataset.subT; subOut = null; }
+  if (b.dataset.subClose) return $('subModal').classList.add('hidden');
+  if (b.dataset.subOut) subOut = Number(b.dataset.subOut);
+  if (b.dataset.lib) { snapshot(); S.libero = {...(S.libero || {}), [subT]:Number(b.dataset.lib)}; render(); }
+  if (b.dataset.subIn) { tap(); snapshot(); doSub(subT, subOut, Number(b.dataset.subIn));
+    $('subModal').classList.add('hidden'); return render(); }
+  renderSub();
+});
+
+// ---------------------------------------------------------------- partita: squadre, rose e formazioni (una per video)
+// Rosa scritta a mano: una riga per giocatore "numero cognome ruolo" (ruolo facoltativo: P, M, C, O, L; M1/M2/C1/C2
+// si ricavano dalla formazione: M1 batte subito dopo il palleggiatore, C1 subito prima). Oppure da un .dvw.
+let MATCHES = load('scoutMockupMatches') || {};
+// Partite del girone dai referti ufficiali (python -m src.referti scrive referti.json accanto alla pagina)
+let REFERTI = [];
+fetch('referti.json').then(r => r.ok ? r.json() : []).then(d => { REFERTI = Array.isArray(d) ? d : [];
+  if (ME) { if (ME.ref == null && ME.refInfo) { const i = REFERTI.findIndex(m => m.gara === ME.refInfo.gara); if (i >= 0) ME.ref = i; } renderMatch(); } }).catch(() => {});
+let SETTERS = load('scoutMockupSetters') || {};   // {nome squadra: numero del palleggiatore}, scelto una volta
+const normName = x => (x || '').toLowerCase().replace(/[^a-z]/g, '');
+// riempie la scheda dal referto: rose, liberi, ruoli, formazione del set, chi batte per primo.
+// Il Decimo a referto ha i numeri ufficiali (Racheli 64, D'Elia 23...): si riportano ai numeri dello scout.
+function fromReferto(i, set) {
+  const m = REFERTI[i]; ME.ref = i; ME.set = set; ME.our = null;
+  for (const t of ['*', 'a']) {
+    const T = m.teams[t], dec = /decimo/i.test(T.name), map = {};
+    const players = T.players.map(p => { const d = dec && DECIMO_ROSA.find(x => normName(x.c) === normName(p.c));
+      if (d) map[p.n] = d.n; return {n:d ? d.n : p.n, c:d ? d.c : p.c, r:p.r || (d ? d.r : null), sv:d ? d.sv : null}; });
+    const mapN = n => map[n] ?? n;
+    const name = dec ? 'Decimo' : T.name, candP = (T.candP || []).map(mapN);
+    if (!players.some(p => p.r === 'P') && SETTERS[name] != null) setSetter(players, SETTERS[name], candP);
+    const subsBySet = Object.fromEntries(Object.entries(T.subs || {}).map(([k, ev]) => [k, ev.map(e => ({at:e.at, out:mapN(e.out), in:mapN(e.in)}))]));
+    const libBySet = Object.fromEntries(Object.entries(T.libero || {}).map(([k, l]) => [k, {per:l.per.map(mapN), liberi:l.liberi.map(mapN)}]));
+    for (const l of Object.values(libBySet)) for (const n of l.liberi) { const p = players.find(x => x.n === n); if (p) p.r = 'L'; }
+    ME.t[t] = {name, players, roster:rosterText(players), lineup:(T.sets[set] || []).map(n => n == null ? '' : mapN(n)).join(' '), candP, subsBySet, libBySet};
+    if (dec) ME.our = t;
+  }
+  if (m.firstServe[set]) ME.first = m.firstServe[set];
+}
+function setSetter(players, n, candP) {
+  for (const p of players) if (p.r === 'P' || (p.r === 'O' && candP.includes(p.n))) p.r = null;
+  const p = players.find(x => x.n === n); if (p) p.r = 'P';
+  const opp = candP.find(x => x !== n), o = players.find(x => x.n === opp); if (o && !o.r) o.r = 'O';
+}
+const RUOLI_DECIMO = {Caranzetti:'P', Racheli:'P', Chimenton:'M', Cepparano:'M', Sardella:'M', Liberatori:'M', Terribili:'M',
+  "D'Arienzo":'O', "D'Elia":'O', Pedico:'L', Moscetta:'C', Carrer:'C', Pessei:'C'};
+const DECIMO_ROSA = G4_MATCH.data.a.players.filter(p => p.c !== 'Licenziati').map(p => ({...p, r:RUOLI_DECIMO[p.c] || null}));
+const rosterText = pls => pls.map(p => `${p.n} ${p.c}${p.r ? ' ' + p.r.replace(/[12]$/, '') : ''}`).join('\n');
+function parseRoster(txt, old) {
+  const out = [];
+  for (const line of txt.split('\n')) {
+    const m = line.trim().match(/^(\d{1,2})\s+(.+?)(?:\s+(P|M1|M2|M|C1|C2|C|O|L))?$/i); if (!m) continue;
+    const n = Number(m[1]), prev = (old || []).find(p => p.n === n);
+    out.push({n, c:m[2].trim(), r:m[3] ? m[3].toUpperCase() : null, sv:prev ? prev.sv : null});
+  }
+  return out;
+}
+// M1/M2, C1/C2 dalla formazione (zone 1..6)
+function assignRoles(players, lineup) {
+  const base = r => r ? r.replace(/[12]$/, '') : r, byN = n => players.find(p => p.n === n);
+  for (const p of players) if (p.r === 'M1' || p.r === 'M2' || p.r === 'C1' || p.r === 'C2') p.r = base(p.r);
+  const iP = lineup.findIndex(n => base(byN(n)?.r) === 'P'); if (iP < 0) return players;
+  // chi non ha ruolo (dal referto i martelli non si sanno): dall'ordine fisso P-M-C-O-M-C a partire dal palleggiatore
+  const ORDER = ['P', 'M', 'C', 'O', 'M', 'C'];
+  lineup.forEach((n, i) => { const p = byN(n); if (p && !p.r) p.r = ORDER[(i - iP + 6) % 6]; });
+  lineup.forEach((n, i) => { const p = byN(n); if (!p) return;
+    if (p.r === 'M') p.r = i === (iP + 1) % 6 ? 'M1' : 'M2';
+    if (p.r === 'C') p.r = i === (iP + 5) % 6 ? 'C1' : 'C2'; });
+  return players;
+}
+// .dvw: squadre, rose con ruoli, formazione del set scelto, tipo di battuta più usato da ognuno
+function parseDvwText(txt) {
+  const sec = {}; let cur = null;
+  for (const line of txt.split(/\r?\n/)) { const h = line.match(/^\[3([A-Z-]+)\]/); if (h) { cur = h[1]; sec[cur] = []; } else if (cur && line.trim()) sec[cur].push(line); }
+  const names = (sec.TEAMS || []).map(r => (r.split(';')[1] || '').trim().replace(/\s+D$/i, ''));
+  const ROLE = {1:'L', 2:'M', 3:'O', 4:'C', 5:'P'}, sv = {};
+  const firstServe = {};
+  for (const r of sec.SCOUT || []) { const m = r.match(/^([*a])(\d\d)S([A-Z])/); if (!m) continue;
+    const k = m[1] + Number(m[2]), set = Number(r.split(';')[8]); (sv[k] = sv[k] || {})[m[3]] = (sv[k][m[3]] || 0) + 1;
+    if (set && !firstServe[set]) firstServe[set] = m[1]; }
+  const team = (rows, t) => rows.map(r => { const f = r.split(';'), n = Number(f[1]), tp = sv[t + n];
+    return {n, c:(f[9] || '').trim(), r:ROLE[Number(f[13])] || null, sv:tp ? Object.entries(tp).sort((a, b) => b[1] - a[1])[0][0] : null,
+            zones:f.slice(3, 8).map(z => z.trim())}; })
+    // stesso numero due volte (voci vecchie della rosa): vince chi ha un ruolo, poi chi è titolare in un set
+    .sort((p, q) => (q.r ? 2 : 0) + (q.zones.some(z => /^[1-6*]$/.test(z)) ? 1 : 0) - (p.r ? 2 : 0) - (p.zones.some(z => /^[1-6*]$/.test(z)) ? 1 : 0))
+    .filter((p, i, arr) => arr.findIndex(q => q.n === p.n) === i).sort((p, q) => p.n - q.n);
+  return {names, firstServe, teams:{'*':team(sec['PLAYERS-H'] || [], '*'), a:team(sec['PLAYERS-V'] || [], 'a')}};
+}
+function lineupFromDvw(pls, set) {
+  const L = Array(6).fill(null);
+  for (const p of pls) { const z = Number(p.zones[set - 1]); if (z >= 1 && z <= 6) L[z - 1] = p.n; }
+  return L;
+}
+function applyMatch(m, keepLog) {
+  DATA = JSON.parse(JSON.stringify(m.data)); FIRST_SERVE = m.first; OUR = m.our; CUR_MATCH = m;
+  for (const t of ['*', 'a']) assignRoles(DATA[t].players, DATA[t].lineup);
+  const log = keepLog && S ? S.rallies : [];
+  S = freshState(); S.rallies = log; history = [];
+  $('mockTitle').textContent = m.title || `${DATA['*'].name} - ${DATA.a.name}`;
+  render();
+}
+function matchForVideo() {
+  const key = videoKey(), m = MATCHES[key] || (key === 'G4_set1.mp4' ? G4_MATCH : null);
+  if (m) return applyMatch(m);
+  openMatch(true);
+}
+let ME = null;   // bozza della partita in modifica
+function openMatch(isNew) {
+  video.pause();
+  const cur = MATCHES[videoKey()];
+  const base = cur || (isNew ? {data:{'*':{name:'', players:[], lineup:Array(6).fill(null)}, a:{name:'Decimo', players:DECIMO_ROSA, lineup:Array(6).fill(null)}}, first:'*', our:'a'}
+                             : {data:DATA, first:FIRST_SERVE, our:OUR});
+  const refInfo = cur && cur.ref || null, refIdx = refInfo ? REFERTI.findIndex(m => m.gara === refInfo.gara) : -1;
+  ME = {first:base.first, our:base.our, isNew, dvw:null, set:refInfo ? refInfo.set : 1, ref:refIdx >= 0 ? refIdx : null, refInfo,
+        t:Object.fromEntries(['*', 'a'].map(t => { const d = base.data[t];
+          return [t, {name:d.name, roster:rosterText(d.players), lineup:d.lineup.map(n => n ?? '').join(' '), players:d.players,
+                      subsBySet:d.subsBySet || null, libBySet:d.libBySet || null, candP:d.candP || []}]; }))};
+  renderMatch(); $('matchModal').classList.remove('hidden');
+}
+function renderMatch() {
+  const col = t => { const d = ME.t[t];
+    return `<div style="flex:1;min-width:260px;display:flex;flex-direction:column;gap:6px">
+      <div class="lab">${t === '*' ? 'Casa (nel .dvw: *)' : 'Ospite (nel .dvw: a)'}</div>
+      <input data-f="name" data-t="${t}" value="${d.name.replace(/"/g, '&quot;')}" placeholder="Nome squadra" style="font-size:16px;padding:8px;border-radius:8px;border:0">
+      <div class="chips">${ME.our != null ? `<button class="chip ${ME.our === t ? 'sel' : ''}" data-our="${t}">È il Decimo</button>` : ''}
+        <button class="chip" data-decimo="${t}">Rosa del Decimo</button></div>
+      <div class="hint">Rosa: una riga per giocatore, "numero cognome ruolo" (ruolo P, M, C, O, L; si può lasciare vuoto)</div>
+      <textarea data-f="roster" data-t="${t}" rows="9" style="font-size:15px;padding:8px;border-radius:8px;border:0;font-family:inherit">${d.roster}</textarea>
+      <div class="hint">Formazione del set: i numeri in zona 1, 2, 3, 4, 5, 6 (zona 1 = chi batte), senza il libero</div>
+      <input data-f="lineup" data-t="${t}" value="${d.lineup}" placeholder="es. 10 4 13 22 66 18" style="font-size:16px;padding:8px;border-radius:8px;border:0">
+    </div>`; };
+  const nSets = ME.dvw ? [1,2,3,4,5].filter(k => ME.dvw.teams['*'].some(p => /^[1-6]$/.test(p.zones[k - 1]))) : [];
+  const refSets = ME.ref != null ? Object.keys(REFERTI[ME.ref].teams['*'].sets).map(Number) : [];
+  const needP = ['*', 'a'].filter(t => ME.t[t].candP && ME.t[t].candP.length && !parseRoster(ME.t[t].roster).some(p => p.r === 'P'));
+  const nm = (t, n) => (ME.t[t].players.find(p => p.n === n) || {c:''}).c;
+  $('matchBox').innerHTML = `<h3>Partita e formazioni${ME.isNew ? ' · video nuovo' : ''}</h3>
+    <div class="hint">Vale per questo video e resta salvata. Scegli la partita dal <b>referto</b>: rose, liberi, formazione di ogni set e chi batte per primo si riempiono da soli.</div>
+    ${REFERTI.length ? `<div class="chips"><select id="refSel" style="font-size:15px;padding:8px;border-radius:8px;max-width:100%">
+        <option value="">Dal referto: scegli la partita…</option>
+        ${REFERTI.map((m, i) => `<option value="${i}" ${ME.ref === i ? 'selected' : ''}>${m.label} (${m.data || ''})</option>`).join('')}</select>
+        ${refSets.length ? `<span class="hint">formazione del set</span>${refSets.map(k => `<button class="chip ${ME.set === k ? 'sel' : ''}" data-rset="${k}">${k}°</button>`).join('')}` : ''}</div>`
+      : '<div class="hint" style="color:#fbbf24">Referti non trovati: sul Mac lancia <code>python -m src.referti</code> (scrive referti.json accanto alla pagina).</div>'}
+    ${needP.map(t => `<div class="chips"><span class="hint" style="color:#fbbf24">Palleggiatore di <b>${ME.t[t].name}</b>? (dal referto è uno di questi due; lo ricordo per le prossime partite)</span>
+        ${ME.t[t].candP.map(n => `<button class="chip" data-setp="${t}:${n}">${n} ${nm(t, n)}</button>`).join('')}</div>`).join('')}
+    <div class="chips"><label class="chip">oppure da un .dvw<input id="dvwIn" type="file" accept=".dvw,.txt" class="hidden"></label>
+      ${nSets.length ? `<span class="hint">formazione del set</span>${nSets.map(k => `<button class="chip ${ME.set === k ? 'sel' : ''}" data-set="${k}">${k}°</button>`).join('')}` : ''}</div>
+    <div class="chips"><span class="hint">Tipo di scout</span>
+      <button class="chip ${ME.our != null ? 'sel' : ''}" data-kind="decimo">Partita del Decimo</button>
+      <button class="chip ${ME.our == null ? 'sel' : ''}" data-kind="neutral">Partita tra avversari</button>
+      <span class="hint">${ME.our == null ? 'tutte e due le squadre come un avversario: niente difese, alzate negative, muri non punto' : 'il Decimo con tutti i dettagli, l\'avversario essenziale'}</span></div>
+    <div style="display:flex;gap:14px;flex-wrap:wrap">${col('*')}${col('a')}</div>
+    <div class="lab">Batte per prima</div>
+    <div class="chips">${['*', 'a'].map(t => `<button class="chip ${ME.first === t ? 'sel' : ''}" data-first="${t}">${ME.t[t].name || (t === '*' ? 'Casa' : 'Ospite')}</button>`).join('')}</div>
+    <div id="matchErr" class="hint" style="color:#f87171"></div>
+    <div class="chips"><span class="grow"></span>
+      <button class="chip" id="matchCancel" style="padding:10px 16px">Annulla</button>
+      ${S.rallies.length ? '<button class="chip" id="matchSet" style="padding:10px 16px">Nuovo set (i codici restano)</button>' : ''}
+      <button class="chip" id="matchOk" style="padding:10px 18px;background:#3b5bdb">${S.rallies.length ? 'Nuova partita (codici cancellati)' : 'Inizia'}</button></div>`;
+}
+function readMatchForm() {
+  for (const el of $('matchBox').querySelectorAll('[data-f]')) ME.t[el.dataset.t][el.dataset.f] = el.value;
+}
+function buildMatch() {
+  const data = {}, errs = [];
+  for (const t of ['*', 'a']) {
+    const d = ME.t[t], players = parseRoster(d.roster, d.players), lineup = d.lineup.trim().split(/[\s,;]+/).filter(Boolean).map(Number);
+    const who = d.name || (t === '*' ? 'casa' : 'ospite');
+    if (!d.name.trim()) errs.push(`manca il nome della squadra di ${who}`);
+    if (players.length < 6) errs.push(`${who}: servono almeno 6 giocatori nella rosa`);
+    if (lineup.length !== 6 || new Set(lineup).size !== 6) errs.push(`${who}: la formazione deve avere 6 numeri diversi`);
+    else { const miss = lineup.filter(n => !players.some(p => p.n === n)); if (miss.length) errs.push(`${who}: ${miss.join(', ')} non è nella rosa`); }
+    if (players.length && !players.some(p => p.r === 'P')) errs.push(`${who}: indica il palleggiatore (P) nella rosa`);
+    // dati del referto per set (cambi, libero): restano salvati con la partita, così valgono anche riaprendo la scheda
+    const lib = (d.libBySet && d.libBySet[ME.set]) || null;
+    data[t] = {name:d.name.trim(), players, lineup, subs:(d.subsBySet && d.subsBySet[ME.set]) || [],
+               libFor:lib ? lib.per : null, liberi:lib ? lib.liberi : null,
+               subsBySet:d.subsBySet || null, libBySet:d.libBySet || null, candP:d.candP || []};
+  }
+  const ref = ME.ref != null && REFERTI[ME.ref] ? {gara:REFERTI[ME.ref].gara, set:ME.set} : (ME.refInfo ? {...ME.refInfo, set:ME.set} : null);
+  return {errs, m:{data, first:ME.first, our:ME.our, ref, title:`${data['*'].name} - ${data.a.name}`}};
+}
+$('matchBtn').onclick = () => openMatch(false);
+$('subBanner').addEventListener('pointerdown', e => {
+  const b = e.target.closest('button[data-subs]'); if (!b) return; e.stopPropagation(); e.preventDefault(); ovlDownAt = performance.now();
+  tap(); snapshot();
+  for (const d of refSubsDue()) { if (b.dataset.subs === 'do') doSub(d.t, d.e.out, d.e.in); S.subsDone[d.t + d.i] = true; }
+  render();
+});
+$('subBanner').addEventListener('pointerup', e => e.stopPropagation());
+$('matchBox').addEventListener('change', e => {
+  if (e.target.id === 'refSel') { readMatchForm(); if (e.target.value === '') { ME.ref = null; return renderMatch(); }
+    const i = Number(e.target.value); fromReferto(i, Number(Object.keys(REFERTI[i].teams['*'].sets)[0]) || 1); return renderMatch(); }
+  if (e.target.id !== 'dvwIn' || !e.target.files[0]) return;
+  const r = new FileReader();
+  r.onload = () => { readMatchForm(); ME.dvw = parseDvwText(r.result); ME.set = 1;
+    for (const t of ['*', 'a']) { const pls = ME.dvw.teams[t];
+      ME.t[t] = {name:ME.dvw.names[t === '*' ? 0 : 1] || ME.t[t].name, players:pls, roster:rosterText(pls), lineup:lineupFromDvw(pls, 1).map(n => n ?? '').join(' ')}; }
+    const dec = ['*', 'a'].find(t => /decimo/i.test(ME.t[t].name)); if (dec) ME.our = dec;
+    if (ME.dvw.firstServe[1]) ME.first = ME.dvw.firstServe[1];
+    renderMatch(); };
+  r.readAsText(e.target.files[0], 'windows-1252');
+});
+$('matchBox').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  readMatchForm();
+  if (b.dataset.our) ME.our = b.dataset.our;
+  if (b.dataset.kind) ME.our = b.dataset.kind === 'neutral' ? null : (['*', 'a'].find(t => /decimo/i.test(ME.t[t].name)) || 'a');
+  if (b.dataset.first) ME.first = b.dataset.first;
+  if (b.dataset.decimo) { const t = b.dataset.decimo; ME.t[t].subsBySet = null; ME.t[t].libBySet = null; ME.t[t].players = DECIMO_ROSA; ME.t[t].roster = rosterText(DECIMO_ROSA); if (!ME.t[t].name) ME.t[t].name = 'Decimo'; ME.our = t; }
+  if (b.dataset.rset) fromReferto(ME.ref, Number(b.dataset.rset));
+  if (b.dataset.setp) { const [t, n] = b.dataset.setp.split(':'), d = ME.t[t], pls = parseRoster(d.roster, d.players);
+    setSetter(pls, Number(n), d.candP); d.players = pls; d.roster = rosterText(pls); SETTERS[d.name] = Number(n); save('scoutMockupSetters', SETTERS); }
+  if (b.dataset.set) { ME.set = Number(b.dataset.set); if (ME.dvw.firstServe[ME.set]) ME.first = ME.dvw.firstServe[ME.set]; for (const t of ['*', 'a']) ME.t[t].lineup = lineupFromDvw(ME.dvw.teams[t], ME.set).map(n => n ?? '').join(' '); }
+  if (b.id === 'matchCancel') { $('matchModal').classList.add('hidden'); ME = null; return; }
+  if (b.id === 'matchOk' || b.id === 'matchSet') {
+    const {errs, m} = buildMatch();
+    if (errs.length) { $('matchErr').innerHTML = errs.join('<br>'); return; }
+    if (b.id === 'matchOk' && S.rallies.length) {
+      if (!confirm('Nuova partita: i codici scritti finora si cancellano. Continuo?')) return;
+      clearTimeout(saveTimer); scoutDel(SCOUT_KEY || videoKey()).catch(() => {}); SCOUT_KEY = videoKey();
+    }
+    MATCHES[videoKey()] = m; save('scoutMockupMatches', MATCHES);
+    $('matchModal').classList.add('hidden'); ME = null;
+    return applyMatch(m, b.id === 'matchSet');
+  }
+  renderMatch();
+});
+
+// ---------------------------------------------------------------- video in ritardo (riquadro)
+// Un secondo lettore, muto, sullo stesso video, indietro di PREFS.pipDelay secondi. Quando il video principale si ferma
+// (per esempio a fine scambio) il riquadro va avanti fino a raggiungerlo: si rivedono gli ultimi secondi.
+let PIPYT = null, pipKey = null, pipLastSeek = 0;
+function pipSetup() {
+  const box = $('pip'), key = videoKey();
+  box.className = `pip c${PREFS.pipCorner}` + (PREFS.pip ? '' : ' hidden');
+  document.documentElement.style.setProperty('--pipw', PREFS.pipSize);
+  $('pipLab').textContent = `−${PREFS.pipDelay} s`;
+  $('pipBtn').classList.toggle('sel', !!PREFS.pip);
+  if (!PREFS.pip) { try { $('pipVideo').pause(); PIPYT?.pauseVideo?.(); } catch (e) {} return; }
+  if (pipKey === key) return;
+  pipKey = key;
+  if (YTP) {
+    $('pipVideo').removeAttribute('src'); $('pipVideo').classList.add('hidden');
+    const id = key.slice(3); $('pipYt').innerHTML = '<div id="pipYtFrame"></div>'; $('pipYt').classList.remove('hidden');
+    try { PIPYT?.destroy?.(); } catch (e) {}
+    PIPYT = new YT.Player('pipYtFrame', {videoId:id, width:'100%', height:'100%',
+      playerVars:{playsinline:1, controls:0, disablekb:1, rel:0, modestbranding:1, mute:1, fs:0, iv_load_policy:3},
+      events:{onReady:e => { e.target.mute(); }}});
+  } else {
+    try { PIPYT?.destroy?.(); } catch (e) {} PIPYT = null; $('pipYt').innerHTML = ''; $('pipYt').classList.add('hidden');
+    $('pipVideo').classList.remove('hidden'); $('pipVideo').src = videoEl.currentSrc || videoEl.src; $('pipVideo').muted = true;
+  }
+}
+const pipP = {
+  get t() { return PIPYT ? (PIPYT.getCurrentTime?.() || 0) : $('pipVideo').currentTime; },
+  seek(v) { pipLastSeek = performance.now(); if (PIPYT) PIPYT.seekTo?.(v, true); else $('pipVideo').currentTime = v; },
+  get playing() { return PIPYT ? PIPYT.getPlayerState?.() === 1 : !$('pipVideo').paused; },
+  play() { if (PIPYT) PIPYT.playVideo?.(); else $('pipVideo').play().catch(() => {}); },
+  pause() { if (PIPYT) PIPYT.pauseVideo?.(); else $('pipVideo').pause(); },
+  rate(r) { if (PIPYT) { if (PIPYT.getPlaybackRate?.() !== r) PIPYT.setPlaybackRate?.(r); } else if ($('pipVideo').playbackRate !== r) $('pipVideo').playbackRate = r; },
+};
+setInterval(() => {
+  if (!PREFS.pip || $('pip').classList.contains('hidden')) return;
+  if (PIPYT && !PIPYT.getCurrentTime) return;            // lettore non ancora pronto
+  const main = video.currentTime, d = PREFS.pipDelay, pt = pipP.t, recent = performance.now() - pipLastSeek < 800;
+  pipP.rate(video.playbackRate || 1);
+  if (!video.paused) {
+    const target = main - d;
+    if (target <= 0) { if (pipP.playing) pipP.pause(); if (pt > 0.3 && !recent) pipP.seek(0); return; }
+    if (Math.abs(pt - target) > 0.45 && !recent) pipP.seek(target);
+    if (!pipP.playing) pipP.play();
+  } else {
+    // fermo: il riquadro raggiunge il punto in cui si è fermato il video (si rivedono gli ultimi secondi), poi si ferma
+    if (!recent && (pt > main + 0.3 || pt < main - d - 1.5)) { pipP.seek(Math.max(0, main - d)); pipP.play(); return; }
+    if (pt < main - 0.08) { if (!pipP.playing) pipP.play(); } else if (pipP.playing) pipP.pause();
+  }
+}, 250);
+$('pip').addEventListener('pointerdown', e => { e.stopPropagation(); e.preventDefault(); ovlDownAt = performance.now();
+  PREFS.pipCorner = (PREFS.pipCorner + 1) % 4; savePrefs(); pipSetup(); });
+$('pipBtn').onclick = () => { PREFS.pip = !PREFS.pip; savePrefs(); pipKey = null; pipSetup(); renderFs(); };
+
+let toastTimer;
+function toast(msg, bg) { const t = $('toast'); t.textContent = msg; t.style.background = bg || '#5b1a1a';
+  t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), Math.max(2200, msg.length * 55)); }
+function badge(on) { $('pausebadge').classList.toggle('hidden', !on); }
+// riepilogo dello scambio appena chiuso (in tutto schermo non si vede la colonna dei codici)
+function fillBadge() {
+  const r = S.rallies[0]; if (!r) return;
+  $('pausebadge').innerHTML = `<b>Punto ${DATA[r.winner].name}</b> · ${r.why} · ${r.score['*']}-${r.score.a}
+    <div class="pbl">${withBase(r.actions, r.base).map(a => `<div>${a.desc}</div>`).join('')}</div><span class="hint">▶︎ per ripartire · ↶ per correggere</span>`;
+}
+function renderFs() {
+  const fs = document.querySelector('.app').classList.contains('fs'); if (!fs) return;
+  const H = '*', A = 'a', tg = baseTarget(), first = tg && tg.acts.find(a => a.soFirst), imp = first && !tg.base ? first.implied : null;
+  $('fsbar').innerHTML = `<span class="fsc">${DATA[H].name} ${S.score[H]} – ${S.score[A]} ${DATA[A].name} <span class="srv"></span> ${DATA[S.serving].name}</span>
+    <button data-act="rateBtn">${$('rateBtn').textContent}</button><button data-act="back">${$('back').textContent}</button>
+    <button data-act="play">${video.paused ? '▶︎' : '❚❚'}</button><button data-act="fwd">${$('fwd').textContent}</button><span class="sep"></span>
+    <span class="hint">Base</span>${CALLS.map(c => `<button data-base="${c}" class="${tg && tg.base === c ? 'sel' : ''} ${imp === c ? 'imp' : ''}" ${tg ? '' : 'disabled'}>${c}</button>`).join('')}<span class="sep"></span>
+    <button data-act="undo" style="background:#5b1a1a">↶ Annulla</button><button data-act="ptHome">+1 ${DATA[H].name}</button><button data-act="ptAway">+1 ${DATA[A].name}</button>
+    <button data-act="subBtn">Cambio</button><button data-act="arrBtn">Schier.</button><button data-act="calBtn">Taratura</button><button data-act="matchBtn">Partita</button><button data-act="pipBtn" class="${PREFS.pip ? 'sel' : ''}">Ritardo</button>
+    <button data-act="exitFs" style="margin-left:auto">Esci ⛶</button>`;
+  document.documentElement.style.setProperty('--fsh', ($('fsbar').offsetHeight + 6) + 'px');
+}
+// al tocco (pointerdown), come i pulsanti sul video: con YouTube il primo "click" può andare perso
+$('fsbar').addEventListener('pointerdown', e => {
+  const b = e.target.closest('button[data-act]'); if (!b) return;
+  e.stopPropagation(); e.preventDefault(); ovlDownAt = performance.now();
+  if (b.dataset.act === 'exitFs') return setFs(false);
+  $(b.dataset.act).click(); renderFs();
+});
+// iPad: niente "tutto schermo" del browser (a ogni tocco Safari rimette barra di stato e X e la pagina salta: i pulsanti
+// sfarfallano e qualche tocco si perde). Il vero tutto schermo è l'app aggiunta alla schermata Home.
+const IOS = /iPad|iPhone/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const STANDALONE = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
+function setFs(on) {
+  document.querySelector('.app').classList.toggle('fs', on);
+  const d = document, el = d.documentElement;
+  if (IOS) { if (on && !STANDALONE) toast('Per il tutto schermo vero senza le barre di Safari: Condividi → Aggiungi alla schermata Home, poi apri da lì', '#1d4d2c'); }
+  else try { if (on) (el.requestFullscreen || el.webkitRequestFullscreen)?.call(el); else if (d.fullscreenElement || d.webkitFullscreenElement) (d.exitFullscreen || d.webkitExitFullscreen)?.call(d); } catch (err) {}
+  render(); setTimeout(render, 350);
+}
+$('fsBtn').onclick = () => setFs(true);
+
+// ---------------------------------------------------------------- salvataggio dello scout e ripresa
+// Uno scout per video, salvato in IndexedDB a ogni tocco (dopo ogni ridisegno, con 300 ms di attesa), con la partita,
+// gli ultimi passi di annullamento e il minuto del video. I video da file vanno riscelti a ogni ripresa (il browser
+// non può riaprirli da solo); YouTube si riapre dal link. La copia di sicurezza è un file JSON con tutto.
+const DB_NAME = 'volley-scout', DB_STORE = 'scouts', UNDO_KEEP = 15;
+const LS_KEYS = ['scoutMockupPrefs', 'scoutMockupArr', 'scoutMockupCal', 'scoutMockupMatches', 'scoutMockupSetters', 'scoutMockupTutorial'];
+let dbP = null, persistAsked = false;
+function db() {
+  if (!dbP) dbP = new Promise((res, rej) => { const r = indexedDB.open(DB_NAME, 1);
+    r.onupgradeneeded = () => r.result.createObjectStore(DB_STORE, {keyPath:'key'});
+    r.onsuccess = () => res(r.result); r.onerror = () => { dbP = null; rej(r.error); }; });
+  return dbP;
+}
+function idb(mode, fn) {
+  return db().then(d => new Promise((res, rej) => {
+    const tx = d.transaction(DB_STORE, mode), req = fn(tx.objectStore(DB_STORE));
+    tx.oncomplete = () => res(req ? req.result : undefined); tx.onerror = tx.onabort = () => rej(tx.error);
+  }));
+}
+const scoutAll = () => idb('readonly', st => st.getAll());
+const scoutGet = k => idb('readonly', st => st.get(k));
+const scoutPut = rec => idb('readwrite', st => st.put(rec));
+const scoutDel = k => idb('readwrite', st => st.delete(k));
+const hasWork = st => !!(st && (st.nActs || (st.rallies && st.rallies.length)));
+const fileSafe = x => (x || 'scout').replace(/[\\/:*?"<>|]+/g, ' ').trim();
+const when = ms => new Date(ms).toLocaleString('it-IT', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'});
+const mmssv = v => v == null ? '' : `${Math.floor(v / 60)}:${String(Math.floor(v % 60)).padStart(2, '0')}`;
+
+function scoutRecord(old) {
+  const vk = videoKey(), m = CUR_MATCH;
+  return {key:SCOUT_KEY, videoKey:vk, title:m ? m.title : $('mockTitle').textContent, set:m && m.ref ? m.ref.set : null,
+          created:(old && old.created) || Date.now(), updated:Date.now(), src:VSRC, match:m,
+          S, history:history.slice(-UNDO_KEEP), taps, vt:Math.round((video.currentTime || 0) * 10) / 10};
+}
+let lastCreated = {};
+function scheduleSave() {
+  if (!SCOUT_KEY || !VSRC || !hasWork(S) || !$('tut').classList.contains('hidden')) return;
+  clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, 300);
+}
+function saveNow() {
+  clearTimeout(saveTimer); saveTimer = null;
+  if (!SCOUT_KEY || !VSRC || !hasWork(S) || !$('tut').classList.contains('hidden')) return Promise.resolve();
+  const rec = JSON.parse(JSON.stringify(scoutRecord({created:lastCreated[SCOUT_KEY]})));   // copia subito: S cambia ai tocchi dopo
+  lastCreated[rec.key] = rec.created;
+  if (!persistAsked) { persistAsked = true; navigator.storage?.persist?.().catch(() => {}); }
+  return scoutPut(rec).then(() => { $('saveState').textContent = `salvato ${when(rec.updated).split(' ').pop()}`; })
+    .catch(e => { $('saveState').textContent = 'NON salvato'; toast('Salvataggio non riuscito: ' + (e && e.message || e)); });
+}
+// prima di cambiare video: si salva lo scout di quello di prima e si riparte puliti
+function beginVideo(src) {
+  if (SCOUT_KEY) saveNow();
+  VSRC = src; SCOUT_KEY = null; S = freshState(); history = []; taps = 0; firstTapAt = null; pendingSeek = null;
+  $('saveState').textContent = '';
+}
+// video appena aperto: ripresa chiesta dal pannello, oppure scout già salvato per questo video, oppure partita nuova
+async function afterVideoChange() {
+  const vk = videoKey(), want = resumeWanted; resumeWanted = null;
+  if (want) return restoreScout(want);
+  let rec = null; try { rec = await scoutGet(vk); } catch (e) {}
+  if (rec && hasWork(rec.S)) {
+    const n = rec.S.rallies.length;
+    if (confirm(`Per questo video c'è uno scout salvato: ${rec.title}${rec.set ? `, ${rec.set}° set` : ''}, ${rec.S.score['*']}-${rec.S.score.a}, ${n} scambi (${when(rec.updated)}).\n\nOK = lo riprendo · Annulla = ricomincio da capo (quello salvato resta nell'elenco come copia)`))
+      return restoreScout(rec);
+    rec.key = `${vk}@${rec.updated}`; rec.title += ' (copia)';
+    try { await scoutPut(rec); await scoutDel(vk); } catch (e) {}
+  }
+  SCOUT_KEY = vk;
+  matchForVideo();
+}
+function restoreScout(rec) {
+  const vk = videoKey();
+  if (rec.match) { MATCHES[vk] = rec.match; save('scoutMockupMatches', MATCHES); applyMatch(rec.match); }
+  S = rec.S; history = rec.history || []; taps = rec.taps || 0; firstTapAt = null; SCOUT_KEY = rec.key; lastCreated[rec.key] = rec.created;
+  $('matchModal').classList.add('hidden'); ME = null;
+  const at = Math.max(0, (rec.vt || 0) - 2);
+  if (YTP) pendingSeek = at; else if (videoEl.readyState >= 1) videoEl.currentTime = at; else pendingSeek = at;
+  video.pause(); render();
+  toast(`Scout ripreso: ${S.score['*']}-${S.score.a}, ${S.rallies.length} scambi · video a ${mmssv(at)}`, '#1d4d2c');
+}
+
+// ---------------------------------------------------------------- pannello "Scout": nuovo, salvati, copia di sicurezza
+let DEMO_OK = false;
+fetch('G4_set1.mp4', {method:'HEAD'}).then(r => { DEMO_OK = r.ok; }).catch(() => {});
+async function openScouts() {
+  video.pause();
+  await saveNow();
+  let list = []; try { list = await scoutAll(); } catch (e) { toast('Memoria del browser non disponibile: ' + (e && e.message || e)); }
+  list.sort((a, b) => b.updated - a.updated);
+  const ls = {}; for (const k of LS_KEYS) { const v = localStorage.getItem(k); if (v != null) ls[k] = v; }
+  // pronta subito: su iPad la condivisione deve partire dentro il tocco, senza attese
+  backupText = JSON.stringify({app:'volley-scout', version:1, exported:new Date().toISOString(), localStorage:ls, scouts:list});
+  const srcTxt = r => !r.src ? '' : r.src.kind === 'yt' ? 'YouTube' : r.src.kind === 'file' ? `video “${r.src.name}”` : r.src.src;
+  const item = (r, i) => { const st = r.S || {}, sc = st.score || {}, n = (st.rallies || []).length;
+    return `<div class="sitem ${r.key === SCOUT_KEY ? 'cur' : ''}"><div class="si"><div class="st">${r.title || r.videoKey}${r.set ? ` · ${r.set}° set` : ''}</div>
+      <div class="sd">${sc['*'] ?? 0}-${sc.a ?? 0} · ${n} scambi · ${srcTxt(r)} a ${mmssv(r.vt)} · ${when(r.updated)}</div></div>
+      ${r.key === SCOUT_KEY ? '<span class="hint">aperto</span>' : `<button class="go" data-resume="${i}">Riprendi</button>`}
+      <button class="del" data-del="${i}">Elimina</button></div>`; };
+  $('scoutsBox').innerHTML = `<h3>Scout</h3>
+    <div class="lab">Nuovo scout</div>
+    <div class="chips"><label class="chip bigb" style="background:#3b5bdb">Scegli il video<input id="newFile" type="file" accept="video/*" class="hidden"></label>
+      <button class="chip bigb" data-new="yt">Video di YouTube</button>
+      ${DEMO_OK ? '<button class="chip bigb" data-new="demo">Video di prova (G4, 1° set)</button>' : ''}</div>
+    <div class="lab">Scout salvati${list.length ? ` (${list.length})` : ''}</div>
+    ${list.length ? `<div class="slist">${list.map(item).join('')}</div>` : '<div class="hint">Nessuno scout salvato. Lo scout si salva da solo a ogni tocco: se chiudi l\'app, lo ritrovi qui.</div>'}
+    <div class="hint">Riprendendo uno scout su un video da file, l'app ti chiede di riscegliere lo stesso video.</div>
+    <div class="lab">Copia di sicurezza</div>
+    <div class="chips"><button class="chip" data-backup="out">Esporta tutto</button><button class="chip" data-backup="in">Importa…</button>
+      <span class="hint">un file con scout, tarature, partite, schieramenti e preferenze: per non perdere niente o per passare a un altro iPad / browser</span></div>
+    <div class="chips"><span class="grow"></span>${VSRC ? '<button class="chip" id="scoutsClose" style="padding:10px 18px">Chiudi</button>' : ''}</div>`;
+  $('scoutsBox')._list = list;
+  $('scoutsModal').classList.remove('hidden');
+}
+$('scoutsBtn').onclick = openScouts;
+$('scoutsBox').addEventListener('change', e => {
+  if (e.target.id !== 'newFile' || !e.target.files[0]) return;
+  const f = e.target.files[0]; e.target.value = ''; resumeWanted = null; playFile(f, f.name);
+});
+$('scoutsBox').addEventListener('click', async e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const list = $('scoutsBox')._list || [];
+  if (b.id === 'scoutsClose') return $('scoutsModal').classList.add('hidden');
+  if (b.dataset.new === 'yt') { const u = prompt('Incolla il link del video di YouTube', PREFS.lastYt || ''); if (u) { resumeWanted = null; $('scoutsModal').classList.add('hidden'); loadYouTube(u); } return; }
+  if (b.dataset.new === 'demo') { resumeWanted = null; return playUrl('G4_set1.mp4'); }
+  if (b.dataset.resume) {
+    const r = list[Number(b.dataset.resume)];
+    if (!r.src) return toast('Questo scout non ha il video registrato');
+    resumeWanted = r;
+    if (r.src.kind === 'yt') { $('scoutsModal').classList.add('hidden'); return loadYouTube(r.src.url, Math.max(0, (r.vt || 0) - 2)); }
+    if (r.src.kind === 'url') return playUrl(r.src.src);
+    toast(`Scegli il video “${r.src.name}”`, '#1d4d2c');
+    return $('file').click();
+  }
+  if (b.dataset.del) {
+    const r = list[Number(b.dataset.del)];
+    if (!confirm(`Elimino lo scout “${r.title}” (${(r.S.rallies || []).length} scambi)? Non si può recuperare, a meno di una copia di sicurezza.`)) return;
+    await scoutDel(r.key).catch(() => {});
+    if (r.key === SCOUT_KEY) { SCOUT_KEY = videoKey(); S = freshState(); history = []; if (MATCHES[videoKey()]) applyMatch(MATCHES[videoKey()]); render(); }
+    return openScouts();
+  }
+  if (b.dataset.backup === 'out') return shareFile(`scout copia ${new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16).replace('T', ' ').replace(':', '.')}.json`, backupText, 'application/json');
+  if (b.dataset.backup === 'in') return $('importIn').click();
+});
+$('importIn').addEventListener('change', e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  const r = new FileReader();
+  r.onload = async () => {
+    let d; try { d = JSON.parse(r.result); } catch (err) { return toast('Il file non è una copia di sicurezza dello scout'); }
+    if (!d || d.app !== 'volley-scout') return toast('Il file non è una copia di sicurezza dello scout');
+    // preferenze e dizionari (tarature, partite, schieramenti, palleggiatori): unione, vince la copia importata
+    for (const [k, v] of Object.entries(d.localStorage || {})) {
+      if (!LS_KEYS.includes(k)) continue;
+      let cur = null, imp = null; try { cur = JSON.parse(localStorage.getItem(k)); imp = JSON.parse(v); } catch (err) {}
+      const val = cur && imp && typeof cur === 'object' && typeof imp === 'object' ? JSON.stringify({...cur, ...imp}) : v;
+      try { localStorage.setItem(k, val); } catch (err) {}
+    }
+    // scout: si tiene il più recente tra quello già qui e quello della copia
+    await saveNow();
+    let added = 0, kept = 0;
+    for (const sc of d.scouts || []) {
+      const here = await scoutGet(sc.key).catch(() => null);
+      if (here && here.updated >= sc.updated) { kept++; continue; }
+      await scoutPut(sc); added++;
+    }
+    alert(`Copia importata: ${added} scout${kept ? `, ${kept} lasciati com'erano (quelli qui erano più recenti)` : ''}, più tarature, partite e preferenze. L'app si ricarica.`);
+    location.reload();
+  };
+  r.readAsText(f);
+});
+// file da salvare: su iPad il foglio di condivisione (Salva su File, AirDrop...), altrove lo scaricamento
+async function shareFile(fname, text, type) {
+  const file = new File([text], fname, {type});
+  if (IOS && navigator.canShare && navigator.canShare({files:[file]})) {
+    try { await navigator.share({files:[file], title:fname}); return; } catch (err) { if (err && err.name === 'AbortError') return; }
+  }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = fname;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden) saveNow(); });
+addEventListener('pagehide', () => saveNow());
+setInterval(() => { if (!video.paused) scheduleSave(); }, 10000);      // anche il minuto del video, mentre scorre
+
+// ---------------------------------------------------------------- tutorial
+const TUT = [
+  { sel:null, title:'Scout a tocchi: come funziona',
+    text:`<p>Guardi il video e tocchi solo quello che il sistema non può sapere da solo: <b>chi</b> tocca la palla e <b>il voto</b>.</p>
+          <p>Chi batte, chi è in campo, il punteggio e la rotazione li tiene lui. Il tutorial dura un minuto.</p>` },
+  { sel:'#vwrap', title:'Il video',
+    text:`<p><b>Tocco al centro</b>: play / pausa. <b>Doppio tocco a destra</b>: avanti; <b>a sinistra</b>: indietro. Altri tocchi veloci sullo stesso lato sommano altri salti.</p>
+          <p>Il salto (1, 3, 5 o 30 s) si sceglie nelle impostazioni ⚙︎. In alto a destra è scritta la squadra <b>di fronte</b> alla telecamera.</p>
+          <p>Quando chiudi uno scambio il video <b>si ferma da solo</b>: controlli i codici a destra e riparti.</p>` },
+  { sel:'.bar', title:'Punteggio e comandi',
+    text:`<p>Il <b>pallino giallo</b> indica chi batte; <b>P1…P6</b> è la rotazione di ciascuna squadra (zona del palleggiatore).</p>
+          <p><b>1×</b> cambia velocità a ogni tocco (1, 0,75, 0,5), <b>⟲ ⟳</b> per i salti, <b>Sul video</b> accende i comandi sul video, <b>Solo video</b> nasconde il pannello sotto, e <b>⚙︎ impostazioni</b>: salto, <b>chi è di spalle alla telecamera</b> (cambia a ogni set), pausa a fine scambio, base del centrale.</p>` },
+  { setup:'serve', sel:'#zone', title:'1 · Battuta e ricezione',
+    text:`<p>Il battitore è già scritto. Il <b>tipo di battuta</b> è proposto dal suo solito: lo cambi solo se è diverso.</p>
+          <p>Tocca <b>chi riceve</b>: i tre grandi sono i ricevitori, disposti <b>come li vedi nel video</b> (per la squadra di fronte a specchio: zona 1 a sinistra).</p>
+          <p>Lo <b>schieramento</b> di partenza è quello usuale; se una squadra riceve o attacca in modo diverso in una rotazione, lo correggi con il pulsante <b>Schieramento</b> e da lì in poi lo ricordo.</p>` },
+  { setup:'serve', sel:'#grades', title:'I voti: sempre negli stessi posti',
+    text:`<p>Sei pulsanti fissi, uguali per tutti i fondamentali: <code>#</code> <code>+</code> <code>!</code> <code>-</code> <code>/</code> <code>=</code>. Cambia solo la scritta piccola sotto.</p>
+          <p>Dopo il ricevitore dai il <b>voto della ricezione</b>: quello della battuta si scrive da solo.</p>
+          <p>Senza toccare nessun ricevitore: <code>=</code> errore in battuta, <code>#</code> ace.</p>` },
+  { setup:'attack', sel:'#zone', title:'2 · Attacco: tocca la sigla',
+    text:`<p>Le sigle sono disposte <b>come la rete vista nel video</b>: per la squadra di spalle posto 4 a sinistra, per quella di fronte a specchio. La riga della seconda linea (XP, X8, V8, 2° tocco) sta dalla parte del campo lontana dalla rete.</p>
+          <p>Sotto ogni sigla c'è <b>chi attaccherebbe</b>: in cambio palla dallo <b>schieramento</b> della squadra in quella rotazione (per tutto lo scambio), in break-point dalla disposizione usuale (martello in 4, opposto in 2). La <b>base del centrale</b> è nella striscia in alto a destra (passo dopo).</p>` },
+  { setup:'attack', sel:'#basebox', title:'Base del centrale: quando hai tempo',
+    text:`<p>Quattro pulsanti grandi, <b>sempre qui</b>: <b>K1, KC, K7, K2</b>. Non è obbligatoria e non c'è un momento giusto: la tocchi durante lo scambio o <b>a scambio chiuso</b>, mentre il video è in pausa.</p>
+          <p>Va sempre sul <b>1° attacco dopo ricezione</b> di quello scambio (in alto a destra c'è scritto quale). Se attacca il centrale (X1, XC, X7, X2) è già proposta, tratteggiata. Ritoccala per toglierla.</p>` },
+  { setup:'attack', sel:'#zone .chips', title:'Colpo e alzata',
+    text:`<p><b>Forte</b> è già scelto; tocca <b>pallonetto</b> solo quando serve (nel codice: H o T).</p>
+          <p><b>Alzata negativa / sbagliata</b> solo quando vale la pena. <b>Di là senza attacco</b>: diventa palla libera per gli altri.</p>` },
+  { setup:'link', sel:'.input', title:'Dopo il voto dell\'attacco: chi ha toccato di là',
+    text:`<p>Il voto dell'attacco decide quello del tocco avversario, come in Volleyball Scout: <code>#</code> → mani fuori (B=), difesa sbagliata (D=) o <b>a terra</b>; <code>+</code> → D- o B-; <code>!</code> → B!; <code>-</code> → D+ o B+; <code>/</code> → B#.</p>
+          <p>Tocchi solo <b>chi</b>: a sinistra il muro, a destra la difesa. Il voto si scrive da solo.</p>` },
+  { setup:'defense', sel:'#zone', title:'3 · Muro, difesa, palla libera',
+    text:`<p>Quando la palla non arriva da un attacco (dopo un muro, una copertura, una palla libera) tocchi chi ha toccato e poi il voto. A sinistra il <b>muro</b>, a destra la <b>difesa</b>, <b>dove li vedi nel video</b>, con la rete tratteggiata.</p>
+          <p><b>Palla libera (F)</b>: un solo codice con il suo voto (F- = palla libera appoggiata male).</p>
+` },
+  { setup:'defense', sel:'#switchTeam', title:'Quando tocca l\'altra squadra',
+    text:`<p>Il sistema si aspetta il tocco più probabile (dopo un attacco difeso, la difesa degli altri). Se invece tocca l'altra squadra (copertura, muro rimbalzato), premi <b>⇄ Altra squadra</b>.</p>` },
+  { sel:'#calBtn', title:'Comandi sul video',
+    text:`<p>Il video può essere un file (<b>Carica video</b>) o un link di <b>YouTube</b> (serve la rete; la prima volta avvialo con il suo ▶︎). Con <b>Taratura campo</b> scegli un punto sullo schema del campo (ruotabile come il video) e lo tocchi nel video: bastano 4 punti del pavimento e i 2 estremi del nastro, con qualunque inquadratura. Da lì le <b>sigle d'attacco compaiono sul video</b>, in una griglia sempre uguale nella metà campo di chi attacca (sopra le veloci, sotto alte e seconda linea; colonne da posto 4 a posto 2 come le vedi).</p>
+          <p>Poi sul video compare tutto lo scambio: <b>ricevitori</b> nelle loro zone, <b>sigle d'attacco</b> in griglia, <b>muro</b> sul nastro e <b>difesa</b> nelle zone, con i <b>voti</b> accanto al pulsante toccato. In basso a sinistra i comandi rari (alzata, di là, altra squadra). La taratura si fa una volta per video; con <b>Solo video</b> il pannello sotto sparisce.</p>` },
+  { sel:'#log', title:'I codici, scambio per scambio',
+    text:`<p>Qui compaiono i codici che finirebbero nel <b>.dvw</b>. In grigio quelli <b>dedotti</b> (battuta dalla ricezione, chiamata, muro punto): controllali a fine scambio.</p>` },
+  { sel:'.stats', title:'Quanto tempo ci metti',
+    text:`<p><b>Tocchi per azione</b> e soprattutto <b>tempo di scout / tempo di video</b>: per il 1° set di G4 ci avevi messo circa 2×, l'obiettivo è stare sotto 1×.</p>` },
+  { sel:'.tools', title:'Correggere',
+    text:`<p><b>Annulla</b> toglie l'ultimo tocco registrato. <b>Punto …</b> assegna un punto senza azione (fallo, invasione a rete). <b>Cambio</b>: chi esce e chi entra. <b>Schieramento</b>: correggi come riceve e attacca la squadra in quella rotazione, e dove difendono i giocatori (per tutta la partita). <b>Scarica codici</b>: il file di testo.</p>
+          <p>Il tutorial si riapre con il pulsante <b>Tutorial</b> in alto.</p>` },
+];
+let tutI = 0, tutSaved = null;
+function tutSetup(kind) {
+  S = clone(tutSaved);
+  if (kind === 'serve') { S.phase = {k:'serve'}; S.sel = {}; }
+  if (kind === 'attack') { S.phase = {k:'attack', t:other(S.serving), so:true}; S.sel = {combo:COMBOS_FRONT[1]}; }
+  if (kind === 'defense') { S.phase = {k:'defense', t:S.serving, type:'T', from:'X5'}; S.sel = {}; }
+  if (kind === 'link') { S.phase = {k:'link', t:S.serving, g:'-', type:'T', from:'X5', att:other(S.serving)}; S.sel = {}; }
+  render();
+}
+function tutShow() {
+  const st = TUT[tutI];
+  if (st.setup) tutSetup(st.setup); else if (tutSaved) { S = clone(tutSaved); render(); }
+  const hole = $('tutHole'), card = $('tutCard');
+  card.innerHTML = `<h3>${st.title}</h3>${st.text}
+    <div class="tut-nav"><span class="tut-step">${tutI+1} / ${TUT.length}</span>
+      <button id="tutSkip">Salta</button>
+      ${tutI ? '<button id="tutPrev">Indietro</button>' : ''}
+      <button id="tutNext" class="primary">${tutI === TUT.length-1 ? 'Inizia' : 'Avanti'}</button></div>`;
+  const el = st.sel && document.querySelector(st.sel);
+  const W = innerWidth, Hh = innerHeight, cw = card.offsetWidth, ch = card.offsetHeight;
+  if (!el) {
+    Object.assign(hole.style, {left:W/2+'px', top:Hh/2+'px', width:'0px', height:'0px', outlineWidth:'0px'});
+    Object.assign(card.style, {left:(W-cw)/2+'px', top:(Hh-ch)/2+'px'});
+  } else {
+    const r = el.getBoundingClientRect(), pad = 6;
+    Object.assign(hole.style, {left:r.left-pad+'px', top:r.top-pad+'px', width:r.width+2*pad+'px', height:r.height+2*pad+'px', outlineWidth:'3px'});
+    let top = r.bottom + 14 + ch < Hh ? r.bottom + 14 : (r.top - 14 - ch > 0 ? r.top - 14 - ch : Hh - ch - 12);
+    let left = Math.min(Math.max(12, r.left + r.width/2 - cw/2), W - cw - 12);
+    if (top < r.bottom && top + ch > r.top) { left = r.right + 14 + cw < W ? r.right + 14 : Math.max(12, r.left - 14 - cw); top = Math.max(12, Math.min(r.top, Hh - ch - 12)); }
+    Object.assign(card.style, {left:left+'px', top:top+'px'});
+  }
+  $('tutSkip').onclick = tutEnd;
+  $('tutNext').onclick = () => { if (tutI === TUT.length-1) return tutEnd(); tutI++; tutShow(); };
+  if ($('tutPrev')) $('tutPrev').onclick = () => { tutI--; tutShow(); };
+}
+function tutStart() {
+  video.pause(); $('arrModal').classList.add('hidden'); AE = null;
+  tutSaved = clone(S); tutI = 0;
+  $('tut').classList.remove('hidden'); tutShow();
+}
+function tutEnd() {
+  $('tut').classList.add('hidden');
+  if (tutSaved) { S = tutSaved; tutSaved = null; render(); }
+  try { localStorage.setItem('scoutMockupTutorial', 'visto'); } catch (e) {}
+  if (!VSRC) openScouts();
+}
+$('tutBtn').onclick = tutStart;
+addEventListener('resize', () => { if (!$('tut').classList.contains('hidden')) tutShow(); });
+
+render();
+pipSetup();
+if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
+let seen = null; try { seen = localStorage.getItem('scoutMockupTutorial'); } catch (e) {}
+if (!seen) {
+  TUT[0].text += `<p style="color:var(--muted);font-size:13px">Puoi rivederlo quando vuoi con il pulsante <b>Tutorial</b> in alto.</p>`;
+  tutStart();
+} else openScouts();
+</script>
+</body>
+</html>

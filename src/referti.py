@@ -320,3 +320,152 @@ def classify_subs(set_, side, centrali_pos=()):
         out.append({"pos": k, "entra": n, "esce": me["lineup"][k], "punteggio": sc, "rientro": back,
                     "tipo": tipo, "dettaglio": dettaglio, "centrale": k in centrali_pos})
     return out
+
+
+# ---------------------------------------------------------------------------
+# Partite del girone per lo scout a tocchi (scout/index.html): squadre, rose, liberi, formazioni di ogni set,
+# chi batte per primo e ruoli, in un JSON che l'app legge accanto alla pagina (scout/referti.json,
+# pubblicato su GitHub Pages con l'app).
+# ---------------------------------------------------------------------------
+def _player_name(full):
+    """'D'ELIA MATTEO' -> "D'Elia": cognome senza il nome (ultima parola), in maiuscolo/minuscolo."""
+    words = full.split()
+    if len(words) >= 2:
+        words = words[:-1]
+    return " ".join(w[:1].upper() + w[1:].lower() if "'" not in w else
+                    "'".join(p[:1].upper() + p[1:].lower() for p in w.split("'")) for w in words)
+
+
+def known_setters_from_dvw(dvw_files):
+    """{nome squadra normalizzato: cognomi normalizzati dei palleggiatori} dai .dvw già rilevati (ruolo 5)."""
+    from src.dvw import parse_dvw
+    out = {}
+    for f in dvw_files:
+        try:
+            parsed = parse_dvw(f)
+        except Exception:
+            continue
+        pl = parsed["players"]
+        for code, name in parsed["teams"].items():
+            sel = pl[(pl["squadra"] == code) & (pl["ruolo"] == 5)]
+            out.setdefault(_norm(re.sub(r"\s+D$", "", name)), set()).update(_norm(c) for c in sel["cognome"])
+    return out
+
+
+def _team_setters(team_name, roster, by_team):
+    """Numeri a referto dei palleggiatori noti dai .dvw della stessa squadra (nome contenuto l'uno nell'altro)."""
+    key = _norm(team_name)
+    names = set().union(*[v for k, v in by_team.items() if k and (k in key or key in k)] or [set()])
+    return {n for n, x in roster.items() if _norm(_player_name(x["nome"])) in names}
+
+
+def scout_setup(folder, girone=None, setters_by_team=None):
+    """Una voce per referto: {gara, giornata, data, label, teams: {'*': casa, 'a': ospite}, firstServe: {set: '*'/'a'}}.
+    Casa e ospite dal calendario federale (team1 = casa) se `girone` è dato e il sito risponde, altrimenti A = casa.
+    Ruoli: P, M1, C2, O, M2, C1 dalla formazione quando si decidono (palleggiatori propagati tra le partite della
+    stessa squadra), L per i liberi; per ogni giocatore il ruolo più frequente."""
+    refs = [parse_referto(f) for f in sorted(Path(folder).glob("G*RE_*.pdf"))]
+    home_by_ng = {}
+    if girone:
+        try:
+            from src.fipav import fetch_calendar
+            home_by_ng = {m["ng"]: (m.get("team1") or {}).get("title", "") for m in fetch_calendar(girone)}
+        except Exception:
+            home_by_ng = {}
+    known = {}                                           # palleggiatori noti per squadra (dai .dvw, poi propagati)
+    for r in refs:
+        for side in "AB":
+            known.setdefault(r["squadra_" + side], set()).update(
+                _team_setters(r["squadra_" + side], r["rose"][side], setters_by_team or {}))
+    for _ in range(3):
+        for r in refs:
+            for s in r["set"]:
+                for b in s["blocchi"]:
+                    lib = {n for n, x in r["rose"][b["lato"]].items() if x["libero"]}
+                    ro = roles(b, lib, known.setdefault(b["squadra"], set()))
+                    if ro:
+                        known[b["squadra"]].add(b["lineup"][next(k for k, v in ro.items() if v == "P")])
+    out = []
+    for r in refs:
+        home = home_by_ng.get(r["gara"], "")
+        a_home = not home or _norm(home) == _norm(r["squadra_A"]) or _norm(home) != _norm(r["squadra_B"])
+        code = {"A": "*" if a_home else "a", "B": "a" if a_home else "*"}
+        teams = {code[side]: {"name": r["squadra_" + side].title(), "players": {}, "sets": {}, "subs": {}, "libero": {}, "candP": set()}
+                 for side in "AB"}
+        for side in "AB":
+            for n, x in sorted(r["rose"][side].items()):
+                teams[code[side]]["players"][n] = {"n": n, "c": _player_name(x["nome"]), "votes": {}, "L": x["libero"]}
+        first = {}
+        for s in r["set"]:
+            for b in s["blocchi"]:
+                t = teams[code[b["lato"]]]
+                lib = {n for n, x in r["rose"][b["lato"]].items() if x["libero"]}
+                ro = roles(b, lib, known.get(b["squadra"], set())) or {}
+                cen = set(centrali(b, lib))
+                c2 = sorted(cen)
+                if not ro and len(c2) == 2 and (c2[1] - c2[0]) % 6 == 3:   # palleggiatore in una di due posizioni
+                    t["candP"].update(b["lineup"][(k - 2) % 6] for k in c2)
+                t["sets"][s["set"]] = b["lineup"]
+                # cambi: punteggio (squadra, avversari) all'ingresso e al rientro del titolare
+                ev = []
+                for k, n in b["subs"].items():
+                    if b["sub_score"].get(k) is not None:
+                        ev.append({"at": list(b["sub_score"][k]), "out": b["lineup"][k], "in": n})
+                    if b["back_score"].get(k) is not None:
+                        ev.append({"at": list(b["back_score"][k]), "out": n, "in": b["lineup"][k]})
+                t["subs"][s["set"]] = sorted(ev, key=lambda e: (sum(e["at"]), e["at"]))
+                # colonna del libero: "30-31" = il libero 31 entra per il 30; "30-31-99" = per il 30 sono entrati
+                # tutti e due i liberi; "13" da solo = un solo libero a referto (sottinteso)
+                lib_for, lib_used = [], []
+                for seq in b["libero_seq"]:
+                    nums = [int(x) for x in seq.split("-") if x.isdigit()]
+                    if not nums or nums[0] in lib:
+                        continue
+                    if nums[0] not in lib_for:
+                        lib_for.append(nums[0])
+                    lib_used += [x for x in nums[1:] if x not in lib_used]
+                t["libero"][s["set"]] = {"per": lib_for, "liberi": lib_used or sorted(lib)}
+                for k, n in enumerate(b["lineup"]):
+                    p = t["players"].get(n)
+                    r_ = (ro.get(k) or ("C" if k in cen else None))
+                    if p and r_:
+                        r_ = r_.rstrip("12")
+                        p["votes"][r_] = p["votes"].get(r_, 0) + 1
+                if not b["receiving"]:
+                    first[s["set"]] = code[b["lato"]]
+        for t in teams.values():
+            has_p = any(p["votes"].get("P") for p in t["players"].values())
+            t["candP"] = [] if has_p else sorted(n for n in t["candP"] if n is not None)
+            for p in t["players"].values():
+                p["r"] = "L" if p.pop("L") else (max(p["votes"], key=p["votes"].get) if p["votes"] else None)
+                p.pop("votes")
+            t["players"] = list(t["players"].values())
+        g = re.match(r"G(\d+)", r["file"])
+        out.append({"gara": r["gara"], "giornata": int(g.group(1)) if g else None, "data": r["data"],
+                    "label": f"G{g.group(1) if g else '?'} {teams['*']['name']} - {teams['a']['name']}",
+                    "teams": teams, "firstServe": first})
+    return out
+
+
+def _norm(name):
+    return re.sub(r"[^a-z0-9]", "", (name or "").lower())
+
+
+if __name__ == "__main__":
+    import argparse
+    import json
+    import os
+    from dotenv import load_dotenv
+
+    load_dotenv()
+    ap = argparse.ArgumentParser(description="Partite del girone dai referti, per lo scout a tocchi")
+    ap.add_argument("--season-folder", default=os.path.join(os.environ.get("VOLLEY_DRIVE_ROOT", ""),
+                    "Pallavolo/Decimo Roma/2026-2027/Match Analysis"))
+    ap.add_argument("--girone", default="63671")
+    ap.add_argument("--out", default="scout/referti.json")
+    a = ap.parse_args()
+    season = Path(a.season_folder)
+    dvw = [f for f in season.rglob("*.dvw") if "scambio video" not in f.parts]
+    data = scout_setup(season / "scambio video" / "referti", a.girone, known_setters_from_dvw(dvw))
+    Path(a.out).write_text(json.dumps(data, ensure_ascii=False))
+    print(f"{len(data)} partite in {a.out}")
