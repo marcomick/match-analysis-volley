@@ -33,6 +33,9 @@ jobs:
           mkdir site
           cp scout/index.html scout/manifest.json scout/sw.js scout/icon-180.png scout/icon-512.png site/
           [ -f scout/referti.json ] && cp scout/referti.json site/
+          build="$(TZ=Europe/Rome date '+%d/%m %H:%M') · ${GITHUB_SHA::7}"
+          sed -i "s|const APP_BUILD = '[^']*';|const APP_BUILD = '$build';|" site/index.html
+          grep -q "const APP_BUILD = '$build';" site/index.html
           v="scout-$(cat site/* | sha256sum | cut -c1-10)"
           sed -i "s/const VERSION = '[^']*';/const VERSION = '$v';/" site/sw.js
           grep -q "const VERSION = '$v';" site/sw.js

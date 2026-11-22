@@ -2373,6 +2373,8 @@ function restoreScout(rec) {
 }
 
 // ---------------------------------------------------------------- pannello "Scout": nuovo, salvati, copia di sicurezza
+// versione dell'app: la scrive il workflow di pubblicazione (data e ora di Roma · commit); in locale resta 'locale'
+const APP_BUILD = 'locale';
 let DEMO_OK = false;
 fetch('G4_set1.mp4', {method:'HEAD'}).then(r => { DEMO_OK = r.ok; }).catch(() => {});
 async function openScouts() {
@@ -2389,7 +2391,7 @@ async function openScouts() {
       <div class="sd">${sc['*'] ?? 0}-${sc.a ?? 0} · ${n} scambi · ${srcTxt(r)} a ${mmssv(r.vt)} · ${when(r.updated)}</div></div>
       ${r.key === SCOUT_KEY ? '<span class="hint">aperto</span>' : `<button class="go" data-resume="${i}">Riprendi</button>`}
       <button class="del" data-del="${i}">Elimina</button></div>`; };
-  $('scoutsBox').innerHTML = `<h3>Scout</h3>
+  $('scoutsBox').innerHTML = `<h3>Scout <span class="hint" style="font-weight:400">versione ${APP_BUILD}</span></h3>
     <div class="lab">Nuovo scout</div>
     <div class="chips"><label class="chip bigb" style="background:#3b5bdb">Scegli il video<input id="newFile" type="file" accept="video/*" class="hidden"></label>
       <button class="chip bigb" data-new="yt">Video di YouTube</button>
