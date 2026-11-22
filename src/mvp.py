@@ -409,7 +409,8 @@ ACTION_DESCRIPTIONS = {
                "-": "Difesa che tiene la palla senza contrattacco (D-)",
                "=": "Difesa che dà il punto all'avversario (D=)"},
     "alzata": {"#": "Alzata meritevole (E#)", "+": "Alzata che lascia l'attaccante contro muro a 1 (E+)",
-               "-": "Alzata imprecisa, mette in difficoltà l'attaccante (E-)", "=": "Errore di alzata (E=)"},
+               "-": "Alzata imprecisa, mette in difficoltà l'attaccante (E-)",
+               "/": "Alzata negativa: l'attacco che segue non conta per l'attaccante (E/)", "=": "Errore di alzata (E=)"},
 }
 
 

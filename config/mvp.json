@@ -6,7 +6,7 @@
     "attacco":   {"#": 0.35, "+": 0.10, "!": 0.05, "-": 0.00, "/": -0.35, "=": -0.40},
     "muro":      {"#": 0.65, "+": 0.20, "!": 0.10, "-": 0.00, "/": -1.00, "=": -0.10},
     "difesa":    {"#": 0.25, "+": 0.05, "-": 0.05, "=": -0.10},
-    "alzata":    {"#": 0.30, "+": 0.15, "-": -0.15, "=": -0.50}
+    "alzata":    {"#": 0.30, "+": 0.15, "-": -0.15, "/": -0.15, "=": -0.50}
   },
   "_attacco_per_situazione": "punto (#), errore (=) e murata (/) secondo la situazione (decisione dell'utente, 2026-11-09): da palla buona (R#/R+ e free ball) si rischia, l'errore costa poco; su palla alta il punto vale ma l'errore pesa. Palla alta = tipo di palla H (rilevato o stimato), prima di tutto il resto; poi free ball (attacco dopo una difesa !), poi side-out dopo R# o R+. Tutto il resto (dopo R!, contrattacco su palla veloce) usa azioni.attacco. Il \"rigore\" vale come azioni.attacco.#",
   "attacco_per_situazione": {

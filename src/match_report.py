@@ -40,7 +40,8 @@ POINT_SOURCE_COLORS_DARK = {"Attacco": "#199e70", "Muro": "#9085e9", RIGORI: "#5
 SET_METRICS = ["Battuta%", "Ricezione%", "Attacco SO%", "Contrattacco%", "Muro punti", "Errori"]
 TOTAL_LABEL = "Tot"
 
-_WINNING_SKILL = {"attacco": "Attacco", "muro": "Muro", "rigore": RIGORI, "battuta": "Ace"}
+# l'attacco dopo un'alzata negativa (src.dvw._mark_bad_set_attacks) resta un punto d'attacco nella partita
+_WINNING_SKILL = {"attacco": "Attacco", "attacco da alzata negativa": "Attacco", "muro": "Muro", "rigore": RIGORI, "battuta": "Ace"}
 
 
 def _lost_point(df):
@@ -49,7 +50,7 @@ def _lost_point(df):
     non recuperate), attacco murato ('/') e — a differenza dell'app — anche
     l'errore di muro ('/'), che va sempre contato (indicazione dell'utente)."""
     voto = df["Voto"].astype(str)
-    return (voto == "=") | ((df["Tipo"].isin(["attacco", "muro", "rigore"])) & (voto == "/"))
+    return (voto == "=") | ((df["Tipo"].isin(["attacco", "attacco da alzata negativa", "muro", "rigore"])) & (voto == "/"))
 
 
 def load_report_source(file_path, team=None):

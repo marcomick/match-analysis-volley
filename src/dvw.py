@@ -188,7 +188,7 @@ def parse_dvw(file_path):
         "teams": teams,
         "players": players,
         "sets": _parse_sets(sections.get("SET", [])),
-        "actions": _mark_rigori(_infer_ball_type(_middle_attacks_quick(actions, players))),
+        "actions": _mark_bad_set_attacks(_mark_rigori(_infer_ball_type(_middle_attacks_quick(actions, players)))),
         "rallies": rallies,
     }
 
@@ -257,6 +257,38 @@ def _mark_rigori(actions):
                 and actions.at[j, "Tipo"] in ("ricezione", "difesa") and actions.at[j, "Voto"] == "/"):
             actions.at[i, "Rigore"] = True
     actions.loc[actions["Rigore"], "Tipo"] = "rigore"
+    return actions
+
+
+BAD_SET_ATTACK = "attacco da alzata negativa"
+
+
+def _mark_bad_set_attacks(actions):
+    """
+    Attacco subito dopo un'alzata negativa ('E/') della stessa squadra (decisione
+    dell'utente del 2026-11-22): l'attaccante è stato messo in difficoltà
+    dall'alzata, quindi l'attacco resta nel punteggio della partita (punti per
+    causa) ma esce dai conti dell'attaccante (efficienze, KPI, tabellini, MVP):
+    il Tipo diventa BAD_SET_ATTACK. Colonna 'Da alzata negativa' = True sulle
+    stesse righe; il codice originale resta in 'Codice'.
+    """
+    actions["Da alzata negativa"] = False
+    if actions.empty:
+        return actions
+    idx = list(actions.index)
+    for k, i in enumerate(idx):
+        if actions.at[i, "Tipo"] != "attacco":
+            continue
+        pos = k - 1
+        while pos >= 0 and actions.at[idx[pos], "Tipo"] == "cambio configurazione":
+            pos -= 1
+        if pos < 0:
+            continue
+        j = idx[pos]
+        if (actions.at[j, "Tipo"] == "alzata" and actions.at[j, "Voto"] == "/"
+                and actions.at[j, "squadra"] == actions.at[i, "squadra"] and actions.at[j, "Rally"] == actions.at[i, "Rally"]):
+            actions.at[i, "Da alzata negativa"] = True
+    actions.loc[actions["Da alzata negativa"], "Tipo"] = BAD_SET_ATTACK
     return actions
 
 
