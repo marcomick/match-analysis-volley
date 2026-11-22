@@ -320,7 +320,7 @@
       <button id="ptAway"></button>
       <button id="subBtn">Cambio</button>
       <button id="arrBtn">Schieramento</button>
-      <button id="export">Scarica codici</button>
+      <button id="export">Scarica .dvw</button>
       <button id="redo">↷ Risegna</button>
       <button id="corrBtn">Correggi battuta / rotazione</button>
     </div>
@@ -532,7 +532,8 @@ const REC_ZONES = ['zona 5','zona 6','zona 1'];
 const two = n => String(n).padStart(2,'0');
 function push(t, n, skill, type, grade, extra='', desc='', auto=false) {
   const code = n == null ? `${t}$$${skill}` : `${t}${two(n)}${skill}${type}${grade}${extra}`;
-  S.rally.push({t, n, skill, grade, code, desc: desc || `${name(t,n)}`, auto, vt:Math.round(video.currentTime * 10) / 10});
+  S.rally.push({t, n, skill, grade, code, desc: desc || `${name(t,n)}`, auto, vt:Math.round(video.currentTime * 10) / 10,
+                pos:{'*':[...S.pos['*']], a:[...S.pos.a]}, sz:{'*':setterZone('*'), a:setterZone('a')}});
   S.nActs++; if (auto) S.nAuto++;
 }
 function endRally(winner, why) {
@@ -1197,7 +1198,113 @@ $('ptHome').onclick = () => { tap(); snapshot(); push('*', null, '&', '', '', ''
 $('ptAway').onclick = () => { tap(); snapshot(); push('a', null, '&', '', '', '', 'punto generico'); endRally('a', 'punto generico'); render(); };
 $('log').addEventListener('click', e => { const h = e.target.closest('[data-vt]'); if (!h) return;
   video.currentTime = Math.max(0, Number(h.dataset.vt) - 3); });
-$('export').onclick = () => {
+$('export').onclick = () => { try { exportDvw(); } catch (e) { toast('Errore nel .dvw: ' + (e && e.message || e)); console.error(e); } };
+// ---- file .dvw (2026-11-22): lo stesso formato del programma di rilevazione, letto da src/dvw.py (squadre, rose con
+// ruoli e zone di partenza, set, una riga per azione con set, zona del palleggiatore e i sei in campo, punto dopo ogni
+// scambio, **Nset a fine set). Le posizioni in campo: quelle salvate sull'azione (dal 2026-11-22) oppure ricostruite
+// rigiocando il set dalla formazione di partenza (referto), con cambi, rotazioni e le correzioni annotate.
+const DVW_ROLE = {P:5, O:3, M:2, C:4, L:1};
+const CP1252 = {0x2019:0x92, 0x2018:0x91, 0x201C:0x93, 0x201D:0x94, 0x2013:0x96, 0x2014:0x97, 0x20AC:0x80};
+function cp1252(text) {
+  const out = new Uint8Array(text.length);
+  for (let i = 0; i < text.length; i++) { const c = text.charCodeAt(i); out[i] = c < 256 ? c : (CP1252[c] || 63); }
+  return out;
+}
+const hms = sec => { sec = Math.max(0, Math.round(sec || 0)); return [Math.floor(sec / 3600), Math.floor(sec / 60) % 60, sec % 60].map(x => String(x).padStart(2, '0')).join('.'); };
+// formazione di partenza, prima battuta e palleggiatori di ogni set: dal referto, altrimenti quelli del set in corso
+function setStarts(nSet) {
+  const ref = CUR_MATCH && CUR_MATCH.ref, ri = ref ? REFERTI.findIndex(x => x.gara === ref.gara) : -1, out = {};
+  for (let k = 1; k <= nSet; k++) {
+    let st = null;
+    if (k === (S.setNo || 1)) st = {pos:{'*':[...DATA['*'].lineup], a:[...DATA.a.lineup]}, first:FIRST_SERVE,
+      setter:{'*':DATA['*'].players.find(p => p.r === 'P')?.n, a:DATA.a.players.find(p => p.r === 'P')?.n}};
+    if (ri >= 0 && REFERTI[ri].teams['*'].sets[k] && k !== (S.setNo || 1)) {
+      const keep = ME; nextSetME(ri, k);
+      const lp = t => ME.t[t].lineup.trim().split(/[\s,;]+/).filter(Boolean).map(Number);
+      const sp = t => parseRoster(ME.t[t].roster, ME.t[t].players).find(p => p.r === 'P')?.n;
+      st = {pos:{'*':lp('*'), a:lp('a')}, first:ME.first, setter:{'*':sp('*'), a:sp('a')}};
+      ME = keep;
+    }
+    out[k] = st;
+  }
+  return out;
+}
+function buildDvw() {
+  const chron = [...S.rallies].reverse(); if (!chron.length) throw new Error('nessuno scambio');
+  const nSet = Math.max(...chron.map(r => r.set || 1)), starts = setStarts(nSet);
+  const lines = [], H = '*', A = 'a', setNumbers = {}, played = {}, finals = {};
+  let cur = null, pos = null, serving = null, setter = null, prevSet = null;
+  const zoneOf = t => { const i = pos[t].indexOf(setter[t]); return i < 0 ? '' : i + 1; };
+  const row = (code, vt, sz) => {
+    const z = sz || {'*':zoneOf('*'), a:zoneOf('a')};
+    return [code, '', '', '', '', '', '', hms(vt), cur, z['*'], z.a, '', vt != null ? Math.round(vt) : '', '', ...pos['*'], ...pos.a, ''].join(';');
+  };
+  for (const r of chron) {
+    const k = r.set || 1;
+    if (k !== prevSet) {
+      if (prevSet != null) lines.push(`**${prevSet}set`);
+      const st = starts[k]; if (!st) throw new Error(`manca la formazione del ${k}° set`);
+      cur = k; pos = {'*':[...st.pos['*']], a:[...st.pos.a]}; serving = st.first || H; setter = {...st.setter};
+      for (const t of [H, A]) { setNumbers[t] = setNumbers[t] || {}; pos[t].forEach((n, i) => { (setNumbers[t][n] = setNumbers[t][n] || {})[k] = i + 1; }); }
+      prevSet = k;
+    }
+    for (const a of withBase(r.actions, r.base)) {
+      if (a.pos) { pos = {'*':[...a.pos['*']], a:[...a.pos.a]}; }
+      if (a.note) {      // correzioni annotate: rotazione, battuta, palleggiatore
+        const d = a.desc || '';
+        if (/ruota avanti/.test(d)) pos[a.t].push(pos[a.t].shift());
+        if (/ruota indietro/.test(d)) pos[a.t].unshift(pos[a.t].pop());
+        if (/: batte /.test(d)) serving = a.t;
+        const m = /palleggia (\d+)/.exec(d); if (m) setter[a.t] = Number(m[1]);
+        continue;
+      }
+      const sb = /^([*a])c(\d+):(\d+)$/.exec(a.code || '');
+      if (sb) { const t = sb[1], o = Number(sb[2]), n = Number(sb[3]), i = pos[t].indexOf(o);
+        if (i >= 0) { pos[t][i] = n; if (setter[t] === o) setter[t] = n; } lines.push(row(a.code, a.vt)); continue; }
+      let code = a.code || '';
+      if (/^[*a]\$\$&$/.test(code)) code += 'H#';                    // punto generico
+      if (/^[*a]\d\dE.~/.test(code)) continue;                        // base del centrale senza voto: il .dvw vuole il voto
+      if (!/^[*a]\d\d[SRABDEF]/.test(code) && !/^[*a]\$\$&/.test(code)) continue;
+      const m = /^([*a])(\d\d)/.exec(code); if (m) { const t = m[1], n = Number(m[2]); if (n) { (played[t] = played[t] || {})[n] = true; } }
+      lines.push(row(code, a.vt, a.sz));
+    }
+    lines.push(row(`${r.winner}p${two(r.score[H])}:${two(r.score[A])}`, r.actions.length ? r.actions[r.actions.length - 1].vt : null));
+    finals[k] = r.score;
+    if (r.winner !== serving) { const p = pos[r.winner]; p.push(p.shift()); }
+    serving = r.winner;
+  }
+  if ((S.sets || []).some(x => x.n === prevSet)) lines.push(`**${prevSet}set`);
+  for (const x of S.sets || []) finals[x.n] = x.score;
+  const w = setsWon(S.sets);
+  // intestazione
+  const ref = CUR_MATCH && CUR_MATCH.ref, ri = ref ? REFERTI.findIndex(x => x.gara === ref.gara) : -1;
+  const date = ri >= 0 && REFERTI[ri].data ? REFERTI[ri].data : new Date().toLocaleDateString('it-IT', {day:'2-digit', month:'2-digit', year:'numeric'});
+  const now = new Date(), stamp = `${date} ${hms(now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds())}`;
+  const head = ['[3DATAVOLLEYSCOUT]', 'FILEFORMAT: 2.0', `GENERATOR-DAY: ${stamp}`, 'GENERATOR-IDP: DVW', 'GENERATOR-PRG: Scout a tocchi',
+    '[3MATCH]', `${date};00.00.00;;;;;1;;1252;1;Z;0;2;2;;`, ';;;;;;;;;;;;',
+    '[3TEAMS]', `1;${DATA[H].name};${w[H]};;;;;;;`, `2;${DATA[A].name};${w[A]};;;;;;;`,
+    '[3MORE]', '[3COMMENTS]', '[3SET]'];
+  for (let k = 1; k <= 5; k++) head.push(finals[k] ? `True;;;;${finals[k][H]}-${finals[k][A]};0;` : 'True;;;;;0;');
+  const libSet = t => new Set([...liberi(t)]);
+  for (const [t, sec, idx] of [[H, '[3PLAYERS-H]', 0], [A, '[3PLAYERS-V]', 1]]) {
+    head.push(sec);
+    DATA[t].players.forEach((p, i) => {
+      const base = (p.r || '').replace(/[12]$/, ''), isL = libSet(t).has(p.n), zones = [1, 2, 3, 4, 5].map(k =>
+        setNumbers[t] && setNumbers[t][p.n] && setNumbers[t][p.n][k] ? setNumbers[t][p.n][k] : (isL && starts[k] ? '*' : ''));
+      const cogn = (p.c || '').toUpperCase();
+      // campi: 1 numero, 3..7 zona di partenza nei set, 8 codice, 9 cognome, 10 nome, 12 L, 13 ruolo (src/dvw.py)
+      head.push([idx, p.n, i + 1, ...zones, `${idx}-${p.n}`, cogn, '', '', isL ? 'L' : '', DVW_ROLE[base] ?? '', '', '', '', '', '', '', '', '', ''].join(';'));
+    });
+  }
+  head.push('[3ATTACKCOMBINATION]', '[3SETTERCALL]', '[3WINNINGSYMBOLS]', '[3RESERVE]', '[3VIDEO]', '[3SCOUT]');
+  return head.concat(lines).join('\r\n') + '\r\n';
+}
+function exportDvw() {
+  const text = buildDvw();
+  const file = `${fileSafe($('mockTitle').textContent)} (scout${S.sets && S.sets.length ? ` ${S.sets.length + (S.rallies.some(r => (r.set || 1) === (S.setNo || 1)) ? 1 : 0)} set` : ''}).dvw`;
+  shareFile(file, cp1252(text), 'application/octet-stream');
+}
+function exportCodes() {
   const lines = [];
   // una riga per codice, con il minuto del video (secondi) dopo una tabulazione: servirà per il .dvw
   let prevSet = null;
@@ -1206,7 +1313,7 @@ $('export').onclick = () => {
     prevSet = r.set || 1;
     for (const a of withBase(r.actions, r.base)) if (!a.note) lines.push(a.code + (a.vt != null ? '\t' + a.vt : '')); lines.push(`${r.winner}p${two(r.score['*'])}:${two(r.score.a)}`); }
   if (prevSet != null && (S.sets || []).some(x => x.n === prevSet)) lines.push(`**${prevSet}set`);
-  shareFile(`codici ${fileSafe($('mockTitle').textContent)}.txt`, lines.join('\n'), 'text/plain'); };
+  shareFile(`codici ${fileSafe($('mockTitle').textContent)}.txt`, lines.join('\n'), 'text/plain'); }
 
 // ---------------------------------------------------------------- taratura del campo e sigle sul video
 // Campo: x 0..9 da sinistra a destra come si vede nel video, y 0..18 dal fondo vicino alla telecamera; rete a y = 9.
@@ -2422,7 +2529,7 @@ async function openScouts() {
     ${list.length ? `<div class="slist">${list.map(item).join('')}</div>` : '<div class="hint">Nessuno scout salvato. Lo scout si salva da solo a ogni tocco: se chiudi l\'app, lo ritrovi qui.</div>'}
     <div class="hint">Riprendendo uno scout su un video da file, l'app ti chiede di riscegliere lo stesso video.</div>
     <div class="lab">Copia di sicurezza</div>
-    <div class="chips"><button class="chip" data-backup="out">Esporta tutto</button><button class="chip" data-backup="in">Importa…</button>
+    <div class="chips"><button class="chip" data-backup="out">Esporta tutto</button><button class="chip" data-backup="codes">Codici (.txt)</button><button class="chip" data-backup="in">Importa…</button>
       <span class="hint">un file con scout, tarature, partite, schieramenti e preferenze: per non perdere niente o per passare a un altro iPad / browser</span></div>
     <div class="chips"><span class="grow"></span>${VSRC ? '<button class="chip" id="scoutsClose" style="padding:10px 18px">Chiudi</button>' : ''}</div>`;
   $('scoutsBox')._list = list;
@@ -2455,6 +2562,7 @@ $('scoutsBox').addEventListener('click', async e => {
     if (r.key === SCOUT_KEY) { SCOUT_KEY = videoKey(); S = freshState(); history = []; future = []; if (MATCHES[videoKey()]) applyMatch(MATCHES[videoKey()]); render(); }
     return openScouts();
   }
+  if (b.dataset.backup === 'codes') return exportCodes();
   if (b.dataset.backup === 'out') return shareFile(`scout copia ${new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16).replace('T', ' ').replace(':', '.')}.json`, backupText, 'application/json');
   if (b.dataset.backup === 'in') return $('importIn').click();
 });
