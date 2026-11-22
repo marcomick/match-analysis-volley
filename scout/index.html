@@ -2291,11 +2291,26 @@ const fileSafe = x => (x || 'scout').replace(/[\\/:*?"<>|]+/g, ' ').trim();
 const when = ms => new Date(ms).toLocaleString('it-IT', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'});
 const mmssv = v => v == null ? '' : `${Math.floor(v / 60)}:${String(Math.floor(v % 60)).padStart(2, '0')}`;
 
+// minuto del video da salvare: finché il video ripreso non è partito (YouTube parte solo col suo ▶︎) resta quello
+// da cui riprendere, non lo 0 del lettore fermo
+let resumeVt = 0;
+function curVt(old) {
+  if (pendingSeek != null) return Math.round(pendingSeek * 10) / 10;
+  if (YTP && !ytStarted) return resumeVt;
+  return Math.round((video.currentTime || 0) * 10) / 10;
+}
+// da dove riprendere: il minuto salvato o, se è più avanti, quello dell'ultima azione segnata
+function resumeAt(rec) {
+  let last = 0;
+  for (const r of (rec.S && rec.S.rallies) || []) for (const a of r.actions || []) if (a.vt > last) last = a.vt;
+  for (const a of (rec.S && rec.S.rally) || []) if (a.vt > last) last = a.vt;
+  return Math.max(0, Math.max(rec.vt || 0, last) - 2);
+}
 function scoutRecord(old) {
   const vk = videoKey(), m = CUR_MATCH;
   return {key:SCOUT_KEY, videoKey:vk, title:m ? m.title : $('mockTitle').textContent, set:m && m.ref ? m.ref.set : null,
           created:(old && old.created) || Date.now(), updated:Date.now(), src:VSRC, match:m,
-          S, history:history.slice(-UNDO_KEEP), taps, vt:Math.round((video.currentTime || 0) * 10) / 10};
+          S, history:history.slice(-UNDO_KEEP), taps, vt:curVt(old)};
 }
 let lastCreated = {};
 function scheduleSave() {
@@ -2351,7 +2366,7 @@ function restoreScout(rec) {
   if (rec.match) { MATCHES[vk] = rec.match; save('scoutMockupMatches', MATCHES); applyMatch(rec.match); }
   S = rec.S; history = rec.history || []; future = []; const migrated = migrateSets(S); taps = rec.taps || 0; firstTapAt = null; SCOUT_KEY = rec.key; lastCreated[rec.key] = rec.created;
   $('matchModal').classList.add('hidden'); ME = null;
-  const at = Math.max(0, (rec.vt || 0) - 2);
+  const at = resumeAt(rec); resumeVt = at;
   if (YTP) pendingSeek = at; else if (videoEl.readyState >= 1) videoEl.currentTime = at; else pendingSeek = at;
   video.pause(); render();
   toast(`Scout ripreso: ${S.setNo || 1}° set, ${S.score['*']}-${S.score.a}, ${S.rallies.length} scambi${migrated ? ` · set chiusi: ${S.sets.map(x => x.score['*'] + '-' + x.score.a).join(', ')}` : ''} · video a ${mmssv(at)}`, '#1d4d2c');
@@ -2404,7 +2419,7 @@ $('scoutsBox').addEventListener('click', async e => {
     const r = list[Number(b.dataset.resume)];
     if (!r.src) return toast('Questo scout non ha il video registrato');
     resumeWanted = r;
-    if (r.src.kind === 'yt') { $('scoutsModal').classList.add('hidden'); return loadYouTube(r.src.url, Math.max(0, (r.vt || 0) - 2)); }
+    if (r.src.kind === 'yt') { $('scoutsModal').classList.add('hidden'); return loadYouTube(r.src.url, resumeAt(r)); }
     if (r.src.kind === 'url') return playUrl(r.src.src);
     toast(`Scegli il video “${r.src.name}”`, '#1d4d2c');
     return $('file').click();
