@@ -241,6 +241,9 @@ def _mark_rigori(actions):
     intervento che rispedisce di là una palla appena toccata dall'avversario);
     prima lo segnava come attacco punto, e quei rigori restano attacchi
     (decisione dell'utente, 2026-11-02).
+    Dal 2026-11-22 (decisione dell'utente) il rigore può anche non fare punto: ogni
+    muro subito dopo la R/ o D/ dell'altra squadra è un rigore, con il suo voto
+    (# punto, - difeso dagli altri e si continua, = fuori o in rete, / invasione).
     Per l'utente non è un muro punto (2026-11-09): il Tipo diventa 'rigore',
     così esce da tutti i conteggi del muro (muri punto, Block Monster, KPI) e
     compare a parte come "Rigori" (punti per causa, tabellini, Rigoristi);
@@ -248,7 +251,7 @@ def _mark_rigori(actions):
     righe; il codice originale resta in 'Codice'.
     """
     actions["Rigore"] = False
-    for i in actions.index[(actions["Tipo"] == "muro") & (actions["Voto"] == "#")]:
+    for i in actions.index[actions["Tipo"] == "muro"]:
         j = previous_touch(actions, i)
         if (j is not None and actions.at[j, "squadra"] != actions.at[i, "squadra"]
                 and actions.at[j, "Tipo"] in ("ricezione", "difesa") and actions.at[j, "Voto"] == "/"):

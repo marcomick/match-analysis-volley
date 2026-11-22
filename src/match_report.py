@@ -49,7 +49,7 @@ def _lost_point(df):
     non recuperate), attacco murato ('/') e — a differenza dell'app — anche
     l'errore di muro ('/'), che va sempre contato (indicazione dell'utente)."""
     voto = df["Voto"].astype(str)
-    return (voto == "=") | ((df["Tipo"].isin(["attacco", "muro"])) & (voto == "/"))
+    return (voto == "=") | ((df["Tipo"].isin(["attacco", "muro", "rigore"])) & (voto == "/"))
 
 
 def load_report_source(file_path, team=None):
@@ -195,7 +195,7 @@ def player_table_from_df(df, generici_pt, generici_err):
             "contr_eff": eff(contr_att, "attacco"), "contr_tot": len(contr_att) or None,
             "fb_eff": eff(fb_att, "attacco"), "fb_tot": len(fb_att) or None,
             "muro_pt": int((muro["Voto"] == "#").sum()) if len(muro) else None,
-            "rigori": int((sub["Tipo"] == "rigore").sum()) or None,
+            "rigori": int(((sub["Tipo"] == "rigore") & (sub["Voto"] == "#")).sum()) or None,
             # errori per fondamentale (le stesse voci di "err", error_mask)
             "err_bat": int((bat["Voto"] == "=").sum()), "err_att": int((att["Voto"] == "=").sum()),
             "err_alz": int(((sub["Tipo"] == "alzata") & (sub["Voto"] == "=")).sum()),
@@ -296,7 +296,7 @@ def set_kpis(team_df):
                 "Attacchi FB": int((sub_fb["Tipo"] == "attacco").sum()),
                 "Muri": int((sub["Tipo"] == "muro").sum()),
                 "Muri punto": int(((sub["Tipo"] == "muro") & (sub["Voto"] == "#")).sum()),
-                RIGORI: int((sub["Tipo"] == "rigore").sum()),
+                RIGORI: int(((sub["Tipo"] == "rigore") & (sub["Voto"] == "#")).sum()),
             }
             rows += [{"entita": entity, "set": label, "kpi": k, "value": v} for k, v in values.items()]
     return pd.DataFrame(rows)

@@ -83,11 +83,17 @@ def _scored_actions(source, cfg):
     # "rigore" (muro punto sulla loro ricezione o difesa rimandata di qua, src.dvw._mark_rigori):
     # nel punteggio vale come un attacco punto e sta nella colonna Attacco (indicazione dell'utente, 2026-11-09)
     rigori = df.index[df["Tipo"] == "rigore"]
+    rig_pt = df.index[(df["Tipo"] == "rigore") & (df["Voto"] == "#")]
+    rig_err = df.index[(df["Tipo"] == "rigore") & df["Voto"].isin(["=", "/"])]
     df.loc[rigori, "Tipo"] = "attacco"
+    # rigore sbagliato (fuori, in rete o invasione) come un attacco sbagliato; difeso = attacco in gioco (dal 2026-11-22)
+    df.loc[rig_err, "Voto"] = "="
     df["valore"] = [cfg["azioni"].get(t, {}).get(v, 0.0) for t, v in zip(df["Tipo"], df["Voto"])]
     df["voce"] = [ACTION_DESCRIPTIONS.get(t, {}).get(v) or f"{FUNDAMENTAL_LABELS[t]} con voto {v} ({GRADE_CODES[t]}{v})"
                   for t, v in zip(df["Tipo"], df["Voto"])]
-    df.loc[rigori, "voce"] = RIGORE_LABEL
+    df.loc[rig_pt, "voce"] = RIGORE_LABEL
+    df.loc[rig_err, "voce"] = RIGORE_ERR_LABEL
+    df.loc[rigori.difference(rig_pt).difference(rig_err), "voce"] = RIGORE_PLAY_LABEL
     so, fb, _ = separate_attack_types(noi, rec_vote=SETTER_SITUATION_GRADES)
     # attacco per situazione: palla alta (tipo di palla rilevato o stimato in lettura,
     # src.dvw._infer_ball_type) prima di tutto, poi free ball, poi side-out da R# o R+
@@ -419,6 +425,8 @@ BACK_ROW_LABEL = "Attacco punto da 2ª linea: in più"
 SET_POINT_LABEL = "Alzata # o + che porta a punto: in più"
 PREMIO_LABEL = "Miglior ricevitore della partita: premio meno i punti fatti in attacco, battuta e muro"
 RIGORE_LABEL = '"Rigore": punto sulla loro ricezione o difesa rimandata di qua (M# dopo R/ o D/), come un attacco punto'
+RIGORE_ERR_LABEL = '"Rigore" sbagliato: fuori, in rete o invasione (M=, M/ dopo R/ o D/), come un attacco sbagliato'
+RIGORE_PLAY_LABEL = '"Rigore" difeso dagli altri (M- dopo R/ o D/), come un attacco rimasto in gioco'
 
 
 def player_mvp_detail(source, giocatore, config=None):
@@ -469,6 +477,7 @@ def scoring_rules(config=None):
     if cfg.get("attacco_seconda_linea"):
         items.append((cfg["attacco_seconda_linea"], BACK_ROW_LABEL, "Attacco"))
     items.append((cfg["azioni"]["attacco"]["#"], RIGORE_LABEL, "Attacco"))
+    items.append((cfg["azioni"]["attacco"]["="], RIGORE_ERR_LABEL, "Attacco"))
     if cfg.get("alzata_a_punto"):
         items.append((cfg["alzata_a_punto"], SET_POINT_LABEL, "Alzata"))
     for code, value in cfg.get("errore_battuta_per_tipo", {}).items():

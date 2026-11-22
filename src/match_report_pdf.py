@@ -768,7 +768,7 @@ RECEIVE_COLS, RECEIVE_HEADER = ["tot", "hash", "plus", "ex", "neg", "err", "eff"
 KPI_TABLE_WIDTHS = [15, 6, 5, 5, 6, 7.5, 8]  # mm: fondamentale e le sei colonne (nessuna cella deve andare a capo)
 # caselle senza senso per quel fondamentale: grigie con una sbarra rossa
 NOT_APPLICABLE = {
-    "battuta": {"mur"}, "muro": {"mur", "eff"}, "rigori": {"err", "mur", "eff"},
+    "battuta": {"mur"}, "muro": {"mur", "eff"}, "rigori": {"mur", "eff"},
     "alzata": {"tot", "pt", "mur", "eff"}, "totale": {"tot", "eff"}, "difesa": {"eff"},
 }
 NA_FILL = (229, 231, 235)

@@ -71,7 +71,7 @@ def _decisive(a, winner, first_idx):
             prev = a[(a.index < k) & (a["Tipo"] == "attacco") & (a["squadra"] == loser)]
             j = prev.index[-1] if len(prev) else None
             return ("mur_1" if j is not None and j == first_idx else "mur_s"), loser
-        if t == "rigore" and s == winner:
+        if t == "rigore" and s == winner and v == "#":
             # "rigore" (muro punto sulla loro ricezione o difesa /): non è un muro punto; per l'app è
             # un punto regalato da chi ha rimandato la palla di qua
             return "altro", loser

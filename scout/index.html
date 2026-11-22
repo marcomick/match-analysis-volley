@@ -29,7 +29,7 @@
   body { -webkit-user-select:none; user-select:none; overflow:hidden; }
   button { font:inherit; color:inherit; border:0; cursor:pointer; background:var(--card2); border-radius:10px; touch-action:manipulation; }
   button:disabled { opacity:.25; cursor:default; }
-  .app { display:grid; grid-template-columns:1fr 330px; grid-template-rows:auto 1fr; height:100vh; height:100dvh; }   /* dvh: altezza visibile vera su iPad */
+  .app { display:grid; grid-template-columns:minmax(0,1fr) 330px; grid-template-rows:auto 1fr; height:100vh; height:100dvh; }   /* dvh: altezza visibile vera su iPad */
   .mock { grid-column:1/3; background:#161a26; color:var(--muted); font-size:12px; padding:5px 10px;
     border-bottom:1px solid var(--line); display:flex; gap:10px; align-items:center; }
   .mock b { color:#fff; font-size:13px; }
@@ -44,7 +44,7 @@
   .sitem .sd { font-size:12px; color:var(--muted); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .sitem button { padding:10px 14px; font-size:14px; } .sitem .go { background:#3b5bdb; } .sitem .del { background:#3e1c1c; }
   .bigb { padding:12px 16px; font-size:15px; }
-  .left { display:flex; flex-direction:column; min-height:0; padding:8px; gap:8px; }
+  .left { display:flex; flex-direction:column; min-height:0; min-width:0; padding:8px; gap:8px; }
   .right { border-left:1px solid var(--line); display:flex; flex-direction:column; min-height:0; }
 
   /* barra punteggio */
@@ -56,11 +56,14 @@
   .srv { display:inline-block; width:9px; height:9px; border-radius:50%; background:var(--warn); }
   .grow { flex:1; }
   .ctl { padding:8px 10px; font-size:14px; white-space:nowrap; }
-  .score { white-space:nowrap; }
+  .score { white-space:nowrap; min-width:0; flex:0 1 auto; }
+  /* nomi lunghi (es. Valsugana Panizzo, Top Five Tarquinia): si accorciano, la riga non esce dallo schermo */
+  .bar { min-width:0; } .bar .ctl { flex:0 0 auto; }
+  .score .tm { min-width:0; max-width:11em; overflow:hidden; text-overflow:ellipsis; flex:0 1 auto; }
   .ctl.on { background:#3d4560; outline:2px solid #6b7aa8; }
   /* iPad da 11" (1180-1194 px in orizzontale): la riga dei comandi deve stare nella colonna del video */
   @media (max-width:1250px) { .bar { gap:5px; } .ctl { padding:8px 7px; font-size:13px; } #play { min-width:70px !important; }
-    .score { font-size:20px; gap:6px; } }
+    .score { font-size:20px; gap:6px; } .score .tm { max-width:8.5em; font-size:14px; } }
 
   /* video */
   .vwrap { position:relative; background:#000; border-radius:10px; overflow:hidden; flex:1 1 auto; min-height:180px; touch-action:none; }
@@ -137,6 +140,10 @@
   .act .d { color:var(--muted); font-size:12px; }
   .act.auto code { color:#9aa0b0; }
   .tools { padding:8px; border-top:1px solid var(--line); display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
+  #corrBtn { grid-column:1/4; }
+  .crow { display:flex; align-items:center; gap:10px; flex-wrap:wrap; background:var(--card2); border-radius:10px; padding:8px 10px; }
+  .crow { flex-wrap:nowrap; } .crow .cn { min-width:110px; font-weight:700; } .crow button { padding:10px 14px; font-size:15px; background:#2d3346; }
+  .crow .cv { min-width:44px; text-align:center; font-size:18px; font-weight:800; } .crow .cd { color:var(--muted); font-size:12px; }
   .tools button { padding:9px 6px; font-size:13px; }
 
   .toast { position:fixed; left:50%; top:60px; transform:translateX(-50%); background:#5b1a1a; padding:10px 16px;
@@ -187,6 +194,10 @@
   .opop button { min-width:44px; height:44px; font-size:20px; font-weight:800; background:rgba(40,46,62,.9); color:#fff; padding:0 6px; }
   .opop button.tip { font-size:12px; font-weight:700; }
   .opop button.tip.sel { outline:2px solid var(--warn); background:rgba(90,80,20,.95); }
+  /* "rigore": quattro esiti (punto, difeso, fuori/rete, invasione) prima dei voti della palla libera */
+  .opop .rgrow { display:flex; gap:4px; align-items:center; padding-right:6px; margin-right:2px; border-right:1px solid rgba(255,255,255,.3); }
+  .opop .rgrow span { font-size:11px; font-weight:700; opacity:.85; }
+  .opop button.rg.pos, .chip.rg.pos { background:rgba(21,128,61,.9); } .opop button.rg.neg, .chip.rg.neg { background:rgba(185,28,28,.8); }
   .app.vonly .input { display:none; }
   /* lontano dal bordo basso dello schermo: lì Safari prende il tocco per mostrare la sua barra */
   .app.fs .opills, .app.vonly .opills { bottom:38px; }
@@ -309,6 +320,7 @@
       <button id="subBtn">Cambio</button>
       <button id="arrBtn">Schieramento</button>
       <button id="export">Scarica codici</button>
+      <button id="corrBtn">Correggi battuta / rotazione</button>
     </div>
   </div>
 </div>
@@ -317,6 +329,7 @@
 <div class="modal hidden" id="matchModal"><div class="box" id="matchBox"></div></div>
 <div class="modal hidden" id="arrModal"><div class="box" id="arrBox"></div></div>
 <div class="modal hidden" id="setModal"><div class="box" id="setBox"></div></div>
+<div class="modal hidden" id="corrModal"><div class="box" id="corrBox"></div></div>
 <div class="modal hidden" id="scoutsModal"><div class="box" id="scoutsBox"></div></div>
 <input id="importIn" type="file" accept=".json,application/json" class="hidden">
 <div id="tut" class="hidden"><div class="tut-block"></div><div class="tut-hole" id="tutHole"></div><div class="tut-card" id="tutCard"></div></div>
@@ -541,7 +554,7 @@ function doSub(t, out, inn) {
   return true;
 }
 function renderSubBanner() {
-  const due = S.phase.k === 'serve' && !S.rally.some(a => a.skill !== 'c' && !/c\d/.test(a.code)) ? refSubsDue() : [];
+  const due = S.phase.k === 'serve' && !S.rally.some(a => !a.note && a.skill !== 'c' && !/c\d/.test(a.code)) ? refSubsDue() : [];
   const el = $('subBanner'); if (!el) return;
   if (!due.length) { el.classList.add('hidden'); return; }
   el.innerHTML = `<span>↔ Dal referto: ${due.map(d => `<b>${DATA[d.t].name}</b> entra ${d.e.in} ${name(d.t, d.e.in)} per ${d.e.out} ${name(d.t, d.e.out)}`).join(' · ')}</span>
@@ -618,7 +631,7 @@ function onGrade(g) {
     push(st, server, 'S', type, SERVE_FROM_REC[g], '', `${name(st,server)} · battuta (dalla ricezione)`, true);
     push(rt, sel.receiver, 'R', type, g, '', `${name(rt,sel.receiver)} · ricezione`);
     if (g === '=') endRally(st, 'ace');
-    else if (g === '/') { S.phase = {k:'attack', t:st, over:true}; S.sel = {}; }
+    else if (g === '/') { S.phase = {k:'over', t:st, from:'R'}; S.sel = {}; }     // palla di là: "rigore" o palla libera?
     else { S.phase = {k:'attack', t:rt, so:true}; S.sel = {}; }
     return render();
   }
@@ -661,13 +674,26 @@ function onGrade(g) {
       const fb = !!sel.freeball || ph.freeball;
       push(t, sel.player, fb ? 'F' : 'D', fb ? 'H' : type, g, '', `${name(t,sel.player)} · ${fb ? 'palla libera' : 'difesa'}`);
       if (g === '=') endRally(other(t), fb ? 'palla libera sbagliata' : 'errore in difesa');
-      else if (g === '/') { S.phase = {k:'defense', t:other(t), type:'H', freeball:true}; S.sel = {}; }
+      else if (g === '/') { S.phase = {k:'over', t:other(t), from:'D'}; S.sel = {}; }
       else { S.phase = {k:'attack', t}; S.sel = {}; }
     }
     return render();
   }
+  if (ph.k === 'over') {          // voto della palla libera di chi si è trovato la palla di qua
+    const t = ph.t;
+    if (sel.player == null) return toast('Prima tocca chi ha preso la palla (poi "rigore" o il voto della palla libera)');
+    snapshot();
+    push(t, sel.player, 'F', 'H', g, '', `${name(t,sel.player)} · palla libera (dopo ${ph.from === 'R' ? 'ricezione' : 'difesa'} / degli altri)`);
+    if (g === '=') endRally(other(t), 'palla libera sbagliata');
+    else if (g === '/') { S.phase = {k:'over', t:other(t), from:'D'}; S.sel = {}; }
+    else { S.phase = {k:'attack', t}; S.sel = {}; }
+    return render();
+  }
 }
 
+const RIGORE_OUT = {'#':['Punto','punto'], '-':['Difeso','difeso'], '=':['Fuori / rete','fuori o in rete'], '/':['Invasione','invasione']};
+const rigoreBtns = (dis, cls) => Object.entries(RIGORE_OUT).map(([g, o]) =>
+  `<button class="${cls} rg${g === '#' ? ' pos' : g === '-' ? '' : ' neg'}" data-k="rigore" data-v="${g}" ${dis ? 'disabled' : ''}>${o[0]}</button>`).join('');
 function onPick(kind, val, extra) {
   tap();
   const ph = S.phase;
@@ -691,6 +717,19 @@ function onPick(kind, val, extra) {
     S.sel = {};
   }
   if (kind === 'freeball') S.sel.freeball = !S.sel.freeball;
+  // "rigore": la palla rimandata di qua da ricezione o difesa / colpita al volo sopra la rete. Nel .dvw è un muro subito
+  // dopo la R/ o D/ degli altri, come chiede la federazione, con il suo esito (decisione dell'utente del 2026-11-22):
+  // B# punto, B- difeso dagli altri (si continua con la loro difesa), B= fuori o in rete, B/ invasione.
+  // La pipeline lo riconosce come "rigore" (src.dvw._mark_rigori) e non lo conta mai nel muro.
+  if (kind === 'rigore') {
+    if (S.sel.player == null) { toast('Prima tocca chi ha fatto il "rigore"'); return render(); }
+    const t = ph.t, n = S.sel.player, g = val, o = RIGORE_OUT[g];
+    snapshot(); push(t, n, 'B', 'H', g, '', `${name(t, n)} · "rigore" ${o[1]}`);
+    if (g === '#') endRally(t, '"rigore"');
+    else if (g === '-') { S.phase = {k:'defense', t:other(t), type:'H'}; S.sel = {}; }
+    else endRally(other(t), `"rigore" ${o[1]}`);
+  }
+  if (kind === 'overAttack') { S.phase = {k:'attack', t:ph.t, over:true}; S.sel = {}; }   // attaccata con una sigla (al volo dopo l'alzata)
   if (kind === 'player') { S.sel.player = val; S.sel.mode = extra; S.sel.fromOvl = true; }
   if (kind === 'overNoAttack') { // palla rimandata di là senza attacco = palla libera per gli altri
     snapshot();
@@ -811,6 +850,16 @@ function render() {
     html = `<div style="display:grid;grid-template-columns:${dif ? '1fr 1.6fr' : '1fr'};gap:10px">${muro}${dif}</div>${last}`;
     gctx = 'none';
   }
+  if (ph.k === 'over') {
+    const t = ph.t, has = sel.player != null;
+    prompt = `<span class="tm ${teamCls(t)}">Palla di qua ${DATA[t].name}</span>
+              <span class="hint">${ph.from === 'R' ? 'ricezione' : 'difesa'} rimandata di là · tocca chi la prende, poi <b>"rigore"</b> o il voto della palla libera${viewNote(t)}</span>`;
+    html = courtHtml(t, 'player', 'O', n => sel.player === n) +
+      `<div class="chips"><span class="lab">"Rigore"</span>${rigoreBtns(!has, 'chip')}
+         <span class="hint">${has ? `${name(t, sel.player)}: oppure il voto della <b>palla libera</b> qui sotto` : 'prima il giocatore'}</span><span class="grow"></span>
+         <button class="chip" data-k="overAttack" data-v="1">Attaccata con una sigla</button></div>`;
+    gctx = has ? 'D' : 'none';
+  }
   if (ph.k === 'setby') {
     const t = ph.t, setter = S.pos[t].find(x => role(t,x) === 'P');
     prompt = `<span class="tm ${teamCls(t)}">Alzata ${ph.g === '-' ? 'negativa' : 'sbagliata'} ${DATA[t].name}</span>
@@ -828,7 +877,7 @@ function render() {
     return `<button class="g ${cls}" data-g="${g}" ${dis?'disabled':''}>${g}<small>${txt[g]||''}</small></button>`; }).join('');
 
   // registro
-  const actRow = a => `<div class="act ${a.auto?'auto':''}"><code>${a.code}</code><span class="d">${a.desc}${a.auto?' · automatica':''}</span></div>`;
+  const actRow = a => a.note ? `<div class="act auto"><code>✎</code><span class="d">${a.desc}</span></div>` : `<div class="act ${a.auto?'auto':''}"><code>${a.code}</code><span class="d">${a.desc}${a.auto?' · automatica':''}</span></div>`;
   let log = `<div class="rally cur"><div class="rh"><span>Scambio in corso</span><span>${S.score['*']}-${S.score.a}</span></div>
              ${S.rally.length ? withBase(S.rally, S.rallyBase).map(actRow).join('') : '<div class="d" style="color:var(--muted)">—</div>'}</div>`;
   const mmss = v => v == null ? '' : `${Math.floor(v / 60)}:${String(Math.floor(v % 60)).padStart(2, '0')}`;
@@ -992,7 +1041,7 @@ $('log').addEventListener('click', e => { const h = e.target.closest('[data-vt]'
 $('export').onclick = () => {
   const lines = [];
   // una riga per codice, con il minuto del video (secondi) dopo una tabulazione: servirà per il .dvw
-  for (const r of [...S.rallies].reverse()) { for (const a of withBase(r.actions, r.base)) lines.push(a.code + (a.vt != null ? '\t' + a.vt : '')); lines.push(`${r.winner}p${two(r.score['*'])}:${two(r.score.a)}`); }
+  for (const r of [...S.rallies].reverse()) { for (const a of withBase(r.actions, r.base)) if (!a.note) lines.push(a.code + (a.vt != null ? '\t' + a.vt : '')); lines.push(`${r.winner}p${two(r.score['*'])}:${two(r.score.a)}`); }
   shareFile(`codici ${fileSafe($('mockTitle').textContent)}.txt`, lines.join('\n'), 'text/plain'); };
 
 // ---------------------------------------------------------------- taratura del campo e sigle sul video
@@ -1407,6 +1456,12 @@ function ovlHtml(g, vr) {
     pill('⇄ Altra squadra', 'data-k="switch" data-v="1"');
     if (sel.player != null) popHtml = gradePop(sel.mode === 'B' ? 'B' : 'D', sel.mode === 'B' ? '' :
       `<button class="tip ${(sel.freeball || ph.freeball) ? 'sel' : ''}" data-k="freeball" data-v="1">palla libera</button>`);
+  } else if (ph.k === 'over') {
+    const t = ph.t, z = layoutRally(t);
+    head = `<span class="tm ${teamCls(t)}">Palla di qua</span>${DATA[t].name} · chi la prende? poi "rigore" (com'è andato) o palla libera`;
+    court(t, z, n => `data-k="player" data-v="${n}" data-x="B"`, n => `data-k="player" data-v="${n}" data-x="D"`, n => sel.player === n);
+    pill('Attaccata con una sigla', 'data-k="overAttack" data-v="1"');
+    if (sel.player != null) popHtml = `<div class="rgrow"><span>"rigore"</span>${rigoreBtns(false, 'tip')}</div>` + gradePop('D');
   } else if (ph.k === 'setby') {
     const t = ph.t, z = layoutRally(t), setter = S.pos[t].find(x => role(t,x) === 'P');
     head = `<span class="tm ${teamCls(t)}">Alzata ${ph.g === '-' ? 'negativa' : 'sbagliata'}</span>chi ha alzato?`;
@@ -1978,7 +2033,7 @@ function renderFs() {
     <button data-act="play">${video.paused ? '▶︎' : '❚❚'}</button><button data-act="fwd">${$('fwd').textContent}</button><span class="sep"></span>
     <span class="hint">Base</span>${CALLS.map(c => `<button data-base="${c}" class="${tg && tg.base === c ? 'sel' : ''} ${imp === c ? 'imp' : ''}" ${tg ? '' : 'disabled'}>${c}</button>`).join('')}<span class="sep"></span>
     <button data-act="undo" style="background:#5b1a1a">↶ Annulla</button><button data-act="ptHome">+1 ${DATA[H].name}</button><button data-act="ptAway">+1 ${DATA[A].name}</button>
-    <button data-act="subBtn">Cambio</button><button data-act="arrBtn">Schier.</button><button data-act="calBtn">Taratura</button><button data-act="matchBtn">Partita</button><button data-act="pipBtn" class="${PREFS.pip ? 'sel' : ''}">Ritardo</button>
+    <button data-act="subBtn">Cambio</button><button data-act="corrBtn">Correggi</button><button data-act="arrBtn">Schier.</button><button data-act="calBtn">Taratura</button><button data-act="matchBtn">Partita</button><button data-act="pipBtn" class="${PREFS.pip ? 'sel' : ''}">Ritardo</button>
     <button data-act="exitFs" style="margin-left:auto">Esci ⛶</button>`;
   document.documentElement.style.setProperty('--fsh', ($('fsbar').offsetHeight + 6) + 'px');
 }
@@ -2002,6 +2057,38 @@ function setFs(on) {
 }
 $('fsBtn').onclick = () => setFs(true);
 
+
+// ---------------------------------------------------------------- correzioni: chi batte, rotazione, punteggio
+// Per rimettere a posto lo stato quando si è perso uno scambio (punto aggiunto a mano, battuta o rotazione sbagliate).
+// Ogni correzione si annulla con ↶ e lascia una nota (✎) nel registro, che non finisce nel file dei codici.
+function corrNote(t, desc) { S.rally.push({t, n:null, note:true, code:'', desc:'correzione: ' + desc, auto:true, vt:Math.round(video.currentTime * 10) / 10}); }
+function renderCorr() {
+  const busy = S.rally.some(a => !a.note && a.skill !== 'c' && !/c\d/.test(a.code));
+  const row = t => { const srv = S.pos[t][0];
+    return `<div class="crow"><span class="cn"><span class="tm ${teamCls(t)}">${DATA[t].name}</span></span>
+      <button data-rot="${t}:-1" ${busy ? 'disabled' : ''}>◀ indietro</button><span class="cv">P${setterZone(t)}</span><button data-rot="${t}:1" ${busy ? 'disabled' : ''}>avanti ▶</button>
+      <span class="cd">in zona 1:<br>${srv} ${name(t, srv)}</span>
+      <span class="cd" style="margin-left:auto">punti</span><button data-pts="${t}:-1" ${busy ? 'disabled' : ''}>−1</button><span class="cv">${S.score[t]}</span><button data-pts="${t}:1" ${busy ? 'disabled' : ''}>+1</button></div>`; };
+  $('corrBox').innerHTML = `<h3>Correggi battuta, rotazione e punteggio</h3>
+    <div class="hint">Per quando ti sei perso uno scambio. <b>Punto …</b> nella colonna a destra assegna già lo scambio con rotazione e battuta, come in partita; qui sistemi a mano quello che non torna. "Avanti" = la rotazione che fa la squadra quando conquista il cambio palla. Il punteggio qui cambia senza ruotare nessuno.</div>
+    ${busy ? '<div class="hint" style="color:#fbbf24">C\'è uno scambio in corso: chiudilo o annullalo, poi correggi.</div>' : ''}
+    <div class="lab">Chi batte</div>
+    <div class="chips">${['*', 'a'].map(t => `<button class="chip bigb ${S.serving === t ? 'sel' : ''}" data-srv="${t}" ${busy ? 'disabled' : ''}>${DATA[t].name}</button>`).join('')}</div>
+    <div class="lab">Rotazione e punteggio</div>${row('*')}${row('a')}
+    <div class="chips"><span class="grow"></span><button class="chip" id="corrClose" style="padding:10px 18px">Fatto</button></div>`;
+}
+$('corrBtn').onclick = () => { video.pause(); renderCorr(); $('corrModal').classList.remove('hidden'); };
+$('corrBox').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b || b.disabled) return;
+  if (b.id === 'corrClose') { $('corrModal').classList.add('hidden'); return render(); }
+  if (b.dataset.srv) { const t = b.dataset.srv; if (S.serving !== t) { snapshot(); S.serving = t; S.phase = {k:'serve'}; S.sel = {}; corrNote(t, `batte ${DATA[t].name}`); } }
+  if (b.dataset.rot) { const [t, d] = b.dataset.rot.split(':'), p = S.pos[t]; snapshot();
+    if (d === '1') p.push(p.shift()); else p.unshift(p.pop());
+    S.sel = {}; corrNote(t, `${DATA[t].name} ruota ${d === '1' ? 'avanti' : 'indietro'} (P${setterZone(t)})`); }
+  if (b.dataset.pts) { const [t, d] = b.dataset.pts.split(':'), v = S.score[t] + Number(d);
+    if (v >= 0) { snapshot(); S.score[t] = v; corrNote(t, `punteggio ${DATA['*'].name} ${S.score['*']} – ${S.score.a} ${DATA.a.name}`); } }
+  renderCorr(); render();
+});
 // ---------------------------------------------------------------- salvataggio dello scout e ripresa
 // Uno scout per video, salvato in IndexedDB a ogni tocco (dopo ogni ridisegno, con 300 ms di attesa), con la partita,
 // gli ultimi passi di annullamento e il minuto del video. I video da file vanno riscelti a ogni ripresa (il browser
@@ -2229,7 +2316,7 @@ const TUT = [
   { sel:'.stats', title:'Quanto tempo ci metti',
     text:`<p><b>Tocchi per azione</b> e soprattutto <b>tempo di scout / tempo di video</b>: per il 1° set di G4 ci avevi messo circa 2×, l'obiettivo è stare sotto 1×.</p>` },
   { sel:'.tools', title:'Correggere',
-    text:`<p><b>Annulla</b> toglie l'ultimo tocco registrato. <b>Punto …</b> assegna un punto senza azione (fallo, invasione a rete). <b>Cambio</b>: chi esce e chi entra. <b>Schieramento</b>: correggi come riceve e attacca la squadra in quella rotazione, e dove difendono i giocatori (per tutta la partita). <b>Scarica codici</b>: il file di testo.</p>
+    text:`<p><b>Annulla</b> toglie l'ultimo tocco registrato. <b>Punto …</b> assegna un punto senza azione (fallo, invasione a rete). <b>Cambio</b>: chi esce e chi entra. <b>Correggi battuta / rotazione</b>: chi batte, rotazione avanti o indietro e punteggio, per quando ti sei perso uno scambio. <b>Schieramento</b>: correggi come riceve e attacca la squadra in quella rotazione, e dove difendono i giocatori (per tutta la partita). <b>Scarica codici</b>: il file di testo.</p>
           <p>Il tutorial si riapre con il pulsante <b>Tutorial</b> in alto.</p>` },
 ];
 let tutI = 0, tutSaved = null;

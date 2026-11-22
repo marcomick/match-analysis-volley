@@ -120,10 +120,12 @@ def player_kpi_table(df):
         if len(muro):
             pt, err = int((muro["Voto"] == "#").sum()), int((muro["Voto"] == "/").sum())
             rows["muro"] = {"tot": len(muro), "pt": pt, "err": err, "pe": pt - err, "eff": None}
-        # "Rigori": muri punto dopo una loro ricezione o difesa / (src.dvw._mark_rigori), a parte dal muro
-        rig = int((mine["Tipo"] == "rigore").sum())
-        if rig:
-            rows["rigori"] = {"tot": rig, "pt": rig, "err": 0, "pe": rig, "eff": None}
+        # "Rigori": muro dopo una loro ricezione o difesa / (src.dvw._mark_rigori), a parte dal muro;
+        # punto = '#', errore = '=' (fuori o in rete) o '/' (invasione), '-' difeso dagli altri
+        rig = mine[mine["Tipo"] == "rigore"]
+        if len(rig):
+            pt, err = int((rig["Voto"] == "#").sum()), int(rig["Voto"].isin(["=", "/"]).sum())
+            rows["rigori"] = {"tot": len(rig), "pt": pt, "err": err, "pe": pt - err, "eff": None}
         alz_err = int(((mine["Tipo"] == "alzata") & (mine["Voto"] == "=")).sum())
         if alz_err:
             rows["alzata"] = {"tot": None, "pt": None, "err": alz_err, "pe": -alz_err, "eff": None}

@@ -174,7 +174,7 @@ def build_rigoristi(df, ignore_list=None):
     Entra chi ne ha fatto almeno uno. Rigori segnati dalla G1 2026-2027 (prima
     l'utente li segnava come attacco punto).
     """
-    work = df[rigore_mask(df) & ~df['Cognome'].isin(ignore_list or [])]
+    work = df[rigore_mask(df) & df['Voto'].eq('#') & ~df['Cognome'].isin(ignore_list or [])]
     work = work.assign(Giocatore=work['Cognome'] + ' ' + work['Numero'].astype(str))
     counts = work.groupby('Giocatore').size().rename('#').sort_values(ascending=False, kind='stable')
     result = counts.reset_index()
