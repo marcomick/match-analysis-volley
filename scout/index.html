@@ -2330,15 +2330,29 @@ async function afterVideoChange() {
   SCOUT_KEY = vk;
   matchForVideo();
 }
+// scout salvati prima del conteggio dei set (2026-11-22): il set di ogni scambio si ricava dal punteggio, che riparte
+// da capo a ogni "Nuovo set" fatto dalla scheda della partita
+function migrateSets(st) {
+  if (!st || st.sets) return 0;
+  const chron = [...(st.rallies || [])].reverse(), sets = [], tot = sc => sc['*'] + sc.a;
+  let n = 1, prev = null;
+  for (const r of chron) {
+    if (prev && tot(r.score) <= tot(prev.score) - 1 && tot(r.score) <= 2) { sets.push({n, score:{...prev.score}}); n++; }
+    r.set = n; prev = r;
+  }
+  if (prev && tot(st.score) < tot(prev.score)) { sets.push({n, score:{...prev.score}}); n++; }   // "Nuovo set" appena fatto, 0-0
+  st.sets = sets; st.setNo = n;
+  return sets.length;
+}
 function restoreScout(rec) {
   const vk = videoKey();
   if (rec.match) { MATCHES[vk] = rec.match; save('scoutMockupMatches', MATCHES); applyMatch(rec.match); }
-  S = rec.S; history = rec.history || []; future = []; taps = rec.taps || 0; firstTapAt = null; SCOUT_KEY = rec.key; lastCreated[rec.key] = rec.created;
+  S = rec.S; history = rec.history || []; future = []; const migrated = migrateSets(S); taps = rec.taps || 0; firstTapAt = null; SCOUT_KEY = rec.key; lastCreated[rec.key] = rec.created;
   $('matchModal').classList.add('hidden'); ME = null;
   const at = Math.max(0, (rec.vt || 0) - 2);
   if (YTP) pendingSeek = at; else if (videoEl.readyState >= 1) videoEl.currentTime = at; else pendingSeek = at;
   video.pause(); render();
-  toast(`Scout ripreso: ${S.score['*']}-${S.score.a}, ${S.rallies.length} scambi · video a ${mmssv(at)}`, '#1d4d2c');
+  toast(`Scout ripreso: ${S.setNo || 1}° set, ${S.score['*']}-${S.score.a}, ${S.rallies.length} scambi${migrated ? ` · set chiusi: ${S.sets.map(x => x.score['*'] + '-' + x.score.a).join(', ')}` : ''} · video a ${mmssv(at)}`, '#1d4d2c');
 }
 
 // ---------------------------------------------------------------- pannello "Scout": nuovo, salvati, copia di sicurezza
