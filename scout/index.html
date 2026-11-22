@@ -1070,7 +1070,7 @@ function handleBtn(b) {
 // ---------------------------------------------------------------- video: tocco al centro = play/pausa, doppio tocco ai lati = salto
 // Lettore unico: file locale (<video>) oppure YouTube (IFrame API), con la stessa interfaccia.
 const videoEl = $('video');
-let YTP = null, ytKey = null, ytStarted = false;
+let YTP = null, ytKey = null, ytStarted = false, ytPreview = false;
 const video = {
   pause() { if (YTP) YTP.pauseVideo?.(); else videoEl.pause(); },
   play() { if (YTP) YTP.playVideo?.(); else videoEl.play(); },
@@ -1095,7 +1095,12 @@ function loadYouTube(url, startAt) {
     ytKey = 'yt:' + id; ytStarted = false;
     YTP = new YT.Player('ytframe', { videoId:id, width:'100%', height:'100%',
       playerVars:{playsinline:1, rel:0, modestbranding:1, ...(startAt ? {start:Math.floor(startAt)} : {})},
-      events:{ onReady:() => render(), onStateChange:e => {
+      // ripresa: il video parte un attimo senza audio e si ferma, così si posiziona e si vede il fotogramma vero invece
+      // della copertina di YouTube (se il browser non lo permette resta la copertina e il minuto vale al primo ▶︎)
+      events:{ onReady:() => { render(); if (startAt) { ytPreview = true; try { YTP.mute(); YTP.playVideo(); } catch (e) { ytPreview = false; } } },
+        onStateChange:e => {
+        if (e.data === 1 && ytPreview) { ytPreview = false; if (pendingSeek != null) { YTP.seekTo?.(pendingSeek, true); pendingSeek = null; }
+          YTP.pauseVideo(); setTimeout(() => YTP.unMute?.(), 300); }
         if (e.data === 1) { setTimeout(() => { const a = document.activeElement; if (a && a.tagName === 'IFRAME') { a.blur(); window.focus(); } }, 50);
           if (!ytStarted && pendingSeek != null) { YTP.seekTo?.(pendingSeek, true); pendingSeek = null; }
           ytStarted = true; $('play').textContent = '❚❚ Pausa'; badge(false); $('ytcap').classList.remove('hidden'); } // dal primo play i tocchi tornano nostri
