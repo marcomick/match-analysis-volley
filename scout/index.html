@@ -549,11 +549,37 @@ function refSubsDue() {
 }
 function doSub(t, out, inn) {
   const i = S.pos[t].indexOf(out); if (i < 0) return false;
+  // esce il palleggiatore: si chiede chi palleggia ora (nel doppio cambio di solito chi entra in seconda linea);
+  // finché non si risponde il ruolo P passa a chi entra al suo posto
+  S.askSetter = S.askSetter || {};
+  if (role(t, out) === 'P') S.askSetter[t] = {entered:[inn]};
+  else if (S.askSetter[t]) S.askSetter[t].entered.push(inn);
   S.pos[t][i] = inn; S.roles[t][inn] = S.roles[t][out];
   S.rally.push({t, n:inn, code:`${t}c${two(out)}:${two(inn)}`, desc:`cambio: entra ${name(t,inn)} per ${name(t,out)}`, auto:false, vt:Math.round(video.currentTime * 10) / 10});
   return true;
 }
+// chi palleggia dopo un cambio del palleggiatore: proposto chi è palleggiatore nella rosa (rientro), poi chi è entrato
+// in seconda linea (P1, P6, P5: doppio cambio), poi chi è entrato
+function setterGuess(t) {
+  const a = S.askSetter && S.askSetter[t]; if (!a) return null;
+  const on = S.pos[t], ent = a.entered.filter(n => on.includes(n));
+  return on.find(n => pl(t,n).r === 'P') ?? ent.find(n => [0, 4, 5].includes(on.indexOf(n))) ?? ent[0] ?? null;
+}
+function setOnCourtSetter(t, n) {
+  const cur = S.pos[t].find(x => role(t,x) === 'P');
+  if (cur != null && cur !== n) S.roles[t][cur] = role(t, n) || 'O';
+  S.roles[t][n] = 'P';
+  delete S.askSetter[t];
+  corrNote(t, `palleggia ${n} ${name(t, n)} (P${setterZone(t)})`);
+}
 function renderSubBanner() {
+  const el0 = $('subBanner'), ask = el0 && S.askSetter && ['*', 'a'].find(t => S.askSetter[t]);
+  if (ask) {
+    const g = setterGuess(ask), lay = n => ['P1','P2','P3','P4','P5','P6'][S.pos[ask].indexOf(n)];
+    el0.innerHTML = `<span>↔ <b>${DATA[ask].name}</b>: è uscito il palleggiatore. <b>Chi palleggia ora?</b></span>
+      ${S.pos[ask].map(n => `<button class="${n === g ? 'go' : ''}" data-setp="${ask}:${n}">${n} ${name(ask, n)}<small style="display:block;font-size:11px;opacity:.8">in ${lay(n)}${n === g ? ' · proposto' : ''}</small></button>`).join('')}`;
+    el0.classList.remove('hidden'); return;
+  }
   const due = S.phase.k === 'serve' && !S.rally.some(a => !a.note && a.skill !== 'c' && !/c\d/.test(a.code)) ? refSubsDue() : [];
   const el = $('subBanner'); if (!el) return;
   if (!due.length) { el.classList.add('hidden'); return; }
@@ -1917,8 +1943,9 @@ function buildMatch() {
 }
 $('matchBtn').onclick = () => openMatch(false);
 $('subBanner').addEventListener('pointerdown', e => {
-  const b = e.target.closest('button[data-subs]'); if (!b) return; e.stopPropagation(); e.preventDefault(); ovlDownAt = performance.now();
+  const b = e.target.closest('button[data-subs], button[data-setp]'); if (!b) return; e.stopPropagation(); e.preventDefault(); ovlDownAt = performance.now();
   tap(); snapshot();
+  if (b.dataset.setp) { const [t, n] = b.dataset.setp.split(':'); setOnCourtSetter(t, Number(n)); return render(); }
   for (const d of refSubsDue()) { if (b.dataset.subs === 'do') doSub(d.t, d.e.out, d.e.in); S.subsDone[d.t + d.i] = true; }
   render();
 });
