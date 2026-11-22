@@ -576,7 +576,7 @@ function renderSubBanner() {
   const el0 = $('subBanner'), ask = el0 && S.askSetter && ['*', 'a'].find(t => S.askSetter[t]);
   if (ask) {
     const g = setterGuess(ask), lay = n => ['P1','P2','P3','P4','P5','P6'][S.pos[ask].indexOf(n)];
-    el0.innerHTML = `<span>↔ <b>${DATA[ask].name}</b>: è uscito il palleggiatore. <b>Chi palleggia ora?</b></span>
+    el0.innerHTML = `<span style="min-width:12em">↔ <b>${DATA[ask].name}</b>: è uscito il palleggiatore. <b>Chi palleggia ora?</b></span>
       ${S.pos[ask].map(n => `<button class="${n === g ? 'go' : ''}" data-setp="${ask}:${n}">${n} ${name(ask, n)}<small style="display:block;font-size:11px;opacity:.8">in ${lay(n)}${n === g ? ' · proposto' : ''}</small></button>`).join('')}`;
     el0.classList.remove('hidden'); return;
   }
