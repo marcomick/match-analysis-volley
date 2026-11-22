@@ -140,7 +140,7 @@
   .act .d { color:var(--muted); font-size:12px; }
   .act.auto code { color:#9aa0b0; }
   .tools { padding:8px; border-top:1px solid var(--line); display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
-  #corrBtn { grid-column:1/4; }
+  #corrBtn { grid-column:2/4; }
   .crow { display:flex; align-items:center; gap:10px; flex-wrap:wrap; background:var(--card2); border-radius:10px; padding:8px 10px; }
   .crow { flex-wrap:nowrap; } .crow .cn { min-width:110px; font-weight:700; } .crow button { padding:10px 14px; font-size:15px; background:#2d3346; }
   .crow .cv { min-width:44px; text-align:center; font-size:18px; font-weight:800; } .crow .cd { color:var(--muted); font-size:12px; }
@@ -320,6 +320,7 @@
       <button id="subBtn">Cambio</button>
       <button id="arrBtn">Schieramento</button>
       <button id="export">Scarica codici</button>
+      <button id="redo">↷ Risegna</button>
       <button id="corrBtn">Correggi battuta / rotazione</button>
     </div>
   </div>
@@ -371,7 +372,7 @@ const savePrefs = () => save('scoutMockupPrefs', PREFS);
 const isFar = t => t !== PREFS.near;           // squadra di fronte alla telecamera: tutto a specchio
 
 // ---------------------------------------------------------------- stato
-let S, history = [], taps = 0, firstTapAt = null, videoAtFirstTap = null, askedArr = {};
+let S, history = [], future = [], taps = 0, firstTapAt = null, videoAtFirstTap = null, askedArr = {};
 // video aperto ({kind:'file', name, size} | {kind:'yt', url} | {kind:'url', src}), chiave dello scout salvato, ripresa in attesa
 let VSRC = null, CUR_MATCH = null, SCOUT_KEY = null, resumeWanted = null, pendingSeek = null, saveTimer = null, backupText = null;
 function freshState() {
@@ -640,7 +641,8 @@ function renderBase() {
 }
 
 // ---------------------------------------------------------------- azioni dell'utente
-function snapshot() { history.push(clone(S)); if (history.length > 200) history.shift(); }
+// future: i passi annullati, che "Risegna" rimette; un tocco nuovo li cancella
+function snapshot() { history.push(clone(S)); if (history.length > 200) history.shift(); future = []; }
 function tap() { taps++; if (firstTapAt == null) { firstTapAt = Date.now(); videoAtFirstTap = video.currentTime; } }
 
 function onGrade(g) {
@@ -1059,7 +1061,8 @@ $('switchTeam').onclick = () => { tap();
   if (S.phase.k === 'attack') S.phase = {k:'defense', t:other(S.phase.t), type:'H'};
   else if (S.phase.k === 'defense') S.phase = {...S.phase, t:other(S.phase.t)};
   S.sel = {}; render(); };
-$('undo').onclick = () => { if (!history.length) return toast('Niente da annullare'); S = history.pop(); render(); };
+$('undo').onclick = () => { if (!history.length) return toast('Niente da annullare'); future.push(clone(S)); S = history.pop(); render(); };
+$('redo').onclick = () => { if (!future.length) return toast('Niente da risegnare'); history.push(clone(S)); S = future.pop(); render(); };
 $('ptHome').onclick = () => { tap(); snapshot(); push('*', null, '&', '', '', '', 'punto generico'); endRally('*', 'punto generico'); render(); };
 $('ptAway').onclick = () => { tap(); snapshot(); push('a', null, '&', '', '', '', 'punto generico'); endRally('a', 'punto generico'); render(); };
 $('log').addEventListener('click', e => { const h = e.target.closest('[data-vt]'); if (!h) return;
@@ -1857,7 +1860,7 @@ function applyMatch(m, keepLog) {
   DATA = JSON.parse(JSON.stringify(m.data)); FIRST_SERVE = m.first; OUR = m.our; CUR_MATCH = m;
   for (const t of ['*', 'a']) assignRoles(DATA[t].players, DATA[t].lineup);
   const log = keepLog && S ? S.rallies : [];
-  S = freshState(); S.rallies = log; history = [];
+  S = freshState(); S.rallies = log; history = []; future = [];
   $('mockTitle').textContent = m.title || `${DATA['*'].name} - ${DATA.a.name}`;
   render();
 }
@@ -2059,7 +2062,7 @@ function renderFs() {
     <button data-act="rateBtn">${$('rateBtn').textContent}</button><button data-act="back">${$('back').textContent}</button>
     <button data-act="play">${video.paused ? '▶︎' : '❚❚'}</button><button data-act="fwd">${$('fwd').textContent}</button><span class="sep"></span>
     <span class="hint">Base</span>${CALLS.map(c => `<button data-base="${c}" class="${tg && tg.base === c ? 'sel' : ''} ${imp === c ? 'imp' : ''}" ${tg ? '' : 'disabled'}>${c}</button>`).join('')}<span class="sep"></span>
-    <button data-act="undo" style="background:#5b1a1a">↶ Annulla</button><button data-act="ptHome">+1 ${DATA[H].name}</button><button data-act="ptAway">+1 ${DATA[A].name}</button>
+    <button data-act="undo" style="background:#5b1a1a">↶ Annulla</button><button data-act="redo">↷ Risegna</button><button data-act="ptHome">+1 ${DATA[H].name}</button><button data-act="ptAway">+1 ${DATA[A].name}</button>
     <button data-act="subBtn">Cambio</button><button data-act="corrBtn">Correggi</button><button data-act="arrBtn">Schier.</button><button data-act="calBtn">Taratura</button><button data-act="matchBtn">Partita</button><button data-act="pipBtn" class="${PREFS.pip ? 'sel' : ''}">Ritardo</button>
     <button data-act="exitFs" style="margin-left:auto">Esci ⛶</button>`;
   document.documentElement.style.setProperty('--fsh', ($('fsbar').offsetHeight + 6) + 'px');
@@ -2167,7 +2170,7 @@ function saveNow() {
 // prima di cambiare video: si salva lo scout di quello di prima e si riparte puliti
 function beginVideo(src) {
   if (SCOUT_KEY) saveNow();
-  VSRC = src; SCOUT_KEY = null; S = freshState(); history = []; taps = 0; firstTapAt = null; pendingSeek = null;
+  VSRC = src; SCOUT_KEY = null; S = freshState(); history = []; future = []; taps = 0; firstTapAt = null; pendingSeek = null;
   $('saveState').textContent = '';
 }
 // video appena aperto: ripresa chiesta dal pannello, oppure scout già salvato per questo video, oppure partita nuova
@@ -2188,7 +2191,7 @@ async function afterVideoChange() {
 function restoreScout(rec) {
   const vk = videoKey();
   if (rec.match) { MATCHES[vk] = rec.match; save('scoutMockupMatches', MATCHES); applyMatch(rec.match); }
-  S = rec.S; history = rec.history || []; taps = rec.taps || 0; firstTapAt = null; SCOUT_KEY = rec.key; lastCreated[rec.key] = rec.created;
+  S = rec.S; history = rec.history || []; future = []; taps = rec.taps || 0; firstTapAt = null; SCOUT_KEY = rec.key; lastCreated[rec.key] = rec.created;
   $('matchModal').classList.add('hidden'); ME = null;
   const at = Math.max(0, (rec.vt || 0) - 2);
   if (YTP) pendingSeek = at; else if (videoEl.readyState >= 1) videoEl.currentTime = at; else pendingSeek = at;
@@ -2252,7 +2255,7 @@ $('scoutsBox').addEventListener('click', async e => {
     const r = list[Number(b.dataset.del)];
     if (!confirm(`Elimino lo scout “${r.title}” (${(r.S.rallies || []).length} scambi)? Non si può recuperare, a meno di una copia di sicurezza.`)) return;
     await scoutDel(r.key).catch(() => {});
-    if (r.key === SCOUT_KEY) { SCOUT_KEY = videoKey(); S = freshState(); history = []; if (MATCHES[videoKey()]) applyMatch(MATCHES[videoKey()]); render(); }
+    if (r.key === SCOUT_KEY) { SCOUT_KEY = videoKey(); S = freshState(); history = []; future = []; if (MATCHES[videoKey()]) applyMatch(MATCHES[videoKey()]); render(); }
     return openScouts();
   }
   if (b.dataset.backup === 'out') return shareFile(`scout copia ${new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16).replace('T', ' ').replace(':', '.')}.json`, backupText, 'application/json');
@@ -2343,7 +2346,7 @@ const TUT = [
   { sel:'.stats', title:'Quanto tempo ci metti',
     text:`<p><b>Tocchi per azione</b> e soprattutto <b>tempo di scout / tempo di video</b>: per il 1° set di G4 ci avevi messo circa 2×, l'obiettivo è stare sotto 1×.</p>` },
   { sel:'.tools', title:'Correggere',
-    text:`<p><b>Annulla</b> toglie l'ultimo tocco registrato. <b>Punto …</b> assegna un punto senza azione (fallo, invasione a rete). <b>Cambio</b>: chi esce e chi entra. <b>Correggi battuta / rotazione</b>: chi batte, rotazione avanti o indietro e punteggio, per quando ti sei perso uno scambio. <b>Schieramento</b>: correggi come riceve e attacca la squadra in quella rotazione, e dove difendono i giocatori (per tutta la partita). <b>Scarica codici</b>: il file di testo.</p>
+    text:`<p><b>Annulla</b> toglie l'ultimo tocco registrato, <b>Risegna</b> lo rimette (finché non tocchi altro). <b>Punto …</b> assegna un punto senza azione (fallo, invasione a rete). <b>Cambio</b>: chi esce e chi entra. <b>Correggi battuta / rotazione</b>: chi batte, rotazione avanti o indietro e punteggio, per quando ti sei perso uno scambio. <b>Schieramento</b>: correggi come riceve e attacca la squadra in quella rotazione, e dove difendono i giocatori (per tutta la partita). <b>Scarica codici</b>: il file di testo.</p>
           <p>Il tutorial si riapre con il pulsante <b>Tutorial</b> in alto.</p>` },
 ];
 let tutI = 0, tutSaved = null;
