@@ -371,7 +371,10 @@ const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } cat
 let PREFS = Object.assign({comboMirror:'auto', pip:true, pipDelay:3, pipCorner:3, pipSize:30, tapPlayers:true, comboLayout:'griglia', neutralHow:false, obScale:1.3, step:5, near:'*', autopause:true, overlay:true, videoOnly:false, oppLight:true}, load('scoutMockupPrefs') || {});
 let ARR = load('scoutMockupArr') || {};      // {nome squadra: {rotazione: {rec:[3 gettoni], att:{A4,A3,A2,AP}}}}
 const savePrefs = () => save('scoutMockupPrefs', PREFS);
-const isFar = t => t !== PREFS.near;           // squadra di fronte alla telecamera: tutto a specchio
+// squadra di spalle alla telecamera nel set in corso (S.near): cambia campo a ogni set, al 5° si sceglie e si cambia
+// sull'8 (richiesta dell'utente del 2026-11-22); PREFS.near resta solo come valore di partenza
+const nearT = () => (S && S.near) || PREFS.near;
+const isFar = t => t !== nearT();           // squadra di fronte alla telecamera: tutto a specchio
 
 // ---------------------------------------------------------------- stato
 let S, history = [], future = [], taps = 0, firstTapAt = null, videoAtFirstTap = null, askedArr = {};
@@ -540,7 +543,12 @@ function endRally(winner, why) {
   fillBadge();
   if (PREFS.autopause) { video.pause(); badge(true); }
   const a = S.score['*'], b = S.score.a;
+  if (fifthSwap()) toast(`Cambio campo sull'8: di spalle ora ${DATA[nearT()].name}`, '#1d4d2c');
   if (setOver(S.score, S.setNo || 1)) setTimeout(askSetEnd, 0);
+}
+function fifthSwap() {
+  if ((S.setNo || 1) !== 5 || S.swap8 || Math.max(S.score['*'], S.score.a) < 8) return false;
+  S.near = other(nearT()); S.swap8 = true; return true;
 }
 // ---- fine del set (richiesta dell'utente del 2026-11-22): conferma, set vinti, punteggio da 0-0, formazione del set dopo
 // dal referto, salto in avanti di 3 minuti (la pausa tra un set e l'altro). Si può chiudere anche dopo, dal pannello delle
@@ -549,6 +557,7 @@ const setTarget = n => n >= 5 ? 15 : 25;
 const setOver = (sc, n) => (sc['*'] >= setTarget(n) || sc.a >= setTarget(n)) && Math.abs(sc['*'] - sc.a) >= 2;
 function setsWon(sets) { const w = {'*':0, a:0}; for (const x of sets || []) w[x.score['*'] > x.score.a ? '*' : 'a']++; return w; }
 const SKIP_BETWEEN_SETS = 180;
+let setEnd5Near = null;
 function askSetEnd() {
   if (S.matchOver || !setOver(S.score, S.setNo || 1)) return;
   video.pause();
@@ -556,6 +565,9 @@ function askSetEnd() {
   $('setEndBox').innerHTML = `<h3>Fine del ${n}° set?</h3>
     <div style="font-size:20px;font-weight:700;margin:6px 0">${DATA[H].name} ${S.score[H]} – ${S.score[A]} ${DATA[A].name}</div>
     <div class="hint">Set: ${DATA[H].name} ${w[H]} – ${w[A]} ${DATA[A].name}${over ? ' · <b>fine della partita</b>' : ` · poi il ${n + 1}° set da 0-0${refNextSet(n) ? ', formazioni dal referto' : ', con la formazione da indicare'}`}</div>
+    ${over ? '' : n + 1 === 5 ? `<div class="lab">5° set: chi è di spalle alla telecamera? (nuovo sorteggio)</div><div class="chips">${['*', 'a'].map(t =>
+        `<button class="chip ${(setEnd5Near || other(nearT())) === t ? 'sel' : ''}" data-near5="${t}">${DATA[t].name}</button>`).join('')}</div>`
+      : `<div class="hint">Cambio campo: di spalle ${DATA[other(nearT())].name}</div>`}
     <div class="chips" style="margin-top:12px"><span class="grow"></span>
       <button class="chip" data-setend="no" style="padding:10px 16px">Non è finito</button>
       ${over ? `<button class="chip" data-setend="close" style="padding:10px 18px;background:#3b5bdb">Chiudi la partita</button>`
@@ -579,6 +591,7 @@ function closeSetAt(k, skip) {
     snapshot(); S.sets = sets; S.matchOver = true; S.score = closedScore;
     $('setEndModal').classList.add('hidden'); toast(`Fine della partita: ${DATA['*'].name} ${w['*']} – ${w.a} ${DATA.a.name}`, '#1d4d2c'); return render();
   }
+  const prevNear = nearT(), nextNear = n + 1 === 5 && setEnd5Near ? setEnd5Near : other(prevNear);
   const ri = refNextSet(n);
   let m2 = null, errs = [];
   if (ri != null) { nextSetME(ri, n + 1); const b = buildMatch(); ME = null; if (!b.errs.length) m2 = b.m; else errs = b.errs; }
@@ -586,7 +599,7 @@ function closeSetAt(k, skip) {
   if (!m2) m2 = {...CUR_MATCH, ref:CUR_MATCH && CUR_MATCH.ref ? {...CUR_MATCH.ref, set:n + 1} : null};
   MATCHES[videoKey()] = m2; save('scoutMockupMatches', MATCHES);
   applyMatch(m2);
-  S.rallies = chron.slice().reverse(); S.sets = sets; S.setNo = n + 1;
+  S.rallies = chron.slice().reverse(); S.sets = sets; S.setNo = n + 1; S.near = nextNear; setEnd5Near = null;
   replaySet(after);
   $('setEndModal').classList.add('hidden');
   if (skip) video.currentTime = vt + SKIP_BETWEEN_SETS;
@@ -615,7 +628,7 @@ function replaySet(list) {
       if (i >= 0) { S.pos[t][i] = inn; S.roles[t][inn] = S.roles[t][out]; } }
     S.score[r.winner]++; r.score = {...S.score};
     if (r.winner !== S.serving) { const p = S.pos[r.winner]; p.push(p.shift()); }
-    S.serving = r.winner;
+    S.serving = r.winner; fifthSwap();
   }
 }
 // Cambi dal referto: al punteggio scritto sul referto (squadra : avversari) si propone il cambio, un tocco per farlo
@@ -902,6 +915,7 @@ function courtHtml(t, kind, mode, isSel) {
   return isFar(t) ? `${row(top)}${row(bottom)}<div class="netline"></div>` : `<div class="netline"></div>${row(top)}${row(bottom)}`;
 }
 function render() {
+  if (S && !S.near) S.near = (S.setNo || 1) % 2 === 1 || (S.setNo || 1) === 5 ? PREFS.near : other(PREFS.near);
   if (S && !S.sets && migrateSets(S)) toast(`Set ricostruiti dal punteggio: ${S.sets.map(x => x.score['*'] + '-' + x.score.a).join(', ')} · ora ${S.setNo}° set`, '#1d4d2c');
   setTimeout(renderSubBanner, 0);
   document.documentElement.style.setProperty('--obs', PREFS.obScale || 1.3);
@@ -918,7 +932,7 @@ function render() {
   $('vonlyBtn').classList.toggle('on', !!PREFS.videoOnly); $('vonlyBtn').disabled = !calOk || !PREFS.overlay;
   document.querySelector('.app').classList.toggle('vonly', !!PREFS.videoOnly && calOk && !!PREFS.overlay);
   $('back').textContent = `⟲ ${PREFS.step} s`; $('fwd').textContent = `${PREFS.step} s ⟳`;
-  const fT = other(PREFS.near);
+  const fT = other(nearT());
   $('sideFar').textContent = `di fronte (metà B): ${DATA[fT].name}`; $('sideFar').style.background = `var(--${teamCls(fT)})`;
 
   const ph = S.phase, sel = S.sel; let prompt = '', html = '', gctx = 'R';
@@ -1680,7 +1694,7 @@ function calPanel() {
   return `<div class="calpanel" style="${calMode.left ? 'left:8px;right:auto' : ''}">
     <svg viewBox="0 0 186 186" width="${sz}" height="${sz}"><g transform="rotate(${calMode.rot * 90} 93 93)">${court}${dots}</g></svg>
     <div class="calside"><div class="calmsg">${msg}</div>
-      <div class="hint">pavimento ${nFloor}/4 · nastro ${(lm.N0 ? 1 : 0) + (lm.N9 ? 1 : 0)}/2 · metà A: ${DATA[PREFS.near].name}</div>
+      <div class="hint">pavimento ${nFloor}/4 · nastro ${(lm.N0 ? 1 : 0) + (lm.N9 ? 1 : 0)}/2 · metà A: ${DATA[nearT()].name}</div>
       <div class="chips">${calMode.check
         ? '<button id="calKm">− curva</button><button id="calKp">+ curva</button><button id="calKa">Auto</button><button id="calRedo">Aggiungi punti</button><button id="calOk" style="background:#3b5bdb">OK</button>'
         : `<button id="calRot">⟳ Ruota</button><button id="calSide">⇆ Sposta</button><button id="calTrace">Traccia linea dritta${calMode.lines.length ? ' (' + calMode.lines.length + ')' : ''}</button><button id="calCancel">Annulla</button><button id="calCheck" ${ready ? '' : 'disabled'} style="background:#3b5bdb">Verifica</button>`}</div></div></div>`;
@@ -1745,6 +1759,7 @@ addEventListener('resize', () => renderOvl());
 
 // ---------------------------------------------------------------- impostazioni
 function renderSettings() {
+  PREFS.near = nearT();
   const opt = (key, val, label) => `<button class="chip ${PREFS[key]===val?'sel':''}" data-pref="${key}" data-val='${JSON.stringify(val)}'>${label}</button>`;
   $('setBox').innerHTML = `<h3>Impostazioni</h3>
     <div class="lab">Salto con il doppio tocco ai lati del video (e con ⟲ ⟳)</div>
@@ -1780,7 +1795,7 @@ $('setBox').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
   if (b.id === 'setClose') { $('setModal').classList.add('hidden'); return render(); }
   if (b.id === 'resetArr') { ARR = {}; save('scoutMockupArr', ARR); askedArr = {}; toast('Schieramenti dimenticati', '#1d4d2c'); }
-  if (b.dataset.pref) { PREFS[b.dataset.pref] = JSON.parse(b.dataset.val); savePrefs(); if (b.dataset.pref.startsWith('pip')) { if (b.dataset.pref === 'pip') pipKey = null; pipSetup(); } }
+  if (b.dataset.pref) { PREFS[b.dataset.pref] = JSON.parse(b.dataset.val); savePrefs(); if (b.dataset.pref === 'near') S.near = PREFS.near; if (b.dataset.pref.startsWith('pip')) { if (b.dataset.pref === 'pip') pipKey = null; pipSetup(); } }
   renderSettings(); render();
 });
 
@@ -1985,7 +2000,8 @@ function applyMatch(m, keepLog) {
   S = freshState(); S.rallies = log; history = []; future = [];
   if (keepLog && old) {             // "Nuovo set (i codici restano)": il set in corso si chiude con il suo punteggio
     S.sets = [...(old.sets || [])]; S.setNo = old.setNo || 1;
-    if (old.score['*'] + old.score.a > 0) { S.sets.push({n:S.setNo, score:{...old.score}}); S.setNo++; }
+    S.near = old.near;
+    if (old.score['*'] + old.score.a > 0) { S.sets.push({n:S.setNo, score:{...old.score}}); S.setNo++; if (old.near) S.near = other(old.near); }
   }
   $('mockTitle').textContent = m.title || `${DATA['*'].name} - ${DATA.a.name}`;
   render();
@@ -2246,6 +2262,7 @@ function renderCorr() {
     <div class="chips"><span class="grow"></span><button class="chip" id="corrClose" style="padding:10px 18px">Fatto</button></div>`;
 }
 $('setEndBox').addEventListener('click', e => {
+  const n5 = e.target.closest('button[data-near5]'); if (n5) { setEnd5Near = n5.dataset.near5; return askSetEnd(); }
   const b = e.target.closest('button[data-setend]'); if (!b) return;
   if (b.dataset.setend === 'no') { $('setEndModal').classList.add('hidden'); return; }
   const n = S.setNo || 1, k = S.rallies.filter(r => (r.set || 1) === n).length;
