@@ -58,16 +58,52 @@ def walk(session, folder_id, rel, dest, counts):
             counts[path.suffix.lower()] = counts.get(path.suffix.lower(), 0) + 1
 
 
+def fail(msg):
+    """Errore come annotazione dell'esecuzione (si legge anche senza aprire il registro) e uscita."""
+    print(f"::error title=Referti da Drive::{msg}")
+    sys.exit(1)
+
+
 def main():
     dest = Path(sys.argv[1])
-    key = json.loads(os.environ["GDRIVE_SA_KEY"])
+    raw, folder = os.environ.get("GDRIVE_SA_KEY", ""), os.environ.get("GDRIVE_FOLDER_ID", "").strip()
+    if not raw.strip():
+        fail("manca il segreto GDRIVE_SA_KEY (Settings → Secrets and variables → Actions)")
+    if not folder:
+        fail("manca il segreto GDRIVE_FOLDER_ID")
+    if "/" in folder:                 # incollato l'indirizzo intero invece dell'id
+        folder = folder.rstrip("/").split("/")[-1].split("?")[0]
+    try:
+        key = json.loads(raw)
+    except json.JSONDecodeError as e:
+        fail(f"GDRIVE_SA_KEY non è un JSON valido ({e.msg}, riga {e.lineno}): va incollato tutto il contenuto del file .json della chiave")
+    if key.get("type") != "service_account":
+        fail(f"GDRIVE_SA_KEY non è la chiave di un account di servizio (type = {key.get('type')!r})")
+    print("account di servizio:", key.get("client_email"), "| cartella:", folder)
     creds = service_account.Credentials.from_service_account_info(
         key, scopes=["https://www.googleapis.com/auth/drive.readonly"])
+    session = AuthorizedSession(creds)
+    r = session.get(f"{API}/{folder}", params={"fields": "id, name, mimeType", "supportsAllDrives": "true"})
+    if not r.ok:
+        try:
+            err = r.json().get("error", {})
+            reason = (err.get("errors") or [{}])[0].get("reason", "")
+            text = err.get("message", "")
+        except ValueError:
+            reason, text = "", r.text[:200]
+        hint = {403: "se il messaggio parla di API non abilitata: Google Cloud → API e servizi → Libreria → Google Drive API → Abilita (nel progetto dell'account di servizio)",
+                404: f"cartella non trovata: controlla GDRIVE_FOLDER_ID e che la cartella sia condivisa con {key.get('client_email')}"}.get(r.status_code, "")
+        fail(f"Drive ha risposto {r.status_code} {reason}: {text} {('— ' + hint) if hint else ''}")
+    meta = r.json()
+    if meta.get("mimeType") != FOLDER:
+        fail(f"GDRIVE_FOLDER_ID indica \"{meta.get('name')}\", che non è una cartella")
+    print("cartella:", meta.get("name"))
     counts = {}
-    walk(AuthorizedSession(creds), os.environ["GDRIVE_FOLDER_ID"].strip(), Path(), dest, counts)
+    walk(session, folder, Path(), dest, counts)
     print("scaricati:", ", ".join(f"{n} {ext}" for ext, n in sorted(counts.items())) or "niente")
     if not counts.get(".pdf"):
-        sys.exit("nessun referto trovato: la cartella è condivisa con l'account di servizio?")
+        fail(f"nella cartella \"{meta.get('name')}\" non ci sono referti in \"scambio video/referti\": è la cartella \"Match Analysis\" della stagione?")
+    print(f"::notice title=Referti da Drive::scaricati {counts.get('.pdf', 0)} referti e {counts.get('.dvw', 0)} .dvw dalla cartella \"{meta.get('name')}\"")
 
 
 if __name__ == "__main__":
