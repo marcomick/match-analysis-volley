@@ -107,4 +107,9 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise
+    except Exception as e:             # qualunque altro errore, leggibile anche senza il registro
+        fail(f"{type(e).__name__}: {str(e)[:500]}")
