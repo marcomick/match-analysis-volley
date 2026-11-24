@@ -1,0 +1,60 @@
+# Referti per l'app dello scout, in automatico: ogni lunedì sera (o a mano da Actions → "Referti per lo scout" →
+# Run workflow) scarica da Google Drive i PDF dei referti e i .dvw della stagione (.github/scripts/drive_download.py),
+# rifà scout/referti.json con `python -m src.referti` e, se è cambiato, lo salva nella repo e ripubblica l'app.
+# Serve un account di servizio Google con la cartella "Match Analysis" condivisa in lettura; segreti della repo
+# (Settings → Secrets and variables → Actions): GDRIVE_SA_KEY (il JSON della chiave), GDRIVE_FOLDER_ID (id della cartella).
+name: Referti per lo scout
+
+on:
+  schedule:
+    - cron: "0 19 * * 1"      # lunedì alle 19 UTC: le 20 in inverno, le 21 con l'ora legale
+  workflow_dispatch:
+
+concurrency:
+  group: referti
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      changed: ${{ steps.save.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+      - name: Dipendenze
+        run: pip install pandas==2.3.3 numpy==2.0.2 pdfplumber==0.11.8 python-dotenv==1.2.1 google-auth requests
+      - name: Scarica referti e .dvw da Drive
+        env:
+          GDRIVE_SA_KEY: ${{ secrets.GDRIVE_SA_KEY }}
+          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+        run: python .github/scripts/drive_download.py drive
+      - name: Partite dai referti
+        run: python -m src.referti --season-folder drive --out scout/referti.json
+      - id: save
+        name: Salva se è cambiato
+        run: |
+          if git diff --quiet -- scout/referti.json; then
+            echo "Nessun referto nuovo"; echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git config user.name "referti-bot"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add scout/referti.json
+            git commit -m "data(scout): referti aggiornati da Drive"
+            git push
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  # un push fatto da un workflow non fa partire gli altri workflow: la pubblicazione si chiama da qui
+  publish:
+    needs: update
+    if: needs.update.outputs.changed == 'true'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/scout-pages.yml

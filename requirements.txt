@@ -9,6 +9,8 @@ openpyxl==3.1.5
 xlsxwriter==3.2.9
 fpdf2==2.8.4
 python-dotenv==1.2.1
+# Lettura dei referti ufficiali in PDF (src/referti.py)
+pdfplumber==0.11.8
 
 # Necessario per eseguire i notebook come kernel Jupyter in Cursor/VS Code
 # (in precedenza installato manualmente, non dichiarato).
@@ -17,6 +19,7 @@ ipykernel==6.31.0
 # Dashboard interattiva (dashboard/app.py): streamlit run dashboard/app.py
 streamlit==1.50.0
 plotly==6.9.0
+scikit-learn==1.6.1
 
 # Generazione report Word della pagella giocatore (dashboard/app.py, pulsante
 # "Genera report"): python-docx per il documento, kaleido per esportare i

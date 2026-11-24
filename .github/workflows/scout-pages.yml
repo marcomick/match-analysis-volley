@@ -10,6 +10,7 @@ on:
     branches: [main]
     paths: ["scout/**", ".github/workflows/scout-pages.yml"]
   workflow_dispatch:
+  workflow_call:          # dal workflow dei referti (.github/workflows/referti.yml), dopo aver salvato referti.json
 
 permissions:
   contents: read
@@ -27,6 +28,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main       # chiamato dal workflow dei referti: anche il commit appena fatto
       - name: Prepara i file dell'app
         run: |
           mkdir site

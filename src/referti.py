@@ -127,7 +127,7 @@ def _block(words, box_y, x0):
                 and box_y + 96 < w["top"] < box_y + 124]
     return {"lineup": [lineup.get(k) for k in range(6)], "subs": subs, "sub_score": sub_score, "timeouts": timeouts,
             "back_score": back_score, "receiving": receiving, "turn_ends": [(k, v) for _, k, v in turns],
-            "libero_seq": sorted(lib, key=len)}
+            "libero_seq": sorted(lib, key=lambda s: (len(s), s))}
 
 
 def _roster(words):
