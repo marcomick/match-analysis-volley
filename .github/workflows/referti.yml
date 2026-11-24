@@ -25,7 +25,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.9"
+          python-version: "3.11"   # la 3.9 non c'è più sulle macchine di GitHub (Ubuntu 26.04)
       - name: Dipendenze
         run: pip install pandas==2.3.3 numpy==2.0.2 pdfplumber==0.11.8 python-dotenv==1.2.1 google-auth requests
       - name: Scarica referti e .dvw da Drive
