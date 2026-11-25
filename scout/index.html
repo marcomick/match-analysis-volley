@@ -258,6 +258,7 @@
 <body>
 <div class="app">
   <div class="mock"><button class="mb" id="scoutsBtn" style="background:#3b5bdb;color:#fff">☰ Scout</button>
+    <button class="mb" id="gotoBtn" title="Inizio di un set, ultimo codice segnato">⤓ Vai a…</button>
     <b id="mockTitle">Nessun video</b> <span id="saveState" class="savest"></span>
     <button class="mb hidden" id="updBtn" style="background:#b45309;color:#fff">Aggiorna app</button>
     <span class="grow"></span>
@@ -333,6 +334,7 @@
 <div class="modal hidden" id="setModal"><div class="box" id="setBox"></div></div>
 <div class="modal hidden" id="corrModal"><div class="box" id="corrBox"></div></div>
 <div class="modal hidden" id="setEndModal"><div class="box" id="setEndBox"></div></div>
+<div class="modal hidden" id="gotoModal"><div class="box" id="gotoBox"></div></div>
 <div class="modal hidden" id="scoutsModal"><div class="box" id="scoutsBox"></div></div>
 <input id="importIn" type="file" accept=".json,application/json" class="hidden">
 <div id="tut" class="hidden"><div class="tut-block"></div><div class="tut-hole" id="tutHole"></div><div class="tut-card" id="tutCard"></div></div>
@@ -595,14 +597,14 @@ function closeSetAt(k, skip) {
     $('setEndModal').classList.add('hidden'); toast(`Fine della partita: ${DATA['*'].name} ${w['*']} – ${w.a} ${DATA.a.name}`, '#1d4d2c'); return render();
   }
   const prevNear = nearT(), nextNear = n + 1 === 5 && setEnd5Near ? setEnd5Near : other(prevNear);
-  const ri = refNextSet(n);
+  const ri = refNextSet(n), starts = {...(S.setStart || {}), [n + 1]: Math.round((skip ? vt + SKIP_BETWEEN_SETS : vt) * 10) / 10};
   let m2 = null, errs = [];
   if (ri != null) { nextSetME(ri, n + 1); const b = buildMatch(); ME = null; if (!b.errs.length) m2 = b.m; else errs = b.errs; }
   const needLineup = !m2;
   if (!m2) m2 = {...CUR_MATCH, ref:CUR_MATCH && CUR_MATCH.ref ? {...CUR_MATCH.ref, set:n + 1} : null};
   MATCHES[videoKey()] = m2; save('scoutMockupMatches', MATCHES);
   applyMatch(m2);
-  S.rallies = chron.slice().reverse(); S.sets = sets; S.setNo = n + 1; S.near = nextNear; setEnd5Near = null;
+  S.rallies = chron.slice().reverse(); S.sets = sets; S.setNo = n + 1; S.near = nextNear; S.setStart = starts; setEnd5Near = null;
   replaySet(after);
   $('setEndModal').classList.add('hidden');
   if (skip) video.currentTime = vt + SKIP_BETWEEN_SETS;
@@ -2121,8 +2123,8 @@ function applyMatch(m, keepLog) {
   S = freshState(); S.rallies = log; history = []; future = [];
   if (keepLog && old) {             // "Nuovo set (i codici restano)": il set in corso si chiude con il suo punteggio
     S.sets = [...(old.sets || [])]; S.setNo = old.setNo || 1;
-    S.near = old.near;
-    if (old.score['*'] + old.score.a > 0) { S.sets.push({n:S.setNo, score:{...old.score}}); S.setNo++; if (old.near) S.near = other(old.near); }
+    S.near = old.near; S.setStart = {...(old.setStart || {})};
+    if (old.score['*'] + old.score.a > 0) { S.sets.push({n:S.setNo, score:{...old.score}}); S.setNo++; if (old.near) S.near = other(old.near); S.setStart[S.setNo] = Math.round(video.currentTime * 10) / 10; }
   }
   $('mockTitle').textContent = m.title || `${DATA['*'].name} - ${DATA.a.name}`;
   render();
@@ -2389,6 +2391,12 @@ $('setEndBox').addEventListener('click', e => {
   const n = S.setNo || 1, k = S.rallies.filter(r => (r.set || 1) === n).length;
   closeSetAt(k, b.dataset.setend === 'skip');
 });
+$('gotoBtn').onclick = () => { if (S) openGoto(false); };
+$('gotoBox').addEventListener('click', e => {
+  const b = e.target.closest('button[data-goto]'); if (!b) return;
+  $('gotoModal').classList.add('hidden');
+  if (b.dataset.goto !== 'x') { const o = $('gotoBox')._opts[Number(b.dataset.goto)]; goVt(o.t); toast(`${o.lab}: video a ${mmssv(o.t)}`, '#1d4d2c'); }
+});
 $('corrBtn').onclick = () => { video.pause(); renderCorr(); $('corrModal').classList.remove('hidden'); };
 $('corrBox').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b || b.disabled) return;
@@ -2436,7 +2444,40 @@ const mmssv = v => v == null ? '' : `${Math.floor(v / 60)}:${String(Math.floor(v
 
 // minuto del video da salvare: finché il video ripreso non è partito (YouTube parte solo col suo ▶︎) resta quello
 // da cui riprendere, non lo 0 del lettore fermo
-let resumeVt = 0;
+let resumeVt = 0, lastSavedVt = 0, savedVtAtResume = null;
+// ---- "Vai a": inizio di ogni set, ultimo codice segnato, dove si era arrivati col video (richiesta dell'utente del
+// 2026-11-25: riprendendo lo scout del 2° set si ripartiva dall'ultimo codice del 1° e si doveva cercare a mano)
+function gotoOptions() {
+  const out = [], chron = [...S.rallies].reverse(), all = [...chron.flatMap(r => r.actions.map(a => ({a, set:r.set || 1}))), ...S.rally.map(a => ({a, set:S.setNo || 1}))]
+    .filter(x => x.a.vt != null && !x.a.note);
+  const nSets = S.setNo || 1, st = S.setStart || {};
+  for (let n = 1; n <= nSets; n++) {
+    const first = all.find(x => x.set === n), t = st[n] != null ? st[n] : first ? first.a.vt - 5 : null;
+    if (t != null) out.push({t:Math.max(0, t), lab:`Inizio del ${n}° set`, sub: st[n] != null ? (n > 1 ? 'dalla chiusura del set prima' : '') : 'dal primo codice del set, 5 s prima'});
+  }
+  if (all.length) { const last = all.reduce((m, x) => x.a.vt > m.a.vt ? x : m);
+    out.push({t:Math.max(0, last.a.vt - 3), lab:'Ultimo codice segnato', sub:`${last.set}° set · ${last.a.desc || last.a.code} · 3 s prima`, main:true}); }
+  if (savedVtAtResume != null && (!all.length || Math.abs(savedVtAtResume - Math.max(...all.map(x => x.a.vt))) > 5))
+    out.push({t:savedVtAtResume, lab:'Dove eri arrivato col video', sub:'ultimo minuto salvato'});
+  return out;
+}
+function goVt(t) {
+  resumeVt = t;
+  if ((YTP && !ytStarted) || (!YTP && videoEl.readyState < 1)) pendingSeek = t; else video.currentTime = t;
+  scheduleSave();
+}
+function openGoto(resume) {
+  video.pause();
+  const opts = gotoOptions();
+  if (!opts.length) return toast('Nessun codice segnato con il minuto del video');
+  $('gotoBox').innerHTML = `<h3>${resume ? 'Da dove riparto col video?' : 'Vai a…'}</h3>
+    <div class="hint">${S.setNo || 1}° set, ${S.score['*']}-${S.score.a}, ${S.rallies.length} scambi</div>
+    <div class="slist">${opts.map((o, i) => `<div class="sitem"><div class="si"><div class="st">${o.lab} · ${mmssv(o.t)}</div>${o.sub ? `<div class="sd">${o.sub}</div>` : ''}</div>
+      <button class="go" data-goto="${i}" ${o.main ? 'style="background:#3b5bdb;color:#fff"' : ''}>Vai</button></div>`).join('')}</div>
+    <div class="chips"><span class="grow"></span><button class="chip" data-goto="x" style="padding:10px 18px">${resume ? `Resta a ${mmssv(curVt())}` : 'Chiudi'}</button></div>`;
+  $('gotoBox')._opts = opts;
+  $('gotoModal').classList.remove('hidden');
+}
 function curVt(old) {
   if (pendingSeek != null) return Math.round(pendingSeek * 10) / 10;
   if (YTP && !ytStarted) return resumeVt;
@@ -2464,7 +2505,7 @@ function saveNow() {
   clearTimeout(saveTimer); saveTimer = null;
   if (!SCOUT_KEY || !VSRC || !hasWork(S) || !$('tut').classList.contains('hidden')) return Promise.resolve();
   const rec = JSON.parse(JSON.stringify(scoutRecord({created:lastCreated[SCOUT_KEY]})));   // copia subito: S cambia ai tocchi dopo
-  lastCreated[rec.key] = rec.created;
+  lastCreated[rec.key] = rec.created; lastSavedVt = rec.vt || 0;
   if (!persistAsked) { persistAsked = true; navigator.storage?.persist?.().catch(() => {}); }
   return scoutPut(rec).then(() => { $('saveState').textContent = `salvato ${when(rec.updated).split(' ').pop()}`; })
     .catch(e => { $('saveState').textContent = 'NON salvato'; toast('Salvataggio non riuscito: ' + (e && e.message || e)); });
@@ -2511,7 +2552,8 @@ function restoreScout(rec) {
   $('matchModal').classList.add('hidden'); ME = null;
   const at = resumeAt(rec); resumeVt = at;
   if (YTP) pendingSeek = at; else if (videoEl.readyState >= 1) videoEl.currentTime = at; else pendingSeek = at;
-  video.pause(); render();
+  video.pause(); render(); savedVtAtResume = rec.vt != null ? rec.vt : null; lastSavedVt = rec.vt || 0;
+  setTimeout(() => openGoto(true), 400);
   toast(`Scout ripreso: ${S.setNo || 1}° set, ${S.score['*']}-${S.score.a}, ${S.rallies.length} scambi${migrated ? ` · set chiusi: ${S.sets.map(x => x.score['*'] + '-' + x.score.a).join(', ')}` : ''} · video a ${mmssv(at)}`, '#1d4d2c');
 }
 
@@ -2618,6 +2660,8 @@ async function shareFile(fname, text, type) {
 document.addEventListener('visibilitychange', () => { if (document.hidden) saveNow(); });
 addEventListener('pagehide', () => saveNow());
 setInterval(() => { if (!video.paused) scheduleSave(); }, 10000);      // anche il minuto del video, mentre scorre
+// e quando lo si sposta a video fermo (prima restava il minuto dell'ultimo salvataggio: alla ripresa si tornava indietro)
+setInterval(() => { if (video.paused && S && Math.abs(curVt() - lastSavedVt) > 2) scheduleSave(); }, 3000);
 
 // ---------------------------------------------------------------- tutorial
 const TUT = [
