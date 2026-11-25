@@ -710,6 +710,10 @@ const LINK_DESC = {'B=':'mani fuori', 'D=':'difesa sbagliata', 'B-':'muro (buono
 // dopo un attacco + la difesa può tornare di là (D/: poi "rigore" o palla libera), dopo un attacco – può essere da # (un tuffo)
 const LINK_ALT = {'+':['/', 'Difesa / (rimandata di là)'], '-':['#', 'Difesa # (meritevole)']};
 const linkAlt = ph => ph.forceAlt ? [ph.forceAlt, 'Difesa / (rimandata di là)'] : LINK_ALT[ph.g];
+// invasione a muro (anche senza toccare la palla) di chi difende, dopo un attacco con qualsiasi voto tranne l'errore
+// (richiesta dell'utente del 2026-11-25): B/ del muratore e punto a chi ha attaccato; l'attacco resta col suo voto
+function attackJustMade(ph) { const a = S.rally[S.rally.length - 1];
+  return ph && ph.k !== 'link' && ph.k !== 'serve' && a && a.skill === 'A' && a.grade !== '=' && a.grade !== '#' ? a : null; }
 // il nostro attacco appena segnato, se la fase è il loro attacco subito dopo (avversario essenziale)
 function lastAttackBefore(ph) { const a = S.rally[S.rally.length - 1];
   return ph && ph.k === 'attack' && ph.afterOur && a && a.skill === 'A' && a.t === other(ph.t) && (a.grade === '+' || a.grade === '-') ? a : null; }
@@ -902,6 +906,11 @@ function onPick(kind, val, extra) {
   if (kind === 'linkAlt') S.sel.linkAlt = !S.sel.linkAlt;
   // avversario essenziale: dopo il nostro attacco + / – si passa subito al loro attacco, ma la loro difesa può essere
   // tornata di qua (D/): si torna a "chi ha toccato di là" con la difesa / già scelta, poi "rigore" o palla libera
+  if (kind === 'blockFault') {
+    if (ph.k === 'link') S.sel.blockFault = !S.sel.blockFault;
+    else { const a = attackJustMade(ph);
+      if (a) { S.phase = {k:'link', t:other(a.t), g:a.grade, type:'H', from:null, att:a.t, back:clone(ph)}; S.sel = {blockFault:true}; } }
+  }
   if (kind === 'defOver') {
     const a = lastAttackBefore(ph);
     if (a) { S.phase = {k:'link', t:ph.t, g:a.grade, type:'H', from:null, att:a.t, forceAlt:'/'}; S.sel = {linkAlt:true}; }
@@ -909,6 +918,8 @@ function onPick(kind, val, extra) {
   if (kind === 'link') {          // dopo il voto dell'attacco: chi ha toccato dall'altra parte (voto implicito)
     snapshot();
     const o = ph.t, at = ph.att, g = ph.g, sk = extra;
+    if (sk === 'B' && S.sel.blockFault && val != null) {
+      push(o, val, 'B', ph.type, '/', '', `${name(o,val)} · invasione a muro`); endRally(at, 'invasione a muro'); return render(); }
     const alt = sk === 'D' && S.sel.linkAlt ? (ph.forceAlt || (LINK_ALT[g] || [])[0] || null) : null;
     if (val != null) { const gr = alt || LINKS[g][sk]; push(o, val, sk, ph.type, gr, '', `${name(o,val)} · ${LINK_DESC[sk + gr]}`, !alt); }
     if (val != null && alt === '/') { S.phase = {k:'over', t:at, from:'D'}; S.sel = {}; }        // palla di qua a chi ha attaccato
@@ -997,7 +1008,8 @@ function render() {
                <button class="chip" data-k="setErr" data-v="=">sbagliata (punto loro)</button>
                <span style="width:12px"></span>
                <button class="chip" data-k="overNoAttack" data-v="1">Di là senza attacco</button>
-               ${lastAttackBefore(ph) ? '<button class="chip" data-k="defOver" data-v="1">Difesa / (rimandata di qua)</button>' : ''}</div>` +
+               ${lastAttackBefore(ph) ? '<button class="chip" data-k="defOver" data-v="1">Difesa / (rimandata di qua)</button>' : ''}
+               ${attackJustMade(ph) ? '<button class="chip" data-k="blockFault" data-v="1">Invasione a muro</button>' : ''}</div>` +
 ''; 
     gctx = 'A';
   } else if (ph.k === 'defense') {
@@ -1009,7 +1021,7 @@ function render() {
     html = `<div style="display:grid;grid-template-columns:1fr 1.6fr;gap:10px">
              <div><div class="lab">Muro</div><div class="row ${teamCls(t)}-t" style="grid-template-columns:repeat(3,1fr)">
                ${frontRow(t).map(k => pbtn(t, z[k], 'posto '+k, 'player', z[k], 'B', isSelM('B')(z[k]))).join('')}</div>
-               <div style="margin-top:8px" class="chips"><button class="chip ${(sel.freeball||ph.freeball)?'sel':''}" data-k="freeball" data-v="1">Palla libera (F)</button></div></div>
+               <div style="margin-top:8px" class="chips"><button class="chip ${(sel.freeball||ph.freeball)?'sel':''}" data-k="freeball" data-v="1">Palla libera (F)</button>${attackJustMade(ph) && attackJustMade(ph).t === t ? '<button class="chip" data-k="blockFault" data-v="1">Invasione a muro degli altri</button>' : ''}</div></div>
              <div><div class="lab">Difesa</div>${courtHtml(t, 'player', 'D', isSelM('D'))}</div>
             </div>`;
     gctx = sel.mode === 'B' ? 'B' : 'D';
@@ -1017,8 +1029,9 @@ function render() {
     const t = ph.t, z = layoutRally(t), L = LINKS[ph.g], prop = proposedBlocker(t, ph.from);
     prompt = `<span class="tm ${teamCls(t)}">${DATA[t].name}</span>
               <span class="hint">${ph.forceAlt ? 'difesa rimandata di qua: chi l\'ha toccata?' : LINK_HEAD[ph.g] + ' · il voto si scrive da solo'}${viewNote(t)}</span>`;
-    const muro = `<div><div class="lab">Muro → B${L.B}</div><div class="row ${teamCls(t)}-t" style="grid-template-columns:repeat(3,1fr)">
-        ${frontRow(t).map(k => pbtn(t, z[k], 'posto ' + k + (z[k] === prop ? ' · proposto' : ''), 'link', z[k], 'B', false)).join('')}</div></div>`;
+    const muro = `<div><div class="lab">Muro → B${sel.blockFault ? '/' : L.B}</div><div class="row ${teamCls(t)}-t" style="grid-template-columns:repeat(3,1fr)">
+        ${frontRow(t).map(k => pbtn(t, z[k], 'posto ' + k + (z[k] === prop ? ' · proposto' : ''), 'link', z[k], 'B', false)).join('')}</div>
+        ${ph.g !== '#' ? `<div class="chips" style="margin-top:6px"><button class="chip ${sel.blockFault ? 'sel' : ''}" data-k="blockFault" data-v="1">Invasione a muro (punto a chi attacca)</button></div>` : ''}</div>`;
     const LA = linkAlt(ph), alt = LA && sel.linkAlt;
     const dif = L.D ? `<div><div class="lab">Difesa → D${alt ? LA[0] : L.D}</div>${courtHtml(t, 'link', 'D', () => false)}
         ${LA ? `<div class="chips" style="margin-top:6px"><button class="chip ${alt ? 'sel' : ''}" data-k="linkAlt" data-v="1">${LA[1]}</button></div>` : ''}</div>` : '';
@@ -1732,6 +1745,7 @@ function ovlHtml(g, vr) {
           sel.combo && sel.combo[0] === c[0] ? 'sel' : '', n == null);
     }
     if (lastAttackBefore(ph)) pill('Difesa / (rimandata di qua)', 'data-k="defOver" data-v="1"');
+    if (attackJustMade(ph)) pill('Invasione a muro', 'data-k="blockFault" data-v="1"');
     if (ph.afterOur) { pill('Palla libera bene', 'data-k="fbTeam" data-v="+"', sel.fbTeam === '+' ? 'pos' : '');
                        pill('Palla libera male', 'data-k="fbTeam" data-v="-"', sel.fbTeam === '-' ? 'neg' : ''); }
     if (!(PREFS.oppLight && t !== OUR)) pill('Alzata imprecisa (–)', 'data-k="setErr" data-v="-"');
@@ -1747,6 +1761,7 @@ function ovlHtml(g, vr) {
     objs.forEach(o => { if (o.attrs.includes(`data-v="${prop}" data-x="B"`)) o.cls += ' prop'; });
     if (ph.g === '#') pill('A terra (nessun tocco)', 'data-k="link" data-v="" data-x=""', 'pos');
     else pill('Nessun tocco da segnare', 'data-k="link" data-v="" data-x=""');
+    if (ph.g !== '#') pill('Invasione a muro', 'data-k="blockFault" data-v="1"', sel.blockFault ? 'sel' : '');
     if (linkAlt(ph)) pill(linkAlt(ph)[1], 'data-k="linkAlt" data-v="1"', sel.linkAlt ? 'sel' : '');
   } else if (ph.k === 'defense') {
     const t = ph.t, z = layoutRally(t);
@@ -1754,6 +1769,7 @@ function ovlHtml(g, vr) {
     court(t, z, n => `data-k="player" data-v="${n}" data-x="B"`, n => `data-k="player" data-v="${n}" data-x="D"`,
           (n, m) => sel.player === n && sel.mode === m);
     pill('⇄ Altra squadra', 'data-k="switch" data-v="1"');
+    if (attackJustMade(ph) && attackJustMade(ph).t === ph.t) pill('Invasione a muro', 'data-k="blockFault" data-v="1"');
     if (sel.player != null) popHtml = gradePop(sel.mode === 'B' ? 'B' : 'D', sel.mode === 'B' ? '' :
       `<button class="tip ${(sel.freeball || ph.freeball) ? 'sel' : ''}" data-k="freeball" data-v="1">palla libera</button>`);
   } else if (ph.k === 'over') {
