@@ -187,7 +187,7 @@
   .ohead .tm { font-size:12px; padding:1px 6px; margin-right:5px; }
   .opills { position:absolute; left:8px; bottom:8px; display:flex; gap:6px; flex-wrap:wrap; max-width:80%; pointer-events:none; }
   .opill { pointer-events:auto; background:rgba(8,10,18,.65); color:#fff; padding:8px 11px; font-size:13px; border-radius:8px; }
-  .opill.pos { background:rgba(21,128,61,.8); } .opill.neg { background:rgba(185,28,28,.75); }
+  .opill.sel { background:rgba(37,99,235,.85); outline:2px solid #fff; } .opill.pos { background:rgba(21,128,61,.8); } .opill.neg { background:rgba(185,28,28,.75); }
   .opop button.g2 small { display:block; font-size:9px; font-weight:500; opacity:.8; }
   .opop { position:absolute; pointer-events:auto; display:flex; gap:4px; background:rgba(10,12,20,.65); padding:4px;
     border-radius:10px; transform:translateX(-50%); }
@@ -368,9 +368,11 @@ const GRADES = ['#','+','!','-','/','='];
 // ---------------------------------------------------------------- preferenze e schieramenti imparati
 const load = k => { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } };
 const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
-let PREFS = Object.assign({comboMirror:'auto', pip:true, pipDelay:3, pipCorner:3, pipSize:30, tapPlayers:true, comboLayout:'griglia', neutralHow:false, obScale:1.3, step:5, near:'*', autopause:true, overlay:true, videoOnly:false, oppLight:true}, load('scoutMockupPrefs') || {});
+let PREFS = Object.assign({comboMirror:'auto', pip:true, pipDelay:3, pipCorner:3, pipSize:30, tapPlayers:false, comboLayout:'griglia', neutralHow:false, obScale:1.3, step:5, near:'*', autopause:true, overlay:true, videoOnly:false, oppLight:true}, load('scoutMockupPrefs') || {});
 let ARR = load('scoutMockupArr') || {};      // {nome squadra: {rotazione: {rec:[3 gettoni], att:{A4,A3,A2,AP}}}}
 const savePrefs = () => save('scoutMockupPrefs', PREFS);
+// 2026-11-25: si torna ai pulsanti per chi riceve (col tocco nel video non si poteva deselezionare); una volta sola
+if (!PREFS.tapOff1) { PREFS.tapPlayers = false; PREFS.tapOff1 = true; savePrefs(); }
 // squadra di spalle alla telecamera nel set in corso (S.near): cambia campo a ogni set, al 5° si sceglie e si cambia
 // sull'8 (richiesta dell'utente del 2026-11-22); PREFS.near resta solo come valore di partenza
 const nearT = () => (S && S.near) || PREFS.near;
@@ -700,7 +702,11 @@ function renderSubBanner() {
 // attacco -> tocco implicito dell'altra squadra (come in Volleyball Scout / DataVolley): B = muro, D = difesa
 const LINKS = {'#':{B:'=', D:'='}, '+':{B:'-', D:'-'}, '!':{B:'!'}, '-':{B:'+', D:'+'}, '/':{B:'#'}};
 const LINK_DESC = {'B=':'mani fuori', 'D=':'difesa sbagliata', 'B-':'muro (buono per chi attacca)', 'D-':'difesa scarsa',
-                   'B!':'muro ripreso da chi attacca', 'B+':'muro positivo', 'D+':'difesa', 'B#':'muro punto'};
+                   'B!':'muro ripreso da chi attacca', 'B+':'muro positivo', 'D+':'difesa', 'B#':'muro punto',
+                   'D/':'difesa rimandata di là', 'D#':'difesa meritevole'};
+// voto della difesa diverso da quello implicito, scelto prima di toccare il difensore (richiesta dell'utente del 2026-11-25):
+// dopo un attacco + la difesa può tornare di là (D/: poi "rigore" o palla libera), dopo un attacco – può essere da # (un tuffo)
+const LINK_ALT = {'+':['/', 'Difesa / (rimandata di là)'], '-':['#', 'Difesa # (meritevole)']};
 const LINK_HEAD = {'#':'punto: a terra, mani fuori o difesa sbagliata?', '+':'attacco + → difesa – o muro – di chi?',
                    '!':'attacco ! → muro ! di chi?', '-':'attacco – → difesa + o muro + di chi?', '/':'murato → muro punto di chi?'};
 // zona di partenza dalla sigla (codice DataVolley: sigla, ~, zona di partenza, ~, ~, colpo H forte / T pallonetto)
@@ -887,11 +893,14 @@ function onPick(kind, val, extra) {
     else { S.phase = {k:'defense', t:other(ph.t), type:'H', freeball:true}; S.sel = {}; }
   }
   if (kind === 'fbTeam') S.sel.fbTeam = S.sel.fbTeam === val ? null : val;   // '+' appoggiata bene, '-' male
+  if (kind === 'linkAlt') S.sel.linkAlt = !S.sel.linkAlt;
   if (kind === 'link') {          // dopo il voto dell'attacco: chi ha toccato dall'altra parte (voto implicito)
     snapshot();
     const o = ph.t, at = ph.att, g = ph.g, sk = extra;
-    if (val != null) { const gr = LINKS[g][sk]; push(o, val, sk, ph.type, gr, '', `${name(o,val)} · ${LINK_DESC[sk + gr]}`, true); }
-    if (g === '#') endRally(at, val == null ? 'attacco a terra' : (sk === 'B' ? 'attacco (mani fuori)' : 'attacco (difesa sbagliata)'));
+    const alt = sk === 'D' && S.sel.linkAlt && LINK_ALT[g] ? LINK_ALT[g][0] : null;
+    if (val != null) { const gr = alt || LINKS[g][sk]; push(o, val, sk, ph.type, gr, '', `${name(o,val)} · ${LINK_DESC[sk + gr]}`, !alt); }
+    if (val != null && alt === '/') { S.phase = {k:'over', t:at, from:'D'}; S.sel = {}; }        // palla di qua a chi ha attaccato
+    else if (g === '#') endRally(at, val == null ? 'attacco a terra' : (sk === 'B' ? 'attacco (mani fuori)' : 'attacco (difesa sbagliata)'));
     else if (g === '/') endRally(o, 'muro');
     else if (g === '!') { S.phase = {k:'defense', t:at, type:ph.type}; S.sel = {}; }        // palla tornata a chi attacca
     else if (sk === 'B') { S.phase = {k:'defense', t:o, type:ph.type}; S.sel = {}; }       // muro + / -: gioca chi ha murato
@@ -997,7 +1006,9 @@ function render() {
               <span class="hint">${LINK_HEAD[ph.g]} · il voto si scrive da solo${viewNote(t)}</span>`;
     const muro = `<div><div class="lab">Muro → B${L.B}</div><div class="row ${teamCls(t)}-t" style="grid-template-columns:repeat(3,1fr)">
         ${frontRow(t).map(k => pbtn(t, z[k], 'posto ' + k + (z[k] === prop ? ' · proposto' : ''), 'link', z[k], 'B', false)).join('')}</div></div>`;
-    const dif = L.D ? `<div><div class="lab">Difesa → D${L.D}</div>${courtHtml(t, 'link', 'D', () => false)}</div>` : '';
+    const LA = LINK_ALT[ph.g], alt = LA && sel.linkAlt;
+    const dif = L.D ? `<div><div class="lab">Difesa → D${alt ? LA[0] : L.D}</div>${courtHtml(t, 'link', 'D', () => false)}
+        ${LA ? `<div class="chips" style="margin-top:6px"><button class="chip ${alt ? 'sel' : ''}" data-k="linkAlt" data-v="1">${LA[1]}</button></div>` : ''}</div>` : '';
     const last = ph.g === '#'
       ? `<button class="pbtn" data-k="link" data-v="" data-x="" style="min-height:60px;background:#173a26">A terra (nessun tocco)</button>`
       : `<button class="chip" data-k="link" data-v="" data-x="">Nessun tocco da segnare</button>`;
@@ -1141,6 +1152,8 @@ $('vwrap').addEventListener('pointerup', e => {
   if (e.target.closest('button') || e.target.closest('.calbar') || e.target.closest('.calpanel') || e.target.closest('.calmini') || e.target.closest('.fsbar')) return;   // pulsanti sul video
   if (calMode) return calTap(e);
   if (tapReceiver(e)) return;
+  // ricevitore scelto con i pulsanti: un tocco altrove nel video lo deseleziona (senza far partire il video)
+  if (S && S.phase.k === 'serve' && S.sel.receiver != null && PREFS.tapPlayers === false) { tap(); S.sel.receiver = null; render(); return; }
   const r = $('vwrap').getBoundingClientRect(), x = (e.clientX - r.left) / r.width;
   const side = x < 0.38 ? -1 : x > 0.62 ? 1 : 0, now = performance.now();
   if (side && lastTap.side === side && now - lastTap.t < 380) {   // doppio tocco (e i tocchi successivi) sullo stesso lato
@@ -1720,6 +1733,7 @@ function ovlHtml(g, vr) {
     objs.forEach(o => { if (o.attrs.includes(`data-v="${prop}" data-x="B"`)) o.cls += ' prop'; });
     if (ph.g === '#') pill('A terra (nessun tocco)', 'data-k="link" data-v="" data-x=""', 'pos');
     else pill('Nessun tocco da segnare', 'data-k="link" data-v="" data-x=""');
+    if (LINK_ALT[ph.g]) pill(LINK_ALT[ph.g][1], 'data-k="linkAlt" data-v="1"', sel.linkAlt ? 'sel' : '');
   } else if (ph.k === 'defense') {
     const t = ph.t, z = layoutRally(t);
     head = `<span class="tm ${teamCls(t)}">${ph.freeball ? 'Palla libera' : 'Muro o difesa'}</span>${DATA[t].name} · chi ha toccato?`;
