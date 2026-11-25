@@ -709,6 +709,10 @@ const LINK_DESC = {'B=':'mani fuori', 'D=':'difesa sbagliata', 'B-':'muro (buono
 // voto della difesa diverso da quello implicito, scelto prima di toccare il difensore (richiesta dell'utente del 2026-11-25):
 // dopo un attacco + la difesa può tornare di là (D/: poi "rigore" o palla libera), dopo un attacco – può essere da # (un tuffo)
 const LINK_ALT = {'+':['/', 'Difesa / (rimandata di là)'], '-':['#', 'Difesa # (meritevole)']};
+const linkAlt = ph => ph.forceAlt ? [ph.forceAlt, 'Difesa / (rimandata di là)'] : LINK_ALT[ph.g];
+// il nostro attacco appena segnato, se la fase è il loro attacco subito dopo (avversario essenziale)
+function lastAttackBefore(ph) { const a = S.rally[S.rally.length - 1];
+  return ph && ph.k === 'attack' && ph.afterOur && a && a.skill === 'A' && a.t === other(ph.t) && (a.grade === '+' || a.grade === '-') ? a : null; }
 const LINK_HEAD = {'#':'punto: a terra, mani fuori o difesa sbagliata?', '+':'attacco + → difesa – o muro – di chi?',
                    '!':'attacco ! → muro ! di chi?', '-':'attacco – → difesa + o muro + di chi?', '/':'murato → muro punto di chi?'};
 // zona di partenza dalla sigla (codice DataVolley: sigla, ~, zona di partenza, ~, ~, colpo H forte / T pallonetto)
@@ -896,10 +900,16 @@ function onPick(kind, val, extra) {
   }
   if (kind === 'fbTeam') S.sel.fbTeam = S.sel.fbTeam === val ? null : val;   // '+' appoggiata bene, '-' male
   if (kind === 'linkAlt') S.sel.linkAlt = !S.sel.linkAlt;
+  // avversario essenziale: dopo il nostro attacco + / – si passa subito al loro attacco, ma la loro difesa può essere
+  // tornata di qua (D/): si torna a "chi ha toccato di là" con la difesa / già scelta, poi "rigore" o palla libera
+  if (kind === 'defOver') {
+    const a = lastAttackBefore(ph);
+    if (a) { S.phase = {k:'link', t:ph.t, g:a.grade, type:'H', from:null, att:a.t, forceAlt:'/'}; S.sel = {linkAlt:true}; }
+  }
   if (kind === 'link') {          // dopo il voto dell'attacco: chi ha toccato dall'altra parte (voto implicito)
     snapshot();
     const o = ph.t, at = ph.att, g = ph.g, sk = extra;
-    const alt = sk === 'D' && S.sel.linkAlt && LINK_ALT[g] ? LINK_ALT[g][0] : null;
+    const alt = sk === 'D' && S.sel.linkAlt ? (ph.forceAlt || (LINK_ALT[g] || [])[0] || null) : null;
     if (val != null) { const gr = alt || LINKS[g][sk]; push(o, val, sk, ph.type, gr, '', `${name(o,val)} · ${LINK_DESC[sk + gr]}`, !alt); }
     if (val != null && alt === '/') { S.phase = {k:'over', t:at, from:'D'}; S.sel = {}; }        // palla di qua a chi ha attaccato
     else if (g === '#') endRally(at, val == null ? 'attacco a terra' : (sk === 'B' ? 'attacco (mani fuori)' : 'attacco (difesa sbagliata)'));
@@ -986,7 +996,8 @@ function render() {
                ${PREFS.oppLight && t !== OUR ? '' : '<button class="chip" data-k="setErr" data-v="-">imprecisa (–)</button>'}
                <button class="chip" data-k="setErr" data-v="=">sbagliata (punto loro)</button>
                <span style="width:12px"></span>
-               <button class="chip" data-k="overNoAttack" data-v="1">Di là senza attacco</button></div>` +
+               <button class="chip" data-k="overNoAttack" data-v="1">Di là senza attacco</button>
+               ${lastAttackBefore(ph) ? '<button class="chip" data-k="defOver" data-v="1">Difesa / (rimandata di qua)</button>' : ''}</div>` +
 ''; 
     gctx = 'A';
   } else if (ph.k === 'defense') {
@@ -1005,10 +1016,10 @@ function render() {
   } else if (ph.k === 'link') {
     const t = ph.t, z = layoutRally(t), L = LINKS[ph.g], prop = proposedBlocker(t, ph.from);
     prompt = `<span class="tm ${teamCls(t)}">${DATA[t].name}</span>
-              <span class="hint">${LINK_HEAD[ph.g]} · il voto si scrive da solo${viewNote(t)}</span>`;
+              <span class="hint">${ph.forceAlt ? 'difesa rimandata di qua: chi l\'ha toccata?' : LINK_HEAD[ph.g] + ' · il voto si scrive da solo'}${viewNote(t)}</span>`;
     const muro = `<div><div class="lab">Muro → B${L.B}</div><div class="row ${teamCls(t)}-t" style="grid-template-columns:repeat(3,1fr)">
         ${frontRow(t).map(k => pbtn(t, z[k], 'posto ' + k + (z[k] === prop ? ' · proposto' : ''), 'link', z[k], 'B', false)).join('')}</div></div>`;
-    const LA = LINK_ALT[ph.g], alt = LA && sel.linkAlt;
+    const LA = linkAlt(ph), alt = LA && sel.linkAlt;
     const dif = L.D ? `<div><div class="lab">Difesa → D${alt ? LA[0] : L.D}</div>${courtHtml(t, 'link', 'D', () => false)}
         ${LA ? `<div class="chips" style="margin-top:6px"><button class="chip ${alt ? 'sel' : ''}" data-k="linkAlt" data-v="1">${LA[1]}</button></div>` : ''}</div>` : '';
     const last = ph.g === '#'
@@ -1720,6 +1731,7 @@ function ovlHtml(g, vr) {
       btn(t, pos, c[0] === 'P2' ? '2°' : c[0], n == null ? '' : String(n), `data-k="combo" data-v="${c[0]}"`,
           sel.combo && sel.combo[0] === c[0] ? 'sel' : '', n == null);
     }
+    if (lastAttackBefore(ph)) pill('Difesa / (rimandata di qua)', 'data-k="defOver" data-v="1"');
     if (ph.afterOur) { pill('Palla libera bene', 'data-k="fbTeam" data-v="+"', sel.fbTeam === '+' ? 'pos' : '');
                        pill('Palla libera male', 'data-k="fbTeam" data-v="-"', sel.fbTeam === '-' ? 'neg' : ''); }
     if (!(PREFS.oppLight && t !== OUR)) pill('Alzata imprecisa (–)', 'data-k="setErr" data-v="-"');
@@ -1729,13 +1741,13 @@ function ovlHtml(g, vr) {
       + `<button class="tip ${sel.badSet ? 'sel' : ''}" data-k="badSet" data-v="1">alzata negativa</button>`);
   } else if (ph.k === 'link') {
     const t = ph.t, z = layoutRally(t), L = LINKS[ph.g], prop = proposedBlocker(t, ph.from);
-    head = `<span class="tm ${teamCls(t)}">${DATA[t].name}</span>${LINK_HEAD[ph.g]}`;
+    head = `<span class="tm ${teamCls(t)}">${DATA[t].name}</span>${ph.forceAlt ? 'difesa rimandata di qua: chi?' : LINK_HEAD[ph.g]}`;
     court(t, z, n => `data-k="link" data-v="${n}" data-x="B"`, L.D ? (n => `data-k="link" data-v="${n}" data-x="D"`) : null, () => false);
     // il muratore proposto
     objs.forEach(o => { if (o.attrs.includes(`data-v="${prop}" data-x="B"`)) o.cls += ' prop'; });
     if (ph.g === '#') pill('A terra (nessun tocco)', 'data-k="link" data-v="" data-x=""', 'pos');
     else pill('Nessun tocco da segnare', 'data-k="link" data-v="" data-x=""');
-    if (LINK_ALT[ph.g]) pill(LINK_ALT[ph.g][1], 'data-k="linkAlt" data-v="1"', sel.linkAlt ? 'sel' : '');
+    if (linkAlt(ph)) pill(linkAlt(ph)[1], 'data-k="linkAlt" data-v="1"', sel.linkAlt ? 'sel' : '');
   } else if (ph.k === 'defense') {
     const t = ph.t, z = layoutRally(t);
     head = `<span class="tm ${teamCls(t)}">${ph.freeball ? 'Palla libera' : 'Muro o difesa'}</span>${DATA[t].name} · chi ha toccato?`;
