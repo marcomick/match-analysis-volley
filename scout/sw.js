@@ -24,6 +24,7 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;      // YouTube e simili: rete
+  if (url.pathname.includes('/report/')) return;      // il report partita (report/index.html) non è dello scout: rete
   if (/\.(mp4|mov|m4v|webm)$/i.test(url.pathname) || e.request.headers.has('range')) return;   // video: mai in cache
   if (url.pathname.endsWith('referti.json')) {
     e.respondWith(fetch(e.request, {cache:'no-store'}).then(res => {

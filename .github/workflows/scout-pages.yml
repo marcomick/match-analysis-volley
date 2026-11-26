@@ -1,4 +1,5 @@
 # Pubblica l'app dello scout (scout/) su GitHub Pages: https://marcomick.github.io/match-analysis-volley/
+# e il report partita da un .dvw (report/index.html) in /report/.
 # Parte da sola a ogni push su main che tocca scout/ (o a mano da Actions → "Scout su GitHub Pages" → Run workflow).
 # Si pubblicano solo i file dell'app e referti.json, non il resto della repo. La versione della cache del service
 # worker (VERSION in sw.js) si calcola dal contenuto dei file: a ogni modifica l'iPad scarica la nuova versione.
@@ -8,7 +9,7 @@ name: Scout su GitHub Pages
 on:
   push:
     branches: [main]
-    paths: ["scout/**", ".github/workflows/scout-pages.yml"]
+    paths: ["scout/**", "report/**", ".github/workflows/scout-pages.yml"]
   workflow_dispatch:
   workflow_call:          # dal workflow dei referti (.github/workflows/referti.yml), dopo aver salvato referti.json
 
@@ -35,10 +36,12 @@ jobs:
           mkdir site
           cp scout/index.html scout/manifest.json scout/sw.js scout/icon-180.png scout/icon-512.png site/
           [ -f scout/referti.json ] && cp scout/referti.json site/
+          # report partita da un .dvw (report/index.html): https://marcomick.github.io/match-analysis-volley/report/
+          mkdir site/report && cp report/index.html site/report/
           build="$(TZ=Europe/Rome date '+%d/%m %H:%M') · ${GITHUB_SHA::7}"
           sed -i "s|const APP_BUILD = '[^']*';|const APP_BUILD = '$build';|" site/index.html
           grep -q "const APP_BUILD = '$build';" site/index.html
-          v="scout-$(cat site/* | sha256sum | cut -c1-10)"
+          v="scout-$(find site -maxdepth 1 -type f | sort | xargs cat | sha256sum | cut -c1-10)"
           sed -i "s/const VERSION = '[^']*';/const VERSION = '$v';/" site/sw.js
           grep -q "const VERSION = '$v';" site/sw.js
           touch site/.nojekyll

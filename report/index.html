@@ -1,0 +1,1129 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Report partita da .dvw</title>
+<style>
+:root {
+  --bg: #f6f7f9; --card: #ffffff; --ink: #1f2328; --muted: #6e7781; --grid: #e5e7eb; --navy: #17243a;
+  --noi: #2a78d6; --loro: #eb6834; --pos: #1a7f37; --neg: #cf222e; --zero: #8c959f;
+  --pos-bg: #e2f4e7; --neg-bg: #fce4e4; --gold: #e5b80b; --gold-bg: #fdf6de; --gold-ink: #967300;
+  --head: #eef1f5; --total: #deebfb; --na: #e5e7eb;
+  --c-attacco: #1baf7a; --c-muro: #4a3aa7; --c-rigori: #9a8fe8; --c-ace: #eda100; --c-errori: #e87ba4;
+  --c-generici: #898781; --c-nonril: #c3c2bb;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1216; --card: #181c22; --ink: #e6e8eb; --muted: #9aa4ae; --grid: #2c323a; --navy: #0b1320;
+    --noi: #3987e5; --loro: #d95926; --pos: #4ac26b; --neg: #f07178; --zero: #8c959f;
+    --pos-bg: #183323; --neg-bg: #3a1d20; --gold-bg: #2e2810; --gold-ink: #e5b80b;
+    --head: #222831; --total: #1c2a3d; --na: #2a2f36;
+    --c-attacco: #199e70; --c-muro: #9085e9; --c-rigori: #5b4fbf; --c-ace: #c98500; --c-errori: #d55181;
+    --c-generici: #898781; --c-nonril: #55554f;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg); color: var(--ink); }
+main { max-width: 860px; margin: 0 auto; padding: 16px 14px 60px; }
+h1 { font-size: 22px; margin: 4px 0 2px; }
+h2 { font-size: 17px; margin: 0 0 6px; color: var(--ink); }
+h3 { font-size: 14px; margin: 14px 0 6px; }
+.card { background: var(--card); border: 1px solid var(--grid); border-radius: 10px; padding: 14px 16px; margin: 14px 0; }
+.note { color: var(--muted); font-size: 13px; margin: 4px 0 8px; }
+.drop { display: block; border: 2px dashed var(--grid); border-radius: 12px; padding: 34px 16px; text-align: center; cursor: pointer;
+  background: var(--card); }
+.drop.over { border-color: var(--noi); }
+.drop b { font-size: 17px; }
+.btn { font: inherit; font-size: 14px; padding: 7px 12px; border-radius: 8px; border: 1px solid var(--grid);
+  background: var(--card); color: var(--ink); cursor: pointer; }
+.btn:hover { border-color: var(--muted); }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0; }
+select { font: inherit; font-size: 14px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--grid);
+  background: var(--card); color: var(--ink); }
+.header { background: var(--navy); color: #fff; border-radius: 12px; padding: 16px; margin-top: 14px; }
+.header .teams { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.header .team { flex: 1; font-weight: 700; font-size: 17px; display: flex; align-items: center; gap: 8px; }
+.header .team.right { justify-content: flex-end; text-align: right; }
+.header .score { font-size: 34px; font-weight: 800; letter-spacing: 1px; white-space: nowrap; }
+.header .meta { text-align: center; color: #c9d1db; font-size: 13px; margin-top: 6px; }
+.dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex: none; }
+.partials { display: flex; justify-content: center; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 13px; font-weight: 600; color: #fff; }
+.warn { background: #fff4d6; color: #6b4e00; border-radius: 8px; padding: 8px 10px; font-size: 13px; margin-top: 10px; }
+@media (prefers-color-scheme: dark) { .warn { background: #3a3110; color: #f0d27a; } }
+.mvp { background: var(--gold-bg); border-left: 5px solid var(--gold); }
+.mvp .label { font-size: 12px; font-weight: 700; letter-spacing: 1px; color: var(--gold-ink); }
+.mvp .name { font-size: 24px; font-weight: 800; }
+.mvp ul { margin: 8px 0 0; padding-left: 18px; }
+.tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.tile { border: 1px solid var(--grid); border-radius: 8px; padding: 8px 10px; }
+.tile .big { font-size: 26px; font-weight: 800; }
+.tile .row { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); }
+.tile .row span:first-child { display: flex; align-items: center; gap: 6px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; margin: 8px 0; }
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+.sw { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+.setblock { margin: 10px 0 14px; }
+.setblock .title { font-weight: 600; font-size: 13px; margin-bottom: 4px; }
+.barrow { display: flex; align-items: center; gap: 8px; margin: 3px 0; }
+.barrow .who { width: 96px; font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  display: flex; align-items: center; gap: 5px; }
+.bar { flex: 1; display: flex; gap: 2px; height: 22px; }
+.seg { height: 100%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700;
+  color: #fff; min-width: 0; overflow: hidden; }
+.seg:first-child { border-radius: 4px 0 0 4px; }
+.seg:last-child { border-radius: 0 4px 4px 0; }
+.seg:only-child { border-radius: 4px; }
+.barrow .tot { width: 26px; text-align: right; font-size: 13px; font-weight: 700; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { padding: 4px 6px; border-bottom: 1px solid var(--grid); text-align: right; white-space: nowrap; }
+th { background: var(--head); font-weight: 600; }
+td.l, th.l { text-align: left; }
+tr.total td { background: var(--total); font-weight: 700; }
+td.na { background: var(--na); color: var(--neg); text-align: center; }
+td.p { background: var(--pos-bg); }
+td.n { background: var(--neg-bg); }
+.scroll { overflow-x: auto; }
+.awards { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; font-size: 14px; }
+.chip { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; color: #fff; margin-right: 6px; }
+tr.click { cursor: pointer; }
+tr.click:hover td { background: var(--head); }
+tr.detail td { background: var(--bg); white-space: normal; text-align: left; }
+.vpill { display: inline-block; min-width: 46px; text-align: center; padding: 1px 6px; border-radius: 999px; color: #fff;
+  font-weight: 700; font-size: 12px; }
+.rules td { white-space: normal; text-align: left; vertical-align: top; }
+.rules td:first-child { width: 64px; }
+.charts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.chart .t { font-weight: 600; font-size: 14px; }
+.chart .i { color: var(--muted); font-size: 12px; min-height: 32px; }
+svg text { font-family: inherit; }
+.players { display: grid; grid-template-columns: 1fr; gap: 12px; }
+.pcard { border: 1px solid var(--grid); border-radius: 8px; padding: 8px 10px; }
+.pcard h3 { margin: 0 0 6px; }
+.pcard table { margin-bottom: 6px; }
+footer { color: var(--muted); font-size: 12px; text-align: center; margin-top: 24px; }
+@media (max-width: 620px) { .charts, .tiles { grid-template-columns: 1fr; } .header .score { font-size: 28px; } }
+@media print {
+  body { background: #fff; } .noprint { display: none !important; } .card { break-inside: avoid; border-color: #ddd; }
+  .pcard { break-inside: avoid; } main { max-width: none; }
+}
+</style>
+</head>
+<body>
+<main>
+  <div class="noprint">
+    <h1>Report partita</h1>
+    <p class="note">Scegli il file <b>.dvw</b> dello scout: il report si calcola qui nel browser, il file non viene
+      mandato da nessuna parte.</p>
+    <label class="drop" id="drop">
+      <b>Trascina qui il file .dvw</b><br><span class="note">oppure tocca per sceglierlo</span>
+      <input type="file" id="file" hidden>
+    </label>
+    <div class="toolbar" id="toolbar" hidden>
+      <label>Squadra del report <select id="team"></select></label>
+      <button class="btn" onclick="window.print()">Stampa o salva in PDF</button>
+    </div>
+    <div id="error" class="warn" hidden></div>
+  </div>
+  <div id="report"></div>
+  <footer>Stesse definizioni dei report di Decimo Roma: efficienze, cause dei punti e punteggio MVP.</footer>
+</main>
+
+<script id="core">
+// ============================================================================
+// Calcoli: lettura del .dvw, report e MVP. Stesse regole di src/dvw.py,
+// src/match_report.py, src/set_analysis.py, src/mvp.py e config/mvp.json
+// (se cambiano là, vanno aggiornate qui: tests/report_html_parity.py le confronta).
+// ============================================================================
+const Core = (() => {
+  const SKILLS = { S: 'battuta', R: 'ricezione', A: 'attacco', B: 'muro', D: 'difesa', E: 'alzata', F: 'free ball' };
+  const ACTION_RE = /^([*a])(\d{2})([SRABDEF])(.)([#+!\-\/=])/;
+  const POINT_RE = /^[*a]p(\d+):(\d+)/;
+  const SUB_RE = /^([*a])c(\d+):(\d+)/;
+  const GENERIC_RE = /^([*a])\$\$&.([#=])/;
+  const SETTER_ROLE = 5, MIDDLE_ROLE = 4;
+  const BAD_SET = 'attacco da alzata negativa';
+  const BALL_HIGH = ['H'], BALL_FAST = ['T', 'U', 'Q', 'N', 'F'];
+  const OPP_GENERIC = { '#': 'punto generico avversario', '=': 'errore generico avversario' };
+
+  // config/mvp.json
+  const MVP_CFG = {
+    azioni: {
+      battuta: { '#': 0.60, '+': 0.10, '!': 0.05, '-': 0.00, '/': 0.25, '=': -0.40 },
+      ricezione: { '#': 0.15, '+': 0.12, '!': 0.05, '-': 0.00, '/': -0.05, '=': -0.55 },
+      attacco: { '#': 0.35, '+': 0.10, '!': 0.05, '-': 0.00, '/': -0.35, '=': -0.40 },
+      muro: { '#': 0.65, '+': 0.20, '!': 0.10, '-': 0.00, '/': -1.00, '=': -0.10 },
+      difesa: { '#': 0.25, '+': 0.05, '-': 0.05, '=': -0.10 },
+      alzata: { '#': 0.30, '+': 0.15, '-': -0.15, '/': -0.15, '=': -0.50 },
+    },
+    attacco_per_situazione: {
+      'palla alta': { '#': 0.40, '=': -0.55, '/': -0.40 },
+      'free ball': { '#': 0.45, '=': -0.30, '/': -0.25 },
+      'R#/R+': { '#': 0.40, '=': -0.30, '/': -0.25 },
+    },
+    attacco_seconda_linea: 0.25,
+    alzata_a_punto: 0.05,
+    miglior_ricevitore: { premio: 3.0, min_ricezioni_per_set: 2.8 },
+    miglior_attaccante: { min_attacchi_per_set: 4.0 },
+    errore_battuta_per_tipo: { Q: -0.10, M: -0.40 },
+    palleggiatore: { quota: 0.10, pem_medio_per_attacco: 0.22, solo_alzate_veloci: false },
+    set_fittizi: 1,
+  };
+
+  const isDigits = s => /^\d+$/.test(s);  // str.isdigit
+  const title = s => s.toLowerCase().replace(/(^|[^\p{L}])(\p{L})/gu, (m, a, b) => a + b.toUpperCase());
+
+  function readSections(text) {
+    const sections = {};
+    let current = null;
+    for (const line of text.split(/\r\n|\n|\r/)) {
+      const m = line.trim().match(/^\[3([A-Z\-]+)\]$/);
+      if (m) { current = m[1]; sections[current] = []; }
+      else if (current !== null && line.trim()) sections[current].push(line);
+    }
+    return sections;
+  }
+
+  function parsePlayers(rows, side) {
+    return rows.map(row => {
+      const f = row.split(';');
+      const r = (f[13] || '').trim();
+      return {
+        squadra: side, numero: parseInt(f[1], 10), cognome: title((f[9] || '').trim()), nome: (f[10] || '').trim(),
+        ruolo: isDigits(r) ? parseInt(r, 10) : null,
+        zone: f.slice(3, 8).map(z => (z || '').trim() || null),
+      };
+    });
+  }
+
+  function setCompleto(n, a, b) { const s = n === 5 ? 15 : 25; return Math.max(a, b) >= s && Math.abs(a - b) >= 2; }
+
+  function parseSets(rows) {
+    const out = [];
+    rows.forEach((row, k) => {
+      const f = row.split(';');
+      const m = f.length > 4 ? f[4].match(/^\s*(\d+)\s*-\s*(\d+)\s*$/) : null;
+      if ((f[0] || '').trim() !== 'True' || !m) return;
+      const a = +m[1], b = +m[2];
+      out.push({ numero_set: k + 1, casa: a, ospiti: b, completo: setCompleto(k + 1, a, b) });
+    });
+    return out;
+  }
+
+  // (squadra, numero) -> voce della rosa: vince chi ha un ruolo, poi chi è titolare, poi l'ultima voce
+  function rosterByNumber(players) {
+    const rank = p => [p.ruolo !== null ? 1 : 0, p.zone.some(z => z) ? 1 : 0];
+    const sorted = players.map((p, i) => [p, i]).sort((x, y) => {
+      const a = rank(x[0]), b = rank(y[0]);
+      return a[0] - b[0] || a[1] - b[1] || x[1] - y[1];
+    });
+    const out = new Map();
+    for (const [p] of sorted) out.set(p.squadra + p.numero, p);
+    return out;
+  }
+
+  const zoneNumbers = (f, start) => [0, 1, 2, 3, 4, 5].map(k => {
+    const v = (f[start + k] || '').trim(); return isDigits(v) ? parseInt(v, 10) : null;
+  });
+
+  function setterOnCourt(lineup, zone, setters) {
+    if (zone && setters.has(lineup[zone - 1])) return lineup[zone - 1];
+    const on = lineup.filter(n => n !== null && setters.has(n));
+    return on.length === 1 ? on[0] : null;
+  }
+
+  function codeChar(code, i) { const c = code.length > i ? code[i] : '~'; return c === '~' || c === ' ' ? null : c; }
+
+  function parseScout(rows, players) {
+    const roster = rosterByNumber(players);
+    const setters = { '*': new Set(), a: new Set() };
+    players.forEach(p => { if (p.ruolo === SETTER_ROLE) setters[p.squadra].add(p.numero); });
+    const actions = [], rallies = [];
+    let score = [0, 0], currentSet, rally = 0;
+    for (const row of rows) {
+      const f = row.split(';');
+      const code = f[0];
+      if (code.startsWith('**')) continue;
+      const s8 = (f[8] || '').trim();
+      const nset = isDigits(s8) ? parseInt(s8, 10) : null;
+      if (nset !== currentSet) { currentSet = nset; score = [0, 0]; }
+      const pt = code.match(POINT_RE);
+      if (pt) {
+        score = [+pt[1], +pt[2]];
+        rallies.push({ rally, set: nset, vincitore: code[0], casa: score[0], ospiti: score[1] });
+        rally += 1;
+        continue;
+      }
+      const home = zoneNumbers(f, 14), away = zoneNumbers(f, 20);
+      const z9 = (f[9] || '').trim(), z10 = (f[10] || '').trim();
+      const sz = { '*': isDigits(z9) ? +z9 : null, a: isDigits(z10) ? +z10 : null };
+      const base = {
+        set: nset, rally, pl: score[0], po: score[1], home, away,
+        setterH: setterOnCourt(home, sz['*'], setters['*']), setterA: setterOnCourt(away, sz.a, setters.a),
+      };
+      const a = code.match(ACTION_RE), g = code.match(GENERIC_RE), s = code.match(SUB_RE);
+      if (a) {
+        const side = a[1], numero = parseInt(a[2], 10), lineup = side === '*' ? home : away;
+        const p = roster.get(side + numero);
+        actions.push({
+          ...base, squadra: side, tipo: SKILLS[a[3]], voto: a[5], codice: code, palla: codeChar(code, 4),
+          cognome: p ? p.cognome : null, numero, pos: lineup.indexOf(numero) >= 0 ? lineup.indexOf(numero) + 1 : null,
+        });
+      } else if (g || s) {
+        actions.push({ ...base, squadra: (g || s)[1], tipo: g ? 'generico' : 'cambio configurazione',
+          voto: g ? g[2] : null, codice: code, palla: null, cognome: null, numero: null, pos: null });
+      }
+    }
+    return { actions, rallies };
+  }
+
+  // indice dell'azione prima dell'attacco i nello stesso scambio, saltando le alzate della stessa squadra
+  function previousTouch(actions, i) {
+    const team = actions[i].squadra, rally = actions[i].rally;
+    for (let p = i - 1; p >= 0; p--) {
+      const x = actions[p];
+      if (x.rally !== rally) return null;
+      if (x.tipo === 'cambio configurazione' || (x.tipo === 'alzata' && x.squadra === team)) continue;
+      return p;
+    }
+    return null;
+  }
+
+  function middleAttacksQuick(actions, players) {
+    const middles = new Set();
+    for (const [k, p] of rosterByNumber(players)) if (p.ruolo === MIDDLE_ROLE) middles.add(k);
+    actions.forEach(x => { if (x.tipo === 'attacco' && middles.has(x.squadra + x.numero)) x.palla = 'Q'; });
+  }
+
+  function inferBallType(actions) {
+    const teams = [...new Set(actions.map(x => x.squadra))];
+    for (const team of teams) {
+      const att = actions.map((x, i) => i).filter(i => actions[i].squadra === team && actions[i].tipo === 'attacco');
+      if (!att.length || att.some(i => ['T', 'U', 'N', 'F', 'M', 'O'].includes(actions[i].palla))) continue;
+      for (const i of att) {
+        actions[i].pallaStimata = true;
+        if (actions[i].palla === 'Q') continue;
+        const j = previousTouch(actions, i);
+        if (j === null || actions[j].squadra !== team) continue;
+        const t = actions[j].tipo, v = actions[j].voto;
+        if ((t === 'ricezione' && ['#', '+', '!'].includes(v)) || (t === 'difesa' && v === '!')) actions[i].palla = 'T';
+        else if (t === 'ricezione' && v === '-') actions[i].palla = 'H';
+      }
+    }
+  }
+
+  function markRigori(actions) {
+    const rig = [];
+    actions.forEach((x, i) => {
+      if (x.tipo !== 'muro') return;
+      const j = previousTouch(actions, i);
+      if (j !== null && actions[j].squadra !== x.squadra && ['ricezione', 'difesa'].includes(actions[j].tipo)
+          && actions[j].voto === '/') rig.push(i);
+    });
+    rig.forEach(i => { actions[i].tipo = 'rigore'; });
+  }
+
+  function markBadSetAttacks(actions) {
+    const bad = [];
+    actions.forEach((x, k) => {
+      if (x.tipo !== 'attacco') return;
+      let p = k - 1;
+      while (p >= 0 && actions[p].tipo === 'cambio configurazione') p--;
+      if (p < 0) return;
+      const y = actions[p];
+      if (y.tipo === 'alzata' && y.voto === '/' && y.squadra === x.squadra && y.rally === x.rally) bad.push(k);
+    });
+    bad.forEach(k => { actions[k].tipo = BAD_SET; });
+  }
+
+  function parseDvw(text) {
+    const sec = readSections(text);
+    const teams = {};
+    (sec.TEAMS || []).forEach(row => { const f = row.split(';'); teams[(f[0] || '').trim() === '1' ? '*' : 'a'] = (f[1] || '').trim(); });
+    const players = parsePlayers(sec['PLAYERS-H'] || [], '*').concat(parsePlayers(sec['PLAYERS-V'] || [], 'a'));
+    const m = sec.MATCH || [];
+    const data = m.length ? m[0].split(';')[0].trim() : '';
+    const { actions, rallies } = parseScout(sec.SCOUT || [], players);
+    middleAttacksQuick(actions, players);
+    inferBallType(actions);
+    markRigori(actions);
+    markBadSetAttacks(actions);
+    return { data: data || null, teams, players, sets: parseSets(sec.SET || []), actions, rallies };
+  }
+
+  // azioni di una squadra (+ punti/errori generici dell'altra), come src.dvw.side_actions
+  function sideActions(parsed, side) {
+    const roster = rosterByNumber(parsed.players);
+    return parsed.actions.filter(x => (x.squadra === side) !== (x.tipo === 'generico')).map(x => {
+      const y = { ...x };
+      if (y.tipo === 'generico') { y.tipo = OPP_GENERIC[y.voto]; y.voto = null; }
+      const s = side === '*' ? y.setterH : y.setterA;
+      const p = s !== null ? roster.get(side + s) : null;
+      y.palleggiatore = p ? p.cognome : null;
+      y.mine = side === '*' ? y.home : y.away;
+      return y;
+    });
+  }
+
+  function loadSource(parsed, side) {
+    const other = side === '*' ? 'a' : '*';
+    return { parsed, side, other, noi: sideActions(parsed, side), loro: sideActions(parsed, other),
+      nomeNoi: parsed.teams[side], nomeLoro: parsed.teams[other] };
+  }
+
+  function defaultSide(parsed) {
+    for (const s of ['*', 'a']) if ((parsed.teams[s] || '').toLowerCase().includes('decimo')) return s;
+    return '*';
+  }
+
+  // --- efficienze e divisione degli attacchi --------------------------------
+  const POS_NEG = { battuta: [['#', '+', '/'], ['=']], ricezione: [['#', '+'], ['=', '/']],
+    attacco: [['#'], ['=', '/']], muro: [['#', '+'], ['=', '/']] };
+
+  function eff(rows, tipo) {
+    const r = rows.filter(x => x.tipo === tipo);
+    if (!r.length) return null;
+    const [pos, neg] = POS_NEG[tipo];
+    return 100 * (r.filter(x => pos.includes(x.voto)).length - r.filter(x => neg.includes(x.voto)).length) / r.length;
+  }
+
+  const isError = x => (['battuta', 'attacco', 'alzata'].includes(x.tipo) && x.voto === '=') || (x.tipo === 'muro' && x.voto === '/');
+
+  // [side-out, free ball, contrattacco] (src.efficiency.separate_attack_types); ignoreSet = totale della partita
+  function separateAttacks(df, recVote = ['#', '+', '!', '-'], ignoreSet = false) {
+    const same = (a, b) => (ignoreSet || df[a].set === df[b].set) && df[a].pl === df[b].pl && df[a].po === df[b].po;
+    const v = i => (df[i].voto === null ? 'None' : String(df[i].voto).trim());
+    const t = i => String(df[i].tipo).toLowerCase();
+    const so = [], fb = [], co = [];
+    for (let i = 0; i < df.length; i++) {
+      if (t(i) !== 'attacco') continue;
+      let rec = false;
+      if (i >= 1 && t(i - 1) === 'ricezione' && recVote.includes(v(i - 1)) && same(i - 1, i)) rec = true;
+      else if (i >= 2 && t(i - 2) === 'ricezione' && recVote.includes(v(i - 2)) && t(i - 1) === 'alzata' && same(i - 2, i)) rec = true;
+      let free = false;
+      if (!rec) {
+        if (i >= 1 && t(i - 1) === 'difesa' && v(i - 1) === '!' && same(i - 1, i)) free = true;
+        else if (i >= 2 && t(i - 2) === 'difesa' && v(i - 2) === '!' && t(i - 1) === 'alzata' && same(i - 2, i)) free = true;
+      }
+      (rec ? so : free ? fb : co).push(df[i]);
+    }
+    return [so, fb, co];
+  }
+
+  const setsOf = rows => [...new Set(rows.map(x => x.set).filter(s => s !== null))].sort((a, b) => a - b);
+
+  // --- da dove arrivano i punti ---------------------------------------------
+  const RIGORI = '"Rigori"';
+  const CAUSES = ['Attacco', 'Muro', RIGORI, 'Ace', 'Errori avversari', 'Punti generici', 'Non rilevato'];
+  const WINNING = { attacco: 'Attacco', [BAD_SET]: 'Attacco', muro: 'Muro', rigore: RIGORI, battuta: 'Ace' };
+  const lostPoint = x => x.voto === '=' || (['attacco', BAD_SET, 'muro', 'rigore'].includes(x.tipo) && x.voto === '/');
+
+  function classifyRallies(parsed) {
+    const byRally = new Map();
+    parsed.actions.forEach(x => {
+      if (x.tipo === 'cambio configurazione') return;
+      if (!byRally.has(x.rally)) byRally.set(x.rally, []);
+      byRally.get(x.rally).push(x);
+    });
+    return parsed.rallies.map(r => {
+      const rows = byRally.get(r.rally) || [];
+      const won = rows.filter(x => x.squadra === r.vincitore && x.voto === '#' && x.tipo in WINNING);
+      const lost = rows.filter(x => x.squadra !== r.vincitore && x.tipo !== 'generico' && lostPoint(x));
+      let causa = 'Non rilevato';
+      if (won.length) causa = WINNING[won[won.length - 1].tipo];
+      else if (lost.length) causa = 'Errori avversari';
+      else if (rows.some(x => x.tipo === 'generico')) causa = 'Punti generici';
+      return { ...r, causa };
+    });
+  }
+
+  function pointsBySet(src) {
+    const rallies = classifyRallies(src.parsed);
+    const sets = setsOf(rallies);
+    const out = [];
+    for (const label of sets.map(String).concat(['Tot'])) {
+      const sub = label === 'Tot' ? rallies : rallies.filter(r => r.set === +label);
+      const row = { set: label };
+      for (const [key, side] of [['noi', src.side], ['loro', src.other]]) {
+        row[key] = Object.fromEntries(CAUSES.map(c => [c, sub.filter(r => r.vincitore === side && r.causa === c).length]));
+      }
+      out.push(row);
+    }
+    return out;
+  }
+
+  // --- noi e loro set per set -----------------------------------------------
+  const SET_METRICS = ['Battuta%', 'Ricezione%', 'Attacco SO%', 'Contrattacco%', 'Muro punti', 'Errori'];
+
+  function metrics(df, ignoreSet) {
+    const [so, fb, co] = separateAttacks(df, ['#', '+', '!', '-'], ignoreSet);
+    const nan = v => (v === null ? NaN : v);
+    return {
+      'Battuta%': nan(eff(df, 'battuta')), 'Ricezione%': nan(eff(df, 'ricezione')),
+      'Attacco SO%': nan(eff(so, 'attacco')), 'Contrattacco%': nan(eff(fb.concat(co), 'attacco')),
+      'Muro punti': df.filter(x => x.tipo === 'muro' && x.voto === '#').length, 'Errori': df.filter(isError).length,
+    };
+  }
+
+  function teamComparison(src) {
+    const out = {};
+    for (const key of ['noi', 'loro']) {
+      const df = src[key];
+      out[key] = setsOf(df).map(s => ({ set: String(s), ...metrics(df.filter(x => x.set === s), false) }))
+        .concat([{ set: 'Tot', ...metrics(df, true) }]);
+    }
+    return out;
+  }
+
+  // --- tabellino per giocatore (src.set_analysis.player_kpi_table) ---------
+  const PLAYER_ROWS = [['ricezione', 'Ricezione'], ['difesa', 'Difesa'], ['battuta', 'Battuta'], ['so', 'Attacco SO'],
+    ['bp', 'Attacco BP'], ['fb', 'di cui free ball'], ['muro', 'Muro'], ['rigori', '"Rigori"'], ['alta', 'Palla alta'],
+    ['veloce', 'Palla veloce'], ['alzata', 'Alzata'], ['totale', 'Totale']];
+  const cnt = (rows, f) => rows.filter(f).length;
+
+  function attackCounts(att) {
+    const n = att.length, pt = cnt(att, x => x.voto === '#'), err = cnt(att, x => x.voto === '='), mur = cnt(att, x => x.voto === '/');
+    return { tot: n, pt, err, mur, pe: pt - err - mur, eff: n ? 100 * (pt - err - mur) / n : null };
+  }
+
+  function entities(df) {
+    const acts = df.filter(x => x.numero !== null);
+    const nums = [...new Set(acts.map(x => x.numero))].sort((a, b) => a - b);
+    return [['Squadra', acts]].concat(nums.map(n => {
+      const mine = acts.filter(x => x.numero === n);
+      return [`${n} ${mine[0].cognome}`, mine];
+    }));
+  }
+
+  function playerKpiTable(df) {
+    const [so, fb, co] = separateAttacks(df);
+    const soA = new Set(so.filter(x => x.tipo === 'attacco')), fbA = new Set(fb.filter(x => x.tipo === 'attacco'));
+    const bpA = new Set(fb.concat(co).filter(x => x.tipo === 'attacco'));
+    const out = [];
+    for (const [name, mine] of entities(df)) {
+      const rows = {};
+      const ric = mine.filter(x => x.tipo === 'ricezione');
+      if (ric.length) {
+        const pos = cnt(ric, x => ['#', '+'].includes(x.voto)), neg = cnt(ric, x => ['/', '='].includes(x.voto));
+        rows.ricezione = { tot: ric.length, hash: cnt(ric, x => x.voto === '#'), plus: cnt(ric, x => x.voto === '+'),
+          ex: cnt(ric, x => x.voto === '!'), neg: cnt(ric, x => x.voto === '-'), err: neg, eff: 100 * (pos - neg) / ric.length };
+      }
+      const dif = mine.filter(x => x.tipo === 'difesa');
+      if (dif.length) rows.difesa = { tot: dif.length, hash: cnt(dif, x => x.voto === '#'), plus: cnt(dif, x => x.voto === '+'),
+        ex: cnt(dif, x => x.voto === '!'), neg: cnt(dif, x => x.voto === '-'), err: cnt(dif, x => ['/', '='].includes(x.voto)), eff: null };
+      const bat = mine.filter(x => x.tipo === 'battuta');
+      if (bat.length) {
+        const pt = cnt(bat, x => x.voto === '#'), err = cnt(bat, x => x.voto === '=');
+        rows.battuta = { tot: bat.length, pt, err, pe: pt - err, eff: 100 * (cnt(bat, x => ['#', '+', '/'].includes(x.voto)) - err) / bat.length };
+      }
+      const att = mine.filter(x => x.tipo === 'attacco');
+      for (const [key, part] of [['so', att.filter(x => soA.has(x))], ['bp', att.filter(x => bpA.has(x))], ['fb', att.filter(x => fbA.has(x))],
+        ['alta', att.filter(x => BALL_HIGH.includes(x.palla))], ['veloce', att.filter(x => BALL_FAST.includes(x.palla))]]) {
+        if (part.length) rows[key] = attackCounts(part);
+      }
+      const muro = mine.filter(x => x.tipo === 'muro');
+      if (muro.length) {
+        const pt = cnt(muro, x => x.voto === '#'), err = cnt(muro, x => x.voto === '/');
+        rows.muro = { tot: muro.length, pt, err, pe: pt - err, eff: null };
+      }
+      const rig = mine.filter(x => x.tipo === 'rigore');
+      if (rig.length) {
+        const pt = cnt(rig, x => x.voto === '#'), err = cnt(rig, x => ['=', '/'].includes(x.voto));
+        rows.rigori = { tot: rig.length, pt, err, pe: pt - err, eff: null };
+      }
+      const alz = cnt(mine, x => x.tipo === 'alzata' && x.voto === '=');
+      if (alz) rows.alzata = { tot: null, pt: null, err: alz, pe: -alz, eff: null };
+      const parts = ['battuta', 'so', 'bp', 'muro', 'rigori', 'alzata'].map(k => rows[k]).filter(Boolean);
+      const pt = parts.reduce((s, r) => s + (r.pt || 0), 0), err = parts.reduce((s, r) => s + (r.err || 0), 0);
+      const mur = parts.reduce((s, r) => s + (r.mur || 0), 0);
+      rows.totale = { tot: null, pt, err, mur, pe: pt - err - mur, eff: null };
+      out.push({ name, rows: PLAYER_ROWS.filter(([k]) => rows[k]).map(([k, label]) => ({ kpi: k, label, ...rows[k] })) });
+    }
+    return out;
+  }
+
+  // --- palleggiatori --------------------------------------------------------
+  function setterTable(src) {
+    const df = src.noi;
+    const setters = [...new Set(df.map(x => x.palleggiatore).filter(Boolean))].sort();
+    const fam = sub => {
+      const [soPos, fb] = separateAttacks(sub, ['#', '+']);
+      const [soEscl] = separateAttacks(sub, ['!']);
+      return { 'R+#': soPos, 'R!': soEscl, FB: fb };
+    };
+    const blocks = setsOf(df).map(s => [String(s), fam(df.filter(x => x.set === s))]).concat([['Tot', fam(df)]]);
+    return setters.map(name => ({ name, rows: blocks.map(([label, f]) => {
+      const row = { set: label };
+      for (const k of ['R+#', 'R!', 'FB']) {
+        const mine = f[k].filter(x => x.tipo === 'attacco' && x.palleggiatore === name);
+        row[k] = { eff: eff(mine, 'attacco'), n: mine.length };
+      }
+      return row;
+    }) }));
+  }
+
+  // --- MVP (src/mvp.py) -----------------------------------------------------
+  const FUNDS = ['battuta', 'ricezione', 'attacco', 'muro', 'difesa', 'alzata'];
+  const FUND_LABELS = { battuta: 'Battuta', ricezione: 'Ricezione', attacco: 'Attacco', muro: 'Muro', difesa: 'Difesa', alzata: 'Alzata' };
+  const GRADE_CODES = { battuta: 'B', ricezione: 'R', attacco: 'A', muro: 'M', difesa: 'D', alzata: 'E' };
+  const DESCR = {
+    battuta: { '#': 'Ace (B#)', '+': 'Battuta che mette in difficoltà la ricezione (B+)', '!': 'Battuta che toglie il primo tempo (B!)',
+      '-': 'Battuta facile da ricevere (B-)', '/': 'Battuta che fa tornare la palla di qua (B/)', '=': 'Errore in battuta, tipo non rilevato (B=)' },
+    ricezione: { '#': 'Ricezione perfetta (R#)', '+': 'Ricezione buona, si può giocare il primo tempo (R+)', '!': 'Ricezione senza primo tempo (R!)',
+      '-': 'Ricezione che permette solo la palla alta (R-)', '/': 'Ricezione che va di là (R/)', '=': 'Ace subito (R=)' },
+    attacco: { '#': 'Attacco punto in altre situazioni: dopo R!, contrattacco su palla veloce (A#)',
+      '+': 'Attacco che mette in difficoltà la difesa (A+)', '!': 'Attacco che torna nel nostro campo, rigiochiamo (A!)',
+      '-': "Attacco difeso dall'avversario (A-)", '/': 'Attacco murato in altre situazioni (A/)', '=': 'Errore in attacco in altre situazioni (A=)' },
+    muro: { '#': 'Muro punto (M#)', '+': 'Muro che ci fa rigiocare (M+)', '!': "Muro che fa rigiocare l'avversario (M!)",
+      '-': "Muro toccato che lascia contrattaccare l'avversario (M-)", '/': 'Invasione a muro (M/)', '=': 'Mani-fuori subito (M=)' },
+    difesa: { '#': 'Difesa che fa la differenza, per esempio un tuffo (D#)', '+': 'Difesa nella giusta posizione (D+)',
+      '-': 'Difesa che tiene la palla senza contrattacco (D-)', '=': "Difesa che dà il punto all'avversario (D=)" },
+    alzata: { '#': 'Alzata meritevole (E#)', '+': "Alzata che lascia l'attaccante contro muro a 1 (E+)",
+      '-': "Alzata imprecisa, mette in difficoltà l'attaccante (E-)", '/': "Alzata negativa: l'attacco che segue non conta per l'attaccante (E/)",
+      '=': 'Errore di alzata (E=)' },
+  };
+  const SERVE_ERR = { Q: 'Errore in battuta salto spin (B= spin)', M: 'Errore in battuta salto float (B= float)' };
+  const SIT_LABELS = {};
+  for (const [sit, where] of [['R#/R+', 'da R# o R+'], ['free ball', 'da free ball'], ['palla alta', 'su palla alta']]) {
+    for (const [v, what] of [['#', 'Attacco punto'], ['=', 'Errore in attacco'], ['/', 'Attacco murato']]) SIT_LABELS[sit + v] = `${what} ${where} (A${v})`;
+  }
+  const BACK_ROW = 'Attacco punto da 2ª linea: in più';
+  const SET_POINT = 'Alzata # o + che porta a punto: in più';
+  const PREMIO_LABEL = 'Miglior ricevitore della partita: premio meno i punti fatti in attacco, battuta e muro';
+  const RIG = '"Rigore": punto sulla loro ricezione o difesa rimandata di qua (M# dopo R/ o D/), come un attacco punto';
+  const RIG_ERR = '"Rigore" sbagliato: fuori, in rete o invasione (M=, M/ dopo R/ o D/), come un attacco sbagliato';
+  const RIG_PLAY = '"Rigore" difeso dagli altri (M- dopo R/ o D/), come un attacco rimasto in gioco';
+
+  function setsPlayed(src) {
+    const played = new Map();
+    const add = (n, s) => { if (n === null || s === null) return; if (!played.has(n)) played.set(n, new Set()); played.get(n).add(s); };
+    src.parsed.actions.forEach(x => (src.side === '*' ? x.home : x.away).forEach(n => add(n, x.set)));
+    src.noi.forEach(x => add(x.numero, x.set));
+    const nSets = new Set(src.parsed.actions.map(x => x.set).filter(s => s !== null)).size;
+    return { played: new Map([...played].map(([n, s]) => [n, s.size])), nSets };
+  }
+
+  function scoredActions(src, cfg) {
+    const noi = src.noi;
+    const pos = new Map(noi.map((x, i) => [x, i]));
+    const df = noi.filter(x => x.numero !== null && (FUNDS.includes(x.tipo) || x.tipo === 'rigore')).map(x => {
+      const y = { ...x, orig: x, rigore: x.tipo === 'rigore' };
+      if (y.rigore) {
+        y.tipo = 'attacco';
+        if (['=', '/'].includes(y.voto)) { y.rigErr = true; y.voto = '='; }
+      }
+      y.valore = (cfg.azioni[y.tipo] || {})[y.voto] ?? 0;
+      y.voce = (DESCR[y.tipo] || {})[y.voto] || `${FUND_LABELS[y.tipo]} con voto ${y.voto} (${GRADE_CODES[y.tipo]}${y.voto})`;
+      if (y.rigore) y.voce = x.voto === '#' ? RIG : y.rigErr ? RIG_ERR : RIG_PLAY;
+      return y;
+    });
+    const [so, fb] = separateAttacks(noi, ['#', '+', '!']);
+    const [soGood] = separateAttacks(noi, ['#', '+']);
+    const fbSet = new Set(fb), soGoodSet = new Set(soGood);
+    const attacks = df.filter(y => y.tipo === 'attacco' && ['#', '=', '/'].includes(y.voto) && !y.rigore);
+    for (const y of attacks) {
+      const sit = BALL_HIGH.includes(y.palla) ? 'palla alta' : fbSet.has(y.orig) ? 'free ball' : soGoodSet.has(y.orig) ? 'R#/R+' : null;
+      if (sit && cfg.attacco_per_situazione[sit]) { y.valore = cfg.attacco_per_situazione[sit][y.voto]; y.voce = SIT_LABELS[sit + y.voto]; }
+    }
+    for (const y of attacks) {
+      if (y.voto === '#' && [0, 4, 5].some(z => y.mine[z] === y.numero)) {
+        y.valore += cfg.attacco_seconda_linea || 0;
+        y.voce = `${y.voce.replace(' (A#)', '')}, da 2ª linea (A#)`;
+      }
+    }
+    for (const y of df) {
+      if (y.tipo !== 'alzata' || !['#', '+'].includes(y.voto)) continue;
+      const nx = noi[pos.get(y.orig) + 1];
+      if (nx && nx.tipo === 'attacco' && nx.voto === '#' && nx.rally === y.rally) {
+        y.valore += cfg.alzata_a_punto || 0;
+        y.voce = y.voce.replaceAll(')', ' a punto)');
+      }
+    }
+    for (const [code, value] of Object.entries(cfg.errore_battuta_per_tipo || {})) {
+      df.filter(y => y.tipo === 'battuta' && y.voto === '=' && y.palla === code).forEach(y => { y.valore = value; y.voce = SERVE_ERR[code]; });
+    }
+    return { df, so, fb };
+  }
+
+  function bestReceiver(df, src, cfg) {
+    const rc = cfg.miglior_ricevitore;
+    const { nSets } = setsPlayed(src);
+    const by = new Map();
+    df.filter(y => y.tipo === 'ricezione').forEach(y => { if (!by.has(y.numero)) by.set(y.numero, []); by.get(y.numero).push(y.voto); });
+    const min = Math.ceil(rc.min_ricezioni_per_set * nSets);
+    const list = [...by].map(([n, v]) => ({ numero: n, n: v.length,
+      eff: 100 * (v.filter(x => ['#', '+'].includes(x)).length - v.filter(x => ['/', '='].includes(x)).length) / v.length }))
+      .filter(r => r.n >= min).sort((a, b) => b.eff - a.eff || b.n - a.n || a.numero - b.numero);
+    return list[0] || null;
+  }
+
+  function setterAttacks(so, fb, cfg) {
+    let sa = so.concat(fb).filter(x => x.tipo === 'attacco' && x.palleggiatore && x.cognome !== x.palleggiatore);
+    if (cfg.palleggiatore.solo_alzate_veloci) sa = sa.filter(x => BALL_FAST.includes(x.palla));
+    return sa.map(x => ({ x, pem: x.voto === '#' ? 1 : ['=', '/'].includes(x.voto) ? -1 : 0 }));
+  }
+
+  function matchMvp(src, cfg = MVP_CFG) {
+    const { df, so, fb } = scoredActions(src, cfg);
+    const best = bestReceiver(df, src, cfg);
+    const bySetter = new Map();
+    for (const { x, pem } of setterAttacks(so, fb, cfg)) {
+      const s = bySetter.get(x.palleggiatore) || { n: 0, pem: 0, pt: 0 };
+      s.n += 1; s.pem += pem; s.pt += x.voto === '#' ? 1 : 0;
+      bySetter.set(x.palleggiatore, s);
+    }
+    const { played, nSets } = setsPlayed(src);
+    const nums = [...new Set(df.map(y => y.numero))].sort((a, b) => a - b);
+    const rows = nums.map(n => {
+      const mine = df.filter(y => y.numero === n);
+      const cognome = mine[0].cognome || String(n);
+      const row = { numero: n, giocatore: `${n} ${cognome}`, cognome, counts: {} };
+      FUNDS.forEach(f => { row[f] = mine.filter(y => y.tipo === f).reduce((s, y) => s + y.valore, 0); });
+      mine.forEach(y => { const k = `${y.tipo} ${y.voto}`; row.counts[k] = (row.counts[k] || 0) + 1; });
+      row.counts['attacco rigore'] = mine.filter(y => y.voce === RIG).length;
+      const s = bySetter.get(cognome);
+      if (s) {
+        const expected = cfg.palleggiatore.pem_medio_per_attacco * s.n;
+        Object.assign(row, { alzati_n: s.n, alzati_pem: s.pem, alzati_pt: s.pt, alzati_attesi: expected });
+        row.quota = cfg.palleggiatore.quota * (s.pem - expected);
+        row.alzata += row.quota;
+      }
+      row.miglior_ricevitore = !!best && best.numero === n;
+      row.premio = 0;
+      if (row.miglior_ricevitore) {
+        const p = cfg.miglior_ricevitore.premio;
+        row.premio = Math.min(p, Math.max(0, p - (row.attacco + row.battuta + row.muro)));
+        row.ric_n = best.n; row.ric_eff = best.eff;
+      }
+      row.totale = FUNDS.reduce((t, f) => t + row[f], 0) + row.premio;
+      row.set_giocati = played.has(n) ? played.get(n) : nSets;
+      row.set_partita = nSets;
+      const k = cfg.set_fittizi;
+      row.punteggio = row.totale > 0 ? row.totale * (nSets + k) / (row.set_giocati + k) : row.totale;
+      return row;
+    });
+    return rows.sort((a, b) => (Math.abs(b.punteggio - a.punteggio) > 1e-9 ? b.punteggio - a.punteggio : a.numero - b.numero));
+  }
+
+  function matchAwards(src, mvp, cfg = MVP_CFG) {
+    const names = new Map(mvp.map(r => [r.numero, r.giocatore]));
+    const noi = src.noi.filter(x => x.numero !== null);
+    const { nSets } = setsPlayed(src);
+    const out = { ricevitore: null, attaccante: null, muro: null };
+    const r = mvp.find(x => x.miglior_ricevitore);
+    if (r) out.ricevitore = { giocatore: r.giocatore, n: r.ric_n, eff: r.ric_eff, premio: r.premio };
+    const group = (tipo) => {
+      const m = new Map();
+      noi.filter(x => x.tipo === tipo).forEach(x => { if (!m.has(x.numero)) m.set(x.numero, []); m.get(x.numero).push(x.voto); });
+      return [...m].sort((a, b) => a[0] - b[0]);
+    };
+    const min = Math.ceil(cfg.miglior_attaccante.min_attacchi_per_set * nSets);
+    const att = group('attacco').map(([n, v]) => ({ n: v.length, numero: n, pt: v.filter(x => x === '#').length,
+      eff: 100 * (v.filter(x => x === '#').length - v.filter(x => ['=', '/'].includes(x)).length) / v.length }))
+      .filter(a => a.n >= min).sort((a, b) => b.eff - a.eff || b.n - a.n);
+    if (att.length) out.attaccante = { giocatore: names.get(att[0].numero) || String(att[0].numero), n: att[0].n, pt: att[0].pt, eff: att[0].eff };
+    const blk = group('muro').map(([n, v]) => ({ numero: n, pt: v.filter(x => x === '#').length, inv: v.filter(x => x === '/').length }))
+      .filter(b => b.pt > 0).sort((a, b) => b.pt - a.pt || a.inv - b.inv);
+    if (blk.length) out.muro = { giocatore: names.get(blk[0].numero) || String(blk[0].numero), pt: blk[0].pt, inv: blk[0].inv };
+    return out;
+  }
+
+  const nn = (k, one, many) => `${k} ${k === 1 ? one : many}`;
+
+  function fundamentalText(row, f) {
+    const c = v => row.counts[`${f} ${v}`] || 0;
+    let tot = ['#', '+', '!', '-', '/', '='].reduce((s, v) => s + c(v), 0);
+    if (f === 'attacco') {
+      const rig = row.counts['attacco rigore'] || 0;
+      const pt = c('#') - rig, err = c('='), mur = c('/');
+      tot -= rig;
+      let text = `${nn(pt, 'punto', 'punti')} su ${nn(tot, 'attacco', 'attacchi')}, ${nn(err, 'errore', 'errori')}, ${nn(mur, 'murata', 'murate')}`;
+      if (tot >= 10) text += `, efficienza ${Math.round(100 * (pt - err - mur) / tot)}%`;
+      const rt = nn(rig, '"rigore"', '"rigori"');
+      if (rig && !tot) return rt;
+      return text + (rig ? `, più ${rt}` : '');
+    }
+    if (f === 'battuta') return `${c('#')} ace su ${nn(tot, 'battuta', 'battute')}, ${nn(c('='), 'errore', 'errori')}`;
+    if (f === 'ricezione') {
+      const det = [[c('#'), 'perfetta', 'perfette'], [c('+'), 'positiva', 'positive'], [c('='), 'ace subito', 'ace subiti']]
+        .filter(p => p[0]).map(p => nn(...p)).join(', ');
+      if (tot === 1) return det ? `1 ricezione ${det.split(' ').slice(1).join(' ')}` : '1 ricezione';
+      return nn(tot, 'ricezione', 'ricezioni') + (det ? `: ${det}` : '');
+    }
+    if (f === 'muro') return [nn(c('#'), 'muro punto', 'muri punto')].concat(c('/') ? [nn(c('/'), 'invasione', 'invasioni')] : []).join(', ');
+    if (f === 'difesa') {
+      const good = c('#') + c('+');
+      return `${nn(good, 'difesa che ci fa', 'difese che ci fanno')} contrattaccare` + (c('=') ? `, ${nn(c('='), 'che dà', 'che danno')} il punto` : '');
+    }
+    if (f === 'premio') return `miglior efficienza in ricezione della squadra (${Math.round(row.ric_eff)}% su ${row.ric_n}): premio meno i punti fatti in attacco, battuta e muro`;
+    if (f === 'alzata') {
+      const parts = [];
+      if (row.alzati_n !== undefined) {
+        parts.push(`attacchi alzati da R#, R+, R! e free ball: p-e/m ${row.alzati_pem >= 0 ? '+' : ''}${row.alzati_pem} su ${row.alzati_n} (in media ${row.alzati_attesi >= 0 ? '+' : ''}${Math.round(row.alzati_attesi)})`);
+      }
+      if (c('#') + c('+')) parts.push(nn(c('#') + c('+'), 'alzata meritevole', 'alzate meritevoli'));
+      if (c('-')) parts.push(nn(c('-'), 'alzata imprecisa', 'alzate imprecise'));
+      if (c('=')) parts.push(nn(c('='), 'errore di alzata', 'errori di alzata'));
+      return parts.join(', ');
+    }
+    return '';
+  }
+
+  function mvpHighlights(row, n = 3, min = 0.2) {
+    const contrib = FUNDS.concat(['premio']).map(f => [f, row[f] || 0])
+      .filter(([f, v]) => Math.abs(v) >= 0.05 && !(f === 'muro' && !row.counts['muro #']) && !(f === 'battuta' && !row.counts['battuta #']))
+      .sort((a, b) => b[1] - a[1]);
+    const positive = contrib.filter(x => x[1] > 0);
+    let chosen = (positive.length ? positive : contrib).slice(0, n);
+    const relevant = chosen.filter(x => Math.abs(x[1]) >= min);
+    chosen = relevant.length ? relevant : chosen.slice(0, 1);
+    if (row.counts['battuta #'] && !chosen.some(([f]) => f === 'battuta')) chosen = chosen.slice(0, n - 1).concat([['battuta', row.battuta]]);
+    return chosen.map(([f, v]) => [FUND_LABELS[f] || 'Miglior ricevitore', v, fundamentalText(row, f)]);
+  }
+
+  // da dove arriva il punteggio di un giocatore: una riga per voce della tabella dei punti
+  function playerDetail(src, numero, cfg = MVP_CFG) {
+    const { df } = scoredActions(src, cfg);
+    const groups = new Map();
+    df.filter(y => y.numero === numero).forEach(y => {
+      const k = `${y.tipo}|${y.voce}|${y.valore.toFixed(4)}`;
+      if (!groups.has(k)) groups.set(k, { fondamentale: y.tipo, azione: y.voce, valore: y.valore, volte: 0 });
+      groups.get(k).volte += 1;
+    });
+    return [...groups.values()].map(g => ({ ...g, totale: g.valore * g.volte }))
+      .sort((a, b) => FUNDS.indexOf(a.fondamentale) - FUNDS.indexOf(b.fondamentale) || b.valore - a.valore);
+  }
+
+  function scoringRules(cfg = MVP_CFG) {
+    const items = [];
+    for (const [f, grades] of Object.entries(cfg.azioni)) {
+      for (const [g, v] of Object.entries(grades)) if (DESCR[f][g]) items.push([v, DESCR[f][g], f]);
+    }
+    for (const [sit, grades] of Object.entries(cfg.attacco_per_situazione)) {
+      for (const [g, v] of Object.entries(grades)) items.push([v, SIT_LABELS[sit + g], 'attacco']);
+    }
+    if (cfg.attacco_seconda_linea) items.push([cfg.attacco_seconda_linea, BACK_ROW, 'attacco']);
+    items.push([cfg.azioni.attacco['#'], RIG, 'attacco']);
+    items.push([cfg.azioni.attacco['='], RIG_ERR, 'attacco']);
+    if (cfg.alzata_a_punto) items.push([cfg.alzata_a_punto, SET_POINT, 'alzata']);
+    for (const [code, v] of Object.entries(cfg.errore_battuta_per_tipo || {})) items.push([v, SERVE_ERR[code], 'battuta']);
+    return FUNDS.map(f => [FUND_LABELS[f], items.filter(i => i[2] === f).map(i => [i[0], i[1]])
+      .sort((a, b) => b[0] - a[0] || (a[1].includes('non rilevato') ? 1 : 0) - (b[1].includes('non rilevato') ? 1 : 0))])
+      .filter(([, rows]) => rows.length);
+  }
+
+  return { MVP_CFG, CAUSES, RIGORI, SET_METRICS, FUNDS, FUND_LABELS, parseDvw, loadSource, defaultSide, pointsBySet,
+    teamComparison, playerKpiTable, setterTable, matchMvp, matchAwards, mvpHighlights, playerDetail, scoringRules,
+    setsPlayed };
+})();
+if (typeof module !== 'undefined') module.exports = Core;
+</script>
+
+<script>
+// ============================================================================
+// Pagina
+// ============================================================================
+(() => {
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+  const signed = v => (v >= 0 ? '+' : '') + v.toFixed(2).replace('.', ',');
+  const pct = v => (v === null || Number.isNaN(v) ? '.' : `${Math.round(v)}%`);
+  const show = g => { const [n, ...c] = String(g).split(' '); return c.length ? `${c.join(' ')} ${n}` : n; };
+  const CAUSE_VAR = { Attacco: '--c-attacco', Muro: '--c-muro', [Core.RIGORI]: '--c-rigori', Ace: '--c-ace',
+    'Errori avversari': '--c-errori', 'Punti generici': '--c-generici', 'Non rilevato': '--c-nonril' };
+  let parsed = null, fileName = '';
+
+  function onText(text, name) {
+    $('error').hidden = true;
+    try {
+      parsed = Core.parseDvw(text);
+      if (!parsed.actions.length || !parsed.teams['*']) throw new Error('nel file non ci sono azioni di scout');
+    } catch (e) {
+      $('error').textContent = `Non riesco a leggere il file: ${e.message}. Serve un .dvw esportato dal programma di scout.`;
+      $('error').hidden = false;
+      return;
+    }
+    fileName = name;
+    const sel = $('team');
+    sel.innerHTML = ['*', 'a'].map(s => `<option value="${s}">${esc(parsed.teams[s])}</option>`).join('');
+    sel.value = Core.defaultSide(parsed);
+    $('toolbar').hidden = false;
+    render();
+  }
+
+  function readFile(file) {
+    if (!file) return;
+    const r = new FileReader();
+    r.onload = () => onText(new TextDecoder('windows-1252').decode(r.result), file.name);
+    r.readAsArrayBuffer(file);
+  }
+
+  $('file').addEventListener('change', e => readFile(e.target.files[0]));
+  const drop = $('drop');
+  ['dragenter', 'dragover'].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.remove('over'); }));
+  drop.addEventListener('drop', e => readFile(e.dataTransfer.files[0]));
+  $('team').addEventListener('change', render);
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => parsed && render());
+
+  function render() {
+    const src = Core.loadSource(parsed, $('team').value);
+    const mvp = Core.matchMvp(src);
+    const awards = Core.matchAwards(src, mvp);
+    $('report').innerHTML = [header(src), mvpBox(mvp), points(src), ranking(src, mvp, awards), comparison(src),
+      setters(src), tabellino(src), rules()].join('');
+    document.title = `Report ${parsed.teams['*']} - ${parsed.teams.a}`;
+    document.querySelectorAll('tr.click').forEach(tr => tr.addEventListener('click', () => {
+      const next = tr.nextElementSibling;
+      if (next && next.classList.contains('detail')) { next.remove(); return; }
+      tr.insertAdjacentHTML('afterend', detail(src, mvp.find(r => r.numero === +tr.dataset.n), tr.children.length));
+    }));
+  }
+
+  const teamColor = side => (side === Core.loadSource(parsed, $('team').value).side ? css('--noi') : css('--loro'));
+
+  function header(src) {
+    const p = parsed;
+    const casa = p.sets.filter(s => s.casa > s.ospiti).length, osp = p.sets.filter(s => s.ospiti > s.casa).length;
+    const pills = p.sets.map(s => {
+      const winner = s.casa > s.ospiti ? '*' : 'a';
+      return `<span class="pill" style="background:${s.completo ? teamColor(winner) : css('--zero')}">${s.casa}-${s.ospiti}${s.completo ? '' : '*'}</span>`;
+    }).join('');
+    const incomplete = p.sets.filter(s => !s.completo);
+    return `<div class="header">
+      <div class="teams">
+        <div class="team"><span class="dot" style="background:${teamColor('*')}"></span>${esc(p.teams['*'])}</div>
+        <div class="score">${casa} - ${osp}</div>
+        <div class="team right">${esc(p.teams.a)}<span class="dot" style="background:${teamColor('a')}"></span></div>
+      </div>
+      <div class="partials">${pills}</div>
+      <div class="meta">${esc(p.data || '')}${p.data ? ' · ' : ''}${esc(fileName)}</div>
+    </div>
+    ${incomplete.length ? `<div class="warn">Scout parziale: ${incomplete.map(s => `set ${s.numero_set} (${s.casa}-${s.ospiti})`).join(', ')} non concluso nel file. Il risultato e i numeri valgono per la parte rilevata.</div>` : ''}`;
+  }
+
+  function mvpBox(mvp) {
+    if (!mvp.length) return '';
+    const r = mvp[0];
+    const items = Core.mvpHighlights(r).map(([label, v, text]) => `<li><b>${esc(label)}</b> (${signed(v)}): ${esc(text)}</li>`).join('');
+    const played = r.set_giocati < r.set_partita ? ` · in ${r.set_giocati} set su ${r.set_partita}` : '';
+    return `<div class="card mvp"><div class="label">🏆 MVP DELLA PARTITA · ${esc(Core.loadSource(parsed, $('team').value).nomeNoi)}</div>
+      <div class="name">${esc(show(r.giocatore))}</div>
+      <div class="note" style="margin:0">${signed(r.punteggio)} punti MVP${played}</div><ul>${items}</ul>
+      <div class="note">Come si guadagnano e si perdono i punti MVP: in fondo alla pagina.</div></div>`;
+  }
+
+  function points(src) {
+    const data = Core.pointsBySet(src);
+    const tot = data[data.length - 1];
+    const used = Core.CAUSES.filter(c => tot.noi[c] + tot.loro[c] > 0);
+    const sum = o => used.reduce((s, c) => s + o[c], 0);
+    const tile = (name, side, o) => `<div class="tile"><div class="row"><span><span class="dot" style="background:${teamColor(side)}"></span>${esc(name)}</span></div>
+      <div class="big">${sum(o)} <span class="note">punti</span></div>
+      ${used.filter(c => o[c]).map(c => `<div class="row"><span><span class="sw" style="background:${css(CAUSE_VAR[c])}"></span>${esc(c)}</span><b>${o[c]}</b></div>`).join('')}</div>`;
+    const sets = data.slice(0, -1);
+    const max = Math.max(1, ...sets.flatMap(d => [sum(d.noi), sum(d.loro)]));
+    const bar = (name, side, o) => `<div class="barrow"><div class="who"><span class="dot" style="background:${teamColor(side)}"></span>${esc(name)}</div>
+      <div class="bar" style="max-width:${(100 * sum(o) / max).toFixed(1)}%">${used.filter(c => o[c]).map(c =>
+        `<div class="seg" title="${esc(name)} · ${esc(c)}: ${o[c]}" style="flex:${o[c]};background:${css(CAUSE_VAR[c])}">${o[c]}</div>`).join('')}</div>
+      <div class="tot">${sum(o)}</div></div>`;
+    const setScore = s => { const x = parsed.sets.find(z => z.numero_set === +s); return x ? ` · ${x.casa}-${x.ospiti}` : ''; };
+    return `<div class="card"><h2>Da dove arrivano i punti</h2>
+      <div class="tiles">${tile(src.nomeNoi, src.side, tot.noi)}${tile(src.nomeLoro, src.other, tot.loro)}</div>
+      <p class="note">Ogni punto ha una sola causa: l'azione vincente di chi l'ha fatto (attacco, muro, ace, "rigore"),
+        altrimenti l'errore di chi l'ha perso. "Rigore": punto a muro sulla loro ricezione o difesa rimandata di qua.</p>
+      <div class="legend">${used.map(c => `<span><span class="sw" style="background:${css(CAUSE_VAR[c])}"></span>${esc(c)}</span>`).join('')}</div>
+      ${sets.map(d => `<div class="setblock"><div class="title">Set ${d.set}${setScore(d.set)}</div>${bar(src.nomeNoi, src.side, d.noi)}${bar(src.nomeLoro, src.other, d.loro)}</div>`).join('')}
+    </div>`;
+  }
+
+  const COLS = [['battuta', 'Bat'], ['ricezione', 'Ric'], ['attacco', 'Att'], ['muro', 'Muro'], ['difesa', 'Dif'], ['alzata', 'Alz'], ['premio', 'Premio']];
+  const signCell = v => (Math.abs(v) < 0.005 ? '<td></td>' : `<td class="${v > 0 ? 'p' : 'n'}">${signed(v)}</td>`);
+
+  function ranking(src, mvp, awards) {
+    if (!mvp.length) return '';
+    const cols = COLS.filter(([k]) => mvp.some(r => Math.abs(r[k] || 0) >= 0.005));
+    const medals = ['🥇', '🥈', '🥉'];
+    const aw = [];
+    if (awards.ricevitore) aw.push(['#2563eb', 'Miglior ricevitore', `${show(awards.ricevitore.giocatore)}: efficienza ${Math.round(awards.ricevitore.eff)}% su ${awards.ricevitore.n} ricezioni, premio ${signed(awards.ricevitore.premio)} punti MVP`]);
+    if (awards.attaccante) aw.push(['#1a7f37', 'Miglior attaccante', `${show(awards.attaccante.giocatore)}: efficienza ${Math.round(awards.attaccante.eff)}% su ${awards.attaccante.n} attacchi, ${awards.attaccante.pt} punti`]);
+    if (awards.muro) aw.push(['#6d28d9', 'Miglior muro', `${show(awards.muro.giocatore)}: ${awards.muro.pt} muri punto${awards.muro.inv ? `, ${awards.muro.inv} invasioni` : ''}`]);
+    return `<div class="card"><h2>Classifica MVP della partita</h2>
+      <div class="awards">${aw.map(([c, t, x]) => `<div><span class="chip" style="background:${c}">${t}</span>${esc(x)}</div>`).join('')}</div>
+      <p class="note">Miglior attaccante (almeno 4 attacchi a set) e miglior muro sono riconoscimenti senza punti MVP.
+        Set = set giocati su quelli della partita. <b>Tocca un giocatore</b> per vedere da dove arriva il suo punteggio.</p>
+      <div class="scroll"><table><tr><th></th><th class="l">Giocatore</th>${cols.map(([, h]) => `<th>${h}</th>`).join('')}<th>Set</th><th>Punti</th></tr>
+      ${mvp.map((r, i) => `<tr class="click" data-n="${r.numero}"><td>${medals[i] || i + 1}</td><td class="l"><b>${esc(show(r.giocatore))}</b></td>
+        ${cols.map(([k]) => signCell(r[k] || 0)).join('')}<td>${r.set_giocati}/${r.set_partita}</td>${signCell(r.punteggio).replace('<td', '<td style="font-weight:700"')}</tr>`).join('')}
+      </table></div></div>`;
+  }
+
+  function detail(src, row, ncols) {
+    const items = Core.playerDetail(src, row.numero);
+    const lines = items.map(d => `<tr><td class="l">${esc(Core.FUND_LABELS[d.fondamentale])}</td><td class="l" style="white-space:normal">${esc(d.azione)}</td>
+      <td>${d.volte}</td><td>${signed(d.valore)}</td><td>${signed(d.totale)}</td></tr>`);
+    const cfg = Core.MVP_CFG;
+    if (row.alzati_n !== undefined) {
+      lines.push(`<tr><td class="l">Alzata</td><td class="l" style="white-space:normal">Palleggiatore: i suoi attaccanti fanno ${row.alzati_pem >= 0 ? '+' : ''}${row.alzati_pem}
+        (punti meno errori e murate) su ${row.alzati_n} attacchi alzati da R#, R+, R! e free ball; di solito farebbero ${signed(row.alzati_attesi)}.
+        (${row.alzati_pem} − ${row.alzati_attesi.toFixed(2).replace('.', ',')}) × ${String(cfg.palleggiatore.quota).replace('.', ',')}</td>
+        <td></td><td></td><td>${signed(row.quota)}</td></tr>`);
+    }
+    if (row.premio) lines.push(`<tr><td class="l">Premio</td><td class="l" style="white-space:normal">Miglior ricevitore della partita: premio meno i punti fatti in attacco, battuta e muro</td><td>1</td><td>${signed(row.premio)}</td><td>${signed(row.premio)}</td></tr>`);
+    lines.push(`<tr class="total"><td class="l" colspan="4">Totale</td><td>${signed(row.totale)}</td></tr>`);
+    if (Math.abs(row.punteggio - row.totale) > 1e-9) {
+      const k = cfg.set_fittizi;
+      lines.push(`<tr><td class="l" colspan="4" style="white-space:normal">Ha giocato ${row.set_giocati} set su ${row.set_partita}:
+        ${signed(row.totale)} × (${row.set_partita} + ${k}) / (${row.set_giocati} + ${k})</td><td><b>${signed(row.punteggio)}</b></td></tr>`);
+    }
+    return `<tr class="detail"><td colspan="${ncols}"><table><tr><th class="l">Fondamentale</th><th class="l">Azione</th><th>Volte</th><th>Valore</th><th>Totale</th></tr>${lines.join('')}</table></td></tr>`;
+  }
+
+  const METRIC_INFO = {
+    'Battuta%': ['Battuta', 'efficienza: ace e battute che mettono in difficoltà, meno gli errori'],
+    'Ricezione%': ['Ricezione', 'efficienza: perfette e positive, meno errori e palle rimandate di là'],
+    'Attacco SO%': ['Attacco side-out', "efficienza dell'attacco subito dopo la ricezione"],
+    'Contrattacco%': ['Contrattacco', "efficienza dell'attacco dopo una difesa o una free ball"],
+    'Muro punti': ['Muro', 'muri punto: numero'],
+    'Errori': ['Errori', 'battuta, attacco, alzata e muro: numero, meno è meglio'],
+  };
+
+  function lineChart(comp, metric, src) {
+    const noi = comp.noi.filter(r => r.set !== 'Tot'), loro = comp.loro.filter(r => r.set !== 'Tot');
+    const sets = [...new Set(noi.map(r => r.set).concat(loro.map(r => r.set)))].sort();
+    const isPct = metric.endsWith('%');
+    const val = (rows, s) => { const r = rows.find(x => x.set === s); return r && !Number.isNaN(r[metric]) ? r[metric] : null; };
+    const vals = sets.flatMap(s => [val(noi, s), val(loro, s)]).filter(v => v !== null);
+    const totN = comp.noi.at(-1)[metric], totL = comp.loro.at(-1)[metric];
+    const all = vals.concat(isPct ? [totN, totL].filter(v => !Number.isNaN(v)) : []);
+    let lo = Math.min(0, ...all), hi = Math.max(1, ...all);
+    const pad = (hi - lo) * 0.18 || 1; lo -= pad; hi += pad;
+    const W = 320, H = 130, L = 10, R = 74, T = 14, B = 22;
+    const x = i => L + 14 + (sets.length > 1 ? i * (W - L - R - 28) / (sets.length - 1) : (W - L - R - 28) / 2);
+    const y = v => T + (H - T - B) * (1 - (v - lo) / (hi - lo));
+    const fmt = v => (isPct ? `${Math.round(v)}%` : String(v));
+    const series = [[noi, css('--noi'), src.nomeNoi], [loro, css('--loro'), src.nomeLoro]];
+    let svg = `<line x1="${L}" x2="${W - R}" y1="${y(Math.max(lo, 0))}" y2="${y(Math.max(lo, 0))}" stroke="${css('--grid')}"/>`;
+    sets.forEach((s, i) => { svg += `<text x="${x(i)}" y="${H - 6}" font-size="11" text-anchor="middle" fill="${css('--muted')}">S${s}${parsed.sets.find(z => String(z.numero_set) === s && !z.completo) ? '*' : ''}</text>`; });
+    if (isPct) {
+      [[totN, css('--noi')], [totL, css('--loro')]].forEach(([v, c]) => {
+        if (Number.isNaN(v)) return;
+        svg += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="${c}" stroke-width="1.2" stroke-dasharray="4 3" opacity=".7"/>`;
+      });
+    }
+    series.forEach(([rows, c, name], k) => {
+      const pts = sets.map((s, i) => [i, val(rows, s)]).filter(p => p[1] !== null);
+      svg += `<polyline fill="none" stroke="${c}" stroke-width="2" points="${pts.map(([i, v]) => `${x(i)},${y(v)}`).join(' ')}"/>`;
+      pts.forEach(([i, v]) => {
+        const other = val(series[1 - k][0], sets[i]);
+        const above = other === null || v >= other ? (k === 0 || v > other) : false;
+        svg += `<circle cx="${x(i)}" cy="${y(v)}" r="4" fill="${c}" stroke="${css('--card')}" stroke-width="2"><title>${esc(name)} · set ${sets[i]}: ${fmt(v)}</title></circle>`;
+        svg += `<text x="${x(i)}" y="${y(v) + (above ? -8 : 16)}" font-size="11" text-anchor="middle" fill="${css('--ink')}">${fmt(v)}</text>`;
+      });
+    });
+    const tl = [[totN, css('--noi')], [totL, css('--loro')]];
+    tl.forEach(([v, c], k) => {
+      const ty = T + 18 + k * 20;
+      svg += `<circle cx="${W - R + 10}" cy="${ty - 4}" r="4" fill="${c}"/><text x="${W - R + 18}" y="${ty}" font-size="12" font-weight="700" fill="${css('--ink')}">Tot ${Number.isNaN(v) ? '.' : fmt(v)}</text>`;
+    });
+    const [t, i] = METRIC_INFO[metric];
+    return `<div class="chart"><div class="t">${t}</div><div class="i">${i}</div><svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${esc(t)} set per set">${svg}</svg></div>`;
+  }
+
+  function comparison(src) {
+    const comp = Core.teamComparison(src);
+    const incomplete = parsed.sets.some(s => !s.completo);
+    const table = `<details><summary class="note">Tabella dei valori</summary><div class="scroll"><table><tr><th class="l"></th>${comp.noi.map(r => `<th>${r.set === 'Tot' ? 'Tot' : 'S' + r.set}</th>`).join('')}</tr>
+      ${Core.SET_METRICS.flatMap(m => [['noi', src.nomeNoi], ['loro', src.nomeLoro]].map(([k, n]) => `<tr><td class="l">${METRIC_INFO[m][0]} · ${esc(n)}</td>${comp[k].map(r => `<td>${m.endsWith('%') ? pct(r[m]) : r[m]}</td>`).join('')}</tr>`)).join('')}
+      </table></div></details>`;
+    return `<div class="card"><h2>Noi e loro, fondamentale per fondamentale</h2>
+      <div class="legend"><span><span class="dot" style="background:${css('--noi')}"></span>${esc(src.nomeNoi)}</span><span><span class="dot" style="background:${css('--loro')}"></span>${esc(src.nomeLoro)}</span></div>
+      <p class="note">Set per set (S1, S2, ...) le due squadre; a destra il totale della partita, che per le efficienze è anche la linea tratteggiata.${incomplete ? ' * set rilevato solo in parte.' : ''}</p>
+      <div class="charts">${Core.SET_METRICS.map(m => lineChart(comp, m, src)).join('')}</div>${table}</div>`;
+  }
+
+  function setters(src) {
+    const list = Core.setterTable(src);
+    if (!list.length) return '';
+    return `<div class="card"><h2>Palleggiatori</h2>
+      <p class="note">Efficienza d'attacco della squadra <b>con lui in campo</b>, set per set: da ricezione positiva (+ o #),
+        da ricezione ! (niente primo tempo) e da free ball. Tra parentesi il numero di attacchi.</p>
+      ${list.map(s => `<h3>${esc(s.name)}</h3><div class="scroll"><table><tr><th class="l"></th><th>Da R+ / #</th><th>Da R!</th><th>Da free ball</th></tr>
+        ${s.rows.map(r => `<tr class="${r.set === 'Tot' ? 'total' : ''}"><td class="l">${r.set === 'Tot' ? 'Tot' : 'Set ' + r.set}</td>
+          ${['R+#', 'R!', 'FB'].map(k => r[k].n ? `<td>${pct(r[k].eff)} (${r[k].n})</td>` : '<td>.</td>').join('')}</tr>`).join('')}
+      </table></div>`).join('')}</div>`;
+  }
+
+  const NA = { battuta: ['mur'], muro: ['mur', 'eff'], rigori: ['mur', 'eff'], alzata: ['tot', 'pt', 'mur', 'eff'], totale: ['tot', 'eff'], difesa: ['eff'] };
+
+  function kpiTable(rows, cols, header, title) {
+    if (!rows.length) return '';
+    const cell = (r, c) => {
+      if ((NA[r.kpi] || []).includes(c)) return '<td class="na">╱</td>';
+      const v = r[c];
+      if (v === null || v === undefined) return '<td>.</td>';
+      if (c === 'eff') return `<td>${Math.round(v)}%</td>`;
+      if (c === 'pe') return `<td class="${v > 0 ? 'p' : v < 0 ? 'n' : ''}">${v > 0 ? '+' : ''}${v}</td>`;
+      return `<td>${v}</td>`;
+    };
+    return `<table><tr><th class="l">${title}</th>${header.map(h => `<th>${h}</th>`).join('')}</tr>
+      ${rows.map(r => `<tr class="${r.kpi === 'totale' ? 'total' : ''}"><td class="l">${esc(r.label)}</td>${cols.map(c => cell(r, c)).join('')}</tr>`).join('')}</table>`;
+  }
+
+  function tabellino(src) {
+    const tables = Core.playerKpiTable(src.noi);
+    return `<div class="card"><h2>Tabellino dei giocatori · ${esc(src.nomeNoi)}</h2>
+      <p class="note">Per ogni giocatore due tabelle. <b>Fanno punto</b> (battuta, attacco, muro, alzata): <b>tot</b> azioni,
+        <b>pt</b> punti fatti, <b>err</b> errori (in attacco solo gli attacchi sbagliati), <b>mur</b> murate, <b>p-e/m</b> punti meno
+        errori meno murate, <b>eff</b> efficienza (battuta ((# + + + /) − =); attacco (# − (= + /)), sul totale). <b>Attacco SO</b>
+        (side-out) subito dopo la ricezione; <b>attacco BP</b> (break-point) tutti gli altri, <b>free ball</b> compresa (dopo una
+        difesa con voto !). <b>Palla alta</b> e <b>palla veloce</b> (super, quick): gli stessi attacchi divisi per tipo di alzata.
+        <b>Ricezione e difesa</b>: quante per voto (#, +, !, −), <b>err</b> errori (ricezione: rimandate di là e ace subiti),
+        <b>eff</b> efficienza di ricezione ((# + +) − (/ + =)). Le caselle grigie ╱ non hanno senso per quel fondamentale.</p>
+      <div class="players">${tables.map(t => `<div class="pcard"><h3>${esc(t.name === 'Squadra' ? 'Squadra' : show(t.name))}</h3><div class="scroll">
+        ${kpiTable(t.rows.filter(r => !['ricezione', 'difesa'].includes(r.kpi)), ['tot', 'pt', 'err', 'mur', 'pe', 'eff'], ['tot', 'pt', 'err', 'mur', 'p-e/m', 'eff'], 'Fanno punto')}
+        ${kpiTable(t.rows.filter(r => ['ricezione', 'difesa'].includes(r.kpi)), ['tot', 'hash', 'plus', 'ex', 'neg', 'err', 'eff'], ['tot', '#', '+', '!', '−', 'err', 'eff'], 'Ricezione e difesa')}
+      </div></div>`).join('')}</div></div>`;
+  }
+
+  function vpill(v) {
+    const c = v > 0 ? css('--pos') : v < 0 ? css('--neg') : css('--zero');
+    return `<span class="vpill" style="background:${c}">${v === 0 ? '0' : signed(v)}</span>`;
+  }
+
+  function rules() {
+    const cfg = Core.MVP_CFG, sit = cfg.attacco_per_situazione;
+    const q = cfg.palleggiatore.quota, media = cfg.palleggiatore.pem_medio_per_attacco, k = cfg.set_fittizi;
+    const n = (v, d = 2) => v.toFixed(d).replace('.', ',');
+    const atteso = media * 40, ex = 3 * (5 + k) / (2 + k);
+    return `<div class="card"><h2>Come si guadagnano e si perdono i punti MVP</h2>
+      <p class="note">Ogni azione vale quanto cambia la probabilità di vincere lo scambio (calcolata su tutte le partite rilevate).
+        Il punteggio di un giocatore è la somma delle sue azioni. ${vpill(0.4)} guadagna ${vpill(-0.6)} perde ${vpill(0)} non conta.</p>
+      ${Core.scoringRules().map(([t, rows]) => `<h3>${t}</h3><table class="rules">${rows.map(([v, d]) => `<tr><td>${vpill(v)}</td><td>${esc(d)}</td></tr>`).join('')}</table>`).join('')}
+      <h3>Attacco: perché i valori cambiano con la situazione</h3>
+      <p>Da palla buona (R# o R+, free ball) si deve rischiare: il punto vale ${signed(sit['R#/R+']['#'])} (${signed(sit['free ball']['#'])} da free ball)
+        e l'errore solo ${signed(sit['R#/R+']['='])}. Sulla palla alta il punto vale ${signed(sit['palla alta']['#'])}, ma l'errore ${signed(sit['palla alta']['='])}:
+        si gioca per non regalarla. Dalla seconda linea il punto vale ${signed(cfg.attacco_seconda_linea)} in più.</p>
+      <h3>Miglior ricevitore</h3>
+      <p>Chi ha la migliore efficienza in ricezione della squadra (almeno ${n(cfg.miglior_ricevitore.min_ricezioni_per_set, 1)} ricezioni a set)
+        prende un premio di <b>${signed(cfg.miglior_ricevitore.premio)} meno i punti MVP fatti in attacco, battuta e muro</b>, mai sotto zero.
+        Il libero lo prende pieno; chi ha già fatto una grande partita in attacco non ne ha bisogno.</p>
+      <h3>Palleggiatore</h3>
+      <p>Oltre alle sue azioni, il palleggiatore guadagna <b>${n(q)} per ogni punto</b> e perde <b>${n(q)} per ogni errore o murata</b> dei suoi
+        attaccanti, ma solo per la parte <b>sopra o sotto il solito</b>: in media un attacco vale ${n(media)} di punti meno errori e murate.</p>
+      <p>Esempio: alza 40 palloni, su cui di solito i suoi attaccanti farebbero +${n(atteso, 1)} (punti meno errori e murate). Se fanno +14
+        guadagna (14 − ${n(atteso, 1)}) × ${n(q)} = <b>+${n((14 - atteso) * q)}</b>; se fanno +4 perde (${n(atteso, 1)} − 4) × ${n(q)} = <b>−${n((atteso - 4) * q)}</b>.</p>
+      <p>Contano gli attacchi dopo una ricezione #, + o ! e dopo una free ball, non i suoi attacchi. Gli errori di alzata li paga come tutti.</p>
+      <h3>Chi gioca meno set</h3>
+      <p>Un punteggio positivo si rapporta ai set giocati, così può vincere anche chi entra a partita in corso:
+        <b>totale × (set della partita + ${k}) / (set giocati + ${k})</b>. I punteggi negativi restano come sono.</p>
+      <p>Esempio: in una partita da 5 set chi gioca solo gli ultimi 2 e fa +${n(3)} arriva a ${n(3)} × ${5 + k}/${2 + k} = <b>+${n(ex)}</b>.</p>
+    </div>`;
+  }
+})();
+</script>
+</body>
+</html>
