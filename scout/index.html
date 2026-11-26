@@ -399,6 +399,12 @@ const name = (t,n) => n == null ? '?' : pl(t,n).c;
 // libero in campo: scelto nel Cambio, altrimenti il primo usato nel set secondo il referto, altrimenti il primo L della rosa
 const liberi = t => [...new Set([...(DATA[t].liberi || []), ...DATA[t].players.filter(p => p.r === 'L').map(p => p.n)])];
 const libero = t => (S && S.libero && S.libero[t] != null) ? S.libero[t] : liberi(t)[0];
+// il libero che entra per un giocatore: scelto nel Cambio (vale per tutti), altrimenti quello che il referto dà per lui
+// ("C-L" sul referto), altrimenti il libero della squadra
+const liberoFor = (t, n) => (S && S.libero && S.libero[t] != null) ? S.libero[t]
+  : (DATA[t].libMap && DATA[t].libMap[n] != null ? DATA[t].libMap[n] : libero(t));
+// il libero in campo adesso (se ce n'è uno)
+const liberoOn = t => onCourt(t).find(n => liberi(t).includes(n));
 
 // posizioni dopo lo scambio di posto: prima linea posto 4 (M) · 3 (C) · 2 (O o P); dietro 5 (L) · 6 (M) · 1 (P o O)
 function layout(t) {
@@ -411,7 +417,7 @@ function layout(t) {
   const L = libero(t), serverNum = S.serving === t ? pos[0] : null;
   // il libero entra per i giocatori indicati dal referto (di solito i centrali e chi li sostituisce), altrimenti per il centrale
   const lf = DATA[t].libFor, forLib = n => lf && lf.length ? lf.includes(n) : role(t,n).startsWith('C');
-  const bb = back.map(n => (L && forLib(n) && n !== serverNum) ? L : n);
+  const bb = back.map(n => (L && forLib(n) && n !== serverNum) ? liberoFor(t, n) : n);
   z[1] = take(bb, r => r === 'O' || r === 'P'); z[6] = take(bb, r => r.startsWith('M')); z[5] = take(bb, r => r === 'L' || r.startsWith('C'));
   for (const k of [1,6,5]) if (z[k] == null) z[k] = bb.shift() ?? null;
   return z;
@@ -458,7 +464,7 @@ const setterZone = t => { const i = S.pos[t].findIndex(n => role(t,n) === 'P'); 
 
 // schieramento di ricezione e di attacco dopo ricezione, per squadra e rotazione
 function defaultArr(t) {
-  const z = layout(t), rot = setterZone(t), fM = z[4], bM = z[6], L = onCourt(t).includes(libero(t)) ? libero(t) : z[5];
+  const z = layout(t), rot = setterZone(t), fM = z[4], bM = z[6], L = liberoOn(t) ?? z[5];
   const att = {A4:z[4], A3:z[3], A2: role(t,z[2]) === 'P' ? null : z[2], AP:z[6]};
   let rec;
   if (rot === 1) {
@@ -682,7 +688,7 @@ function setOnCourtSetter(t, n) {
   if (cur != null && cur !== n) S.roles[t][cur] = role(t, n) || 'O';
   S.roles[t][n] = 'P';
   relabelMC(t);
-  delete S.askSetter[t];
+  if (S.askSetter) delete S.askSetter[t];
   corrNote(t, `palleggia ${n} ${name(t, n)} (P${setterZone(t)})`);
 }
 function renderSubBanner() {
@@ -902,6 +908,15 @@ function onPick(kind, val, extra) {
     if (PREFS.oppLight && other(ph.t) !== OUR) { S.phase = {k:'attack', t:other(ph.t), afterOur:true}; S.sel = {fbTeam:'+'}; }
     else { S.phase = {k:'defense', t:other(ph.t), type:'H', freeball:true}; S.sel = {}; }
   }
+  // "difesa di là /" (richiesta dell'utente del 2026-11-26): la squadra che ha la palla la rimanda di là senza attaccarla;
+  // si tocca chi l'ha mandata (D/), poi gli altri: "rigore" o palla libera, come dopo una ricezione /
+  if (kind === 'sendOverAsk') { S.phase = {k:'sendOver', t:ph.t, back:clone(ph)}; S.sel = {}; }
+  if (kind === 'sendOverCancel') { S.phase = ph.back; S.sel = {}; }
+  if (kind === 'sendOver') {
+    const t = ph.t; snapshot();
+    push(t, val, 'D', 'H', '/', '', `${name(t, val)} · difesa rimandata di là`);
+    S.phase = {k:'over', t:other(t), from:'D'}; S.sel = {};
+  }
   if (kind === 'fbTeam') S.sel.fbTeam = S.sel.fbTeam === val ? null : val;   // '+' appoggiata bene, '-' male
   if (kind === 'linkAlt') S.sel.linkAlt = !S.sel.linkAlt;
   // avversario essenziale: dopo il nostro attacco + / – si passa subito al loro attacco, ma la loro difesa può essere
@@ -1008,6 +1023,7 @@ function render() {
                <button class="chip" data-k="setErr" data-v="=">sbagliata (punto loro)</button>
                <span style="width:12px"></span>
                <button class="chip" data-k="overNoAttack" data-v="1">Di là senza attacco</button>
+               <button class="chip" data-k="sendOverAsk" data-v="1">Difesa di là /</button>
                ${lastAttackBefore(ph) ? '<button class="chip" data-k="defOver" data-v="1">Difesa / (rimandata di qua)</button>' : ''}
                ${attackJustMade(ph) ? '<button class="chip" data-k="blockFault" data-v="1">Invasione a muro</button>' : ''}</div>` +
 ''; 
@@ -1050,6 +1066,13 @@ function render() {
          <span class="hint">${has ? `${name(t, sel.player)}: oppure il voto della <b>palla libera</b> qui sotto` : 'prima il giocatore'}</span><span class="grow"></span>
          <button class="chip" data-k="overAttack" data-v="1">Attaccata con una sigla</button></div>`;
     gctx = has ? 'D' : 'none';
+  }
+  if (ph.k === 'sendOver') {
+    const t = ph.t;
+    prompt = `<span class="tm ${teamCls(t)}">Difesa di là ${DATA[t].name}</span>
+              <span class="hint">chi l'ha mandata di là? poi gli altri: "rigore" o palla libera${viewNote(t)}</span>`;
+    html = courtHtml(t, 'sendOver', '', () => false) + `<div class="chips"><button class="chip" data-k="sendOverCancel" data-v="">Annulla</button></div>`;
+    gctx = 'none';
   }
   if (ph.k === 'setby') {
     const t = ph.t, setter = S.pos[t].find(x => role(t,x) === 'P');
@@ -1115,7 +1138,7 @@ function handleBtn(b) {
     const k = b.dataset.k, v = b.dataset.v;
     if (k === 'combo') return onPick('combo', ALL_COMBOS.find(c => c[0] === v), b.dataset.ovl);
     if (k === 'link') return onPick('link', v === '' ? null : Number(v), b.dataset.x);
-    return onPick(k, ['receiver','player','setby'].includes(k) ? Number(v) : v, b.dataset.ovl ? (b.dataset.x || '') : b.dataset.x);
+    return onPick(k, ['receiver','player','setby','sendOver'].includes(k) ? Number(v) : v, b.dataset.ovl ? (b.dataset.x || '') : b.dataset.x);
   }
 }
 
@@ -1750,7 +1773,8 @@ function ovlHtml(g, vr) {
                        pill('Palla libera male', 'data-k="fbTeam" data-v="-"', sel.fbTeam === '-' ? 'neg' : ''); }
     if (!(PREFS.oppLight && t !== OUR)) pill('Alzata imprecisa (–)', 'data-k="setErr" data-v="-"');
     pill('Alzata sbagliata (punto loro)', 'data-k="setErr" data-v="="', 'neg');
-    pill('Di là senza attacco', 'data-k="overNoAttack" data-v="1"'); pill('⇄ Altra squadra', 'data-k="switch" data-v="1"');
+    pill('Di là senza attacco', 'data-k="overNoAttack" data-v="1"'); pill('Difesa di là /', 'data-k="sendOverAsk" data-v="1"');
+    pill('⇄ Altra squadra', 'data-k="switch" data-v="1"');
     if (sel.combo) popHtml = gradePop('A', `<button class="tip ${sel.tip ? 'sel' : ''}" data-k="tip" data-v="1">pallonetto</button>`
       + `<button class="tip ${sel.badSet ? 'sel' : ''}" data-k="badSet" data-v="1">alzata negativa</button>`);
   } else if (ph.k === 'link') {
@@ -1778,6 +1802,11 @@ function ovlHtml(g, vr) {
     court(t, z, n => `data-k="player" data-v="${n}" data-x="B"`, n => `data-k="player" data-v="${n}" data-x="D"`, n => sel.player === n);
     pill('Attaccata con una sigla', 'data-k="overAttack" data-v="1"');
     if (sel.player != null) popHtml = `<div class="rgrow"><span>"rigore"</span>${rigoreBtns(false, 'tip')}</div>` + gradePop('D');
+  } else if (ph.k === 'sendOver') {
+    const t = ph.t, z = layoutRally(t);
+    head = `<span class="tm ${teamCls(t)}">Difesa di là</span>chi l'ha mandata di là?`;
+    court(t, z, null, n => `data-k="sendOver" data-v="${n}"`, () => false);
+    pill('Annulla', 'data-k="sendOverCancel" data-v=""');
   } else if (ph.k === 'setby') {
     const t = ph.t, z = layoutRally(t), setter = S.pos[t].find(x => role(t,x) === 'P');
     head = `<span class="tm ${teamCls(t)}">Alzata ${SET_LBL[ph.g]}</span>chi ha alzato?`;
@@ -2042,8 +2071,11 @@ function renderSub() {
   const onC = S.pos[subT], bench = DATA[subT].players.filter(p => !onC.includes(p.n) && !liberi(subT).includes(p.n));
   $('subBox').innerHTML = `<div class="chips">${['a','*'].map(t => `<button class="chip ${subT===t?'sel':''}" data-sub-t="${t}">${DATA[t].name}</button>`).join('')}
       <span class="grow"></span><button class="chip" data-sub-close="1">Chiudi</button></div>
+    <div class="lab">Chi palleggia</div><div class="row" style="grid-template-columns:repeat(6,1fr)">${onC.map(n =>
+      `<button class="pbtn ${role(subT,n)==='P'?'sel':''}" data-sub-setter="${n}">${n} ${name(subT,n)}<small>${role(subT,n)} · P${S.pos[subT].indexOf(n) + 1}</small></button>`).join('')}</div>
     ${liberi(subT).length > 1 ? `<div class="lab">Libero in campo</div><div class="chips">${liberi(subT).map(n =>
-      `<button class="chip ${libero(subT) === n ? 'sel' : ''}" data-lib="${n}">${n} ${name(subT, n)}</button>`).join('')}</div>` : ''}
+      `<button class="chip ${(liberoOn(subT) ?? libero(subT)) === n ? 'sel' : ''}" data-lib="${n}">${n} ${name(subT, n)}</button>`).join('')}</div>
+      ${(DATA[subT].liberi || []).length > 1 ? `<div class="hint">Dal referto in questo set giocano ${DATA[subT].liberi.map(n => n + ' ' + name(subT, n)).join(' poi ')}: il referto non dice a che punteggio si danno il cambio, scegli qui quello in campo.</div>` : ''}` : ''}
     <div class="lab">Esce</div><div class="row" style="grid-template-columns:repeat(6,1fr)">${onC.map(n =>
       `<button class="pbtn ${subOut===n?'sel':''}" data-sub-out="${n}">${n} ${name(subT,n)}<small>${role(subT,n)}</small></button>`).join('')}</div>
     <div class="lab">Entra</div><div class="row" style="grid-template-columns:repeat(6,1fr)">${bench.map(p =>
@@ -2056,6 +2088,9 @@ $('subBox').addEventListener('click', e => {
   if (b.dataset.subClose) return $('subModal').classList.add('hidden');
   if (b.dataset.subOut) subOut = Number(b.dataset.subOut);
   if (b.dataset.lib) { snapshot(); S.libero = {...(S.libero || {}), [subT]:Number(b.dataset.lib)}; render(); }
+  // il palleggiatore si sceglie in qualsiasi momento, anche a scambio in corso (richiesta dell'utente del 2026-11-26)
+  if (b.dataset.subSetter) { const n = Number(b.dataset.subSetter);
+    if (role(subT, n) !== 'P') { tap(); snapshot(); setOnCourtSetter(subT, n); render(); } }
   if (b.dataset.subIn) { tap(); snapshot(); doSub(subT, subOut, Number(b.dataset.subIn));
     $('subModal').classList.add('hidden'); return render(); }
   renderSub();
@@ -2083,7 +2118,8 @@ function fromReferto(i, set) {
     const name = dec ? 'Decimo' : T.name, candP = (T.candP || []).map(mapN);
     if (!players.some(p => p.r === 'P') && SETTERS[name] != null) setSetter(players, SETTERS[name], candP);
     const subsBySet = Object.fromEntries(Object.entries(T.subs || {}).map(([k, ev]) => [k, ev.map(e => ({at:e.at, out:mapN(e.out), in:mapN(e.in)}))]));
-    const libBySet = Object.fromEntries(Object.entries(T.libero || {}).map(([k, l]) => [k, {per:l.per.map(mapN), liberi:l.liberi.map(mapN)}]));
+    const libBySet = Object.fromEntries(Object.entries(T.libero || {}).map(([k, l]) => [k, {per:l.per.map(mapN), liberi:l.liberi.map(mapN),
+      mappa:Object.fromEntries(Object.entries(l.mappa || {}).map(([c, n]) => [mapN(Number(c)), n == null ? null : mapN(n)]))}]));
     for (const l of Object.values(libBySet)) for (const n of l.liberi) { const p = players.find(x => x.n === n); if (p) p.r = 'L'; }
     ME.t[t] = {name, players, roster:rosterText(players), lineup:(T.sets[set] || []).map(n => n == null ? '' : mapN(n)).join(' '), candP, subsBySet, libBySet};
     if (dec) ME.our = t;
@@ -2233,7 +2269,7 @@ function buildMatch() {
     // dati del referto per set (cambi, libero): restano salvati con la partita, così valgono anche riaprendo la scheda
     const lib = (d.libBySet && d.libBySet[ME.set]) || null;
     data[t] = {name:d.name.trim(), players, lineup, subs:(d.subsBySet && d.subsBySet[ME.set]) || [],
-               libFor:lib ? lib.per : null, liberi:lib ? lib.liberi : null,
+               libFor:lib ? lib.per : null, liberi:lib ? lib.liberi : null, libMap:lib ? (lib.mappa || null) : null,
                subsBySet:d.subsBySet || null, libBySet:d.libBySet || null, candP:d.candP || []};
   }
   const ref = ME.ref != null && REFERTI[ME.ref] ? {gara:REFERTI[ME.ref].gara, set:ME.set} : (ME.refInfo ? {...ME.refInfo, set:ME.set} : null);
@@ -2401,7 +2437,7 @@ function renderCorr() {
     return `<div class="crow"><span class="cn"><span class="tm ${teamCls(t)}">${DATA[t].name}</span></span>
       <button data-rot="${t}:-1" ${busy ? 'disabled' : ''}>◀ indietro</button><span class="cv">P${setterZone(t)}</span><button data-rot="${t}:1" ${busy ? 'disabled' : ''}>avanti ▶</button>
       <span class="cd">in zona 1:<br>${srv} ${name(t, srv)}</span>
-      <button data-setq="${t}" ${busy ? 'disabled' : ''}>chi palleggia?</button>
+      <button data-setq="${t}">chi palleggia?</button>
       <span class="cd" style="margin-left:auto">punti</span><button data-pts="${t}:-1" ${busy ? 'disabled' : ''}>−1</button><span class="cv">${S.score[t]}</span><button data-pts="${t}:1" ${busy ? 'disabled' : ''}>+1</button></div>`; };
   $('corrBox').innerHTML = `<h3>Correggi battuta, rotazione e punteggio</h3>
     <div class="hint">Per quando ti sei perso uno scambio. <b>Punto …</b> nella colonna a destra assegna già lo scambio con rotazione e battuta, come in partita; qui sistemi a mano quello che non torna. "Avanti" = la rotazione che fa la squadra quando conquista il cambio palla. Il punteggio qui cambia senza ruotare nessuno.</div>

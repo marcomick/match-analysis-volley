@@ -424,7 +424,16 @@ def scout_setup(folder, girone=None, setters_by_team=None):
                     if nums[0] not in lib_for:
                         lib_for.append(nums[0])
                     lib_used += [x for x in nums[1:] if x not in lib_used]
-                t["libero"][s["set"]] = {"per": lib_for, "liberi": lib_used or sorted(lib)}
+                # chi entra per chi (indicazione dell'utente del 2026-11-26): "C-L" dice quale libero sostituisce quel
+                # centrale; con "C-L1-L2" non si sa quando si danno il cambio, vale il libero di un "C-L" dello stesso
+                # set, altrimenti il primo usato (se si scambiano se ne accorge chi fa lo scout)
+                first_lib = (lib_used or sorted(lib) or [None])[0]
+                mappa = {}
+                for c in lib_for:
+                    single = {int(x[1]) for x in (q.split("-") for q in b["libero_seq"])
+                              if len(x) == 2 and x[0].isdigit() and x[1].isdigit() and int(x[0]) == c}
+                    mappa[c] = single.pop() if len(single) == 1 else first_lib
+                t["libero"][s["set"]] = {"per": lib_for, "liberi": lib_used or sorted(lib), "mappa": mappa}
                 for k, n in enumerate(b["lineup"]):
                     p = t["players"].get(n)
                     r_ = (ro.get(k) or ("C" if k in cen else None))
