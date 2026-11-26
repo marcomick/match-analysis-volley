@@ -4442,6 +4442,24 @@ def _pm_scouting_card(r, key):
                 cols = st.columns(2)
                 with cols[0]:
                     st.markdown("**Attaccanti**")
+                use = card.get("uso_prima_linea")
+                if use is not None and len(use):
+                    st.markdown("**Chi prende palla quando è davanti** (da ricezione # o +)")
+                    st.caption("Per ogni giocatore, dei palloni attaccati negli scambi in cui era in prima linea, "
+                               "quanti ha attaccato lui; anche col palleggiatore dietro e davanti. Dice chi cercare a "
+                               "muro in base a chi è davanti: due giocatori nello stesso ruolo possono essere serviti "
+                               "in modo molto diverso.")
+                    pct = lambda v: "-" if pd.isna(v) else f"{v * 100:.0f}%"
+                    st.dataframe(pd.DataFrame({
+                        "Giocatore": use["giocatore"], "Suoi / palloni": [f"{a} su {b}" for a, b in
+                                                                          zip(use["suoi"], use["palloni"])],
+                        "Quota": use["quota"].map(pct),
+                        "Pal. dietro": [f"{pct(q)} ({a} su {b})" if b else "-" for q, a, b in
+                                        zip(use["quota_dietro"], use["suoi_dietro"], use["palloni_dietro"])],
+                        "Pal. davanti": [f"{pct(q)} ({a} su {b})" if b else "-" for q, a, b in
+                                         zip(use["quota_davanti"], use["suoi_davanti"], use["palloni_davanti"])],
+                        "Punti": use["punti"].map(pct),
+                    }), hide_index=True, width="stretch")
                     show(card["attaccanti_prima"], "att")
                     st.markdown("**Battitori**")
                     show(card["battitori_prima"], "srv")

@@ -74,7 +74,7 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 from config.paths import build_base_path  # noqa: E402
-from src.dvw import normalize_team_name, parse_dvw, read_dvw_header, role_codes  # noqa: E402
+from src.dvw import _cognome_by_number, normalize_team_name, parse_dvw, read_dvw_header, role_codes  # noqa: E402
 from src.match_report import side_actions  # noqa: E402
 from src.setter_distribution import attack_rows  # noqa: E402
 
@@ -223,6 +223,16 @@ def build_dataset(config=None, progress=None):
                 rosters.append({"stagione": m["stagione"], "team": team, "data": _date_key(m["data"]),
                                 "cognome": cognome, "numero": numero, "sigla": code})
 
+            # chi c'è in prima linea (P2-P4) in ogni scambio: la distribuzione
+            # dipende da chi attacca in quella posizione più che dalla rotazione
+            names_by_num = _cognome_by_number(P["players"])
+            pre = "Casa" if side == "*" else "Ospiti"
+            front = {}
+            for x in actions[side].dropna(subset=["Rally"]).drop_duplicates("Rally").to_dict("records"):
+                nums = [x.get(f"{pre} P{k}") for k in (2, 3, 4)]
+                front[x["Rally"]] = ";".join(
+                    str(names_by_num.get((side, int(n)), "")).strip().replace("\u2019", "'")
+                    for n in nums if pd.notna(n))
             ar = attack_rows(P, side, match_id)
             if len(ar):
                 ar = ar[ar["voto"].isin(ATTACK_OUTCOMES) & ar["zona"].isin(ZONES)].copy()
@@ -236,6 +246,7 @@ def build_dataset(config=None, progress=None):
                         "finale": _is_final(r.punti_noi, r.punti_loro, r.set), "vinto": winner.get(r.rally) == side,
                         "numero": str(r.attaccante).split(" ", 1)[0], "rotazione": r.rotazione,
                         "palleggiatore": str(r.palleggiatore).replace("\u2019", "'"), "ricezione": r.ricezione,
+                        "davanti": front.get(r.rally, ""),
                     })
 
             d, od = actions[side], actions[other]
@@ -1455,6 +1466,48 @@ def _labeler(rosters, team_keys):
     return label
 
 
+def front_usage(a, label):
+    """Da ricezione # o +: per ogni giocatore, quanti dei palloni attaccati
+    dalla squadra negli scambi in cui era in prima linea (P2-P4) ha attaccato
+    lui (palleggiatore escluso). Dice chi va cercato a muro in base a chi è
+    davanti, più della rotazione: due centrali nello stesso ruolo possono
+    essere serviti in modo molto diverso (indicazione dell'utente del
+    2026-11-26). Colonne: giocatore, palloni, suoi, quota, quota_dietro e
+    quota_davanti (palleggiatore in seconda / prima linea), punti."""
+    cols = ["giocatore", "palloni", "suoi", "quota", "palloni_dietro", "suoi_dietro", "quota_dietro",
+            "palloni_davanti", "suoi_davanti", "quota_davanti", "punti"]
+    if "davanti" not in a.columns:
+        return pd.DataFrame(columns=cols)
+    g = a[(a["situazione"] == "R#+") & (a["davanti"].fillna("") != "")].copy()
+    if g.empty:
+        return pd.DataFrame(columns=cols)
+    team = g["giocatore"].str.rsplit("|", n=1).str[0].iloc[0]
+    g["cognome"] = g["giocatore"].str.rsplit("|", n=1).str[-1]
+    g["fronte"] = g["davanti"].str.split(";")
+    g["linea"] = g["rotazione"].map(setter_line)
+    setters = set(g["palleggiatore"])
+    rows = []
+    for name in sorted({n for f in g["fronte"] for n in f if n and n not in setters}):
+        part = g[g["fronte"].map(lambda f: name in f)]
+        mine = part["cognome"] == name
+        row = {"giocatore": label(f"{team}|{name}"), "palloni": len(part), "suoi": int(mine.sum()),
+               "quota": mine.mean(), "punti": (part.loc[mine, "esito"] == "#").mean() if mine.any() else np.nan}
+        for line in ("dietro", "davanti"):
+            p_ = part[part["linea"] == line]
+            k_ = int((p_["cognome"] == name).sum())
+            row.update({f"palloni_{line}": len(p_), f"suoi_{line}": k_,
+                        f"quota_{line}": k_ / len(p_) if len(p_) else np.nan})
+        rows.append(row)
+    return pd.DataFrame(rows, columns=cols).sort_values("quota", ascending=False).reset_index(drop=True)
+
+
+def _role_group(lab):
+    """'Severi (11, C2)' → 'C'; None senza sigla."""
+    if ", " not in lab or not lab.endswith(")"):
+        return None
+    return lab.rsplit(", ", 1)[-1][:-1][:1] or None
+
+
 def scouting_cards(attacks, serves, sets_played, ts, config, rosters=None):
     """{chiave della squadra: scheda} per le squadre della stagione in corso
     (Decimo escluso). Scheda: partite scoutate, numeri di squadra, attacco per
@@ -1541,12 +1594,43 @@ def scouting_cards(attacks, serves, sets_played, ts, config, rosters=None):
                 f.append(f"Da ricezione # o +, con il {words}, vanno a **{ZONE_LABELS[z]}** nel {_pct_it(share)} "
                          f"dei casi ({len(zp)} attacchi{'; ' + others if others else ''}; "
                          + ", ".join(f"{n_} {k_}" for k_, n_ in who.items()) + "): a muro partire da lì.")
+        # chi è davanti conta più della rotazione: tra due giocatori dello
+        # stesso ruolo, quanto sono cercati quando sono in prima linea
+        use = front_usage(a, label)
+        card["uso_prima_linea"] = use
+        # confronto a parità di linea del palleggiatore (la rotazione conta in
+        # parte: col palleggiatore davanti un martello può essere l'unico in
+        # posto 4), almeno 4 palloni per giocatore in quella linea e 12 per i due
+        words = {"C": "il centrale", "M": "il martello", "O": "l'opposto"}
+        line_words = {"dietro": "col palleggiatore in seconda linea", "davanti": "col palleggiatore in prima linea"}
+        for grp, word in words.items():
+            best = None
+            for line, lw in line_words.items():
+                same = use[(use["giocatore"].map(_role_group) == grp) & (use[f"palloni_{line}"] >= 4)]
+                if len(same) < 2:
+                    continue
+                same = same.sort_values(f"quota_{line}", ascending=False)
+                hi, lo = same.iloc[0], same.iloc[-1]
+                gap = hi[f"quota_{line}"] - lo[f"quota_{line}"]
+                if hi[f"palloni_{line}"] + lo[f"palloni_{line}"] >= 12 and gap >= 0.2 and (best is None or gap > best[0]):
+                    best = (gap, line, lw, hi, lo)
+            if best:
+                _, line, lw, hi, lo = best
+                f.append(f"Da ricezione # o +, {lw}, {word} **{hi['giocatore']}** quando è davanti prende il "
+                         f"{_pct_it(hi[f'quota_{line}'])} dei palloni ({hi[f'suoi_{line}']} su "
+                         f"{hi[f'palloni_{line}']}), **{lo['giocatore']}** solo il {_pct_it(lo[f'quota_{line}'])} "
+                         f"({lo[f'suoi_{line}']} su {lo[f'palloni_{line}']}): a muro conta chi è davanti, "
+                         "non solo la rotazione.")
+        # un opposto alla volta: con due opposti (es. uno entra per un set) i
+        # loro attacchi non vanno sommati sul nome del più frequente
         opp = a[a["giocatore"].map(label).str.contains(", O)", regex=False)]
-        if len(opp) >= 10:
-            back = (opp["rotazione"].map(setter_line) == "dietro").mean()
+        for g_, og in opp.groupby("giocatore"):
+            if len(og) < 10:
+                continue
+            back = (og["rotazione"].map(setter_line) == "dietro").mean()
             if back >= 0.8:
-                f.append(f"L'opposto **{label(opp['giocatore'].iloc[0])}** attacca quasi solo da prima linea: "
-                         f"{_pct_it(back)} dei suoi {len(opp)} attacchi con il palleggiatore dietro. Con il "
+                f.append(f"L'opposto **{label(g_)}** attacca quasi solo da prima linea: "
+                         f"{_pct_it(back)} dei suoi {len(og)} attacchi con il palleggiatore dietro. Con il "
                          "palleggiatore davanti il loro attacco ha un'arma in meno.")
         rm = a[a["situazione"] == "R-"]
         if len(rm) >= CARD_MIN_FACT:
