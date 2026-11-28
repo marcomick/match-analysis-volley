@@ -3,7 +3,7 @@
 // riferimenti.json (valori "di solito") e partite.json (partite già giocate, dai .dvw), scritti da
 // src/live_reference.py, si prendono dalla rete quando c'è, così basta ricaricarli su Netlify;
 // senza rete si usa l'ultima copia salvata.
-const VERSION = 'scambi-live-v17';
+const VERSION = 'scambi-live-v29';
 const FILES = ['./', 'index.html', 'core.js', 'manifest.json', 'icon-180.png', 'icon-512.png', 'riferimenti.json', 'partite.json'];
 
 self.addEventListener('install', e => {

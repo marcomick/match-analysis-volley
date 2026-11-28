@@ -318,6 +318,48 @@ def server_stats(files, rallies_of):
     return out
 
 
+def change_stats(files, rallies_of):
+    """Per le proposte di cambio dell'app live (2026-11-28), su tutte le partite del Decimo: scambi in cambio palla e
+    break-point con il palleggiatore di partenza in prima linea (P4-P3-P2 della sua posizione), con e senza doppio
+    cambio (stessa definizione di replay in live/core.js: doppio cambio = il palleggiatore in campo non è nella
+    posizione del palleggiatore di partenza); battute e break-point vinti di ogni battitore."""
+    fixed = fixed_roles()
+    dc = {"si": {"ric": 0, "so": 0, "bat": 0, "bp": 0}, "no": {"ric": 0, "so": 0, "bat": 0, "bp": 0}}
+    srv = {}
+    for f in files:
+        p, rr = rallies_of(f)
+        side = decimo_side(p)
+        other = "a" if side == "*" else "*"
+        pl = _team_players(p, side)
+        names = {num: pretty_name(x.cognome) for num, x in pl.items()}
+        role = {num: fixed.get(names[num].lower()) or ROLE_CODES.get(int(x.ruolo)) if x.ruolo is not None and not pd.isna(x.ruolo) else None
+                for num, x in pl.items()}
+        for _, g in rr.groupby("set", sort=True):
+            g = g.sort_values("Rally")
+            six0 = list(g.iloc[0][f"six_{side}"])
+            slot0 = next((i for i, n in enumerate(six0) if n and role.get(n) == "P"), None)
+            shift = 0
+            for r in g.to_dict("records"):
+                recv, won = r["server"] == other, r["winner"] == side
+                if slot0 is not None and r[f"rot_{side}"] is not None and not pd.isna(r[f"rot_{side}"]):
+                    lr = (slot0 - shift) % 6 + 1
+                    if lr in (2, 3, 4):
+                        c = dc["si" if int(r[f"rot_{side}"]) != lr else "no"]
+                        if recv:
+                            c["ric"] += 1
+                            c["so"] += int(won)
+                        else:
+                            c["bat"] += 1
+                            c["bp"] += int(won)
+                if not recv and r[f"six_{side}"][0]:
+                    b = srv.setdefault(names.get(r[f"six_{side}"][0], str(r[f"six_{side}"][0])), {"bat": 0, "bp": 0})
+                    b["bat"] += 1
+                    b["bp"] += int(won)
+                if recv and won:
+                    shift += 1
+    return {"doppio_cambio": dc, "battitori": srv}
+
+
 def set_table(catalog, rallies_of):
     """Una riga per squadra e set (quinti set e set con meno di 30 scambi esclusi): i cinque saldi
     degli obiettivi, quelli dell'avversario, vinto/perso, scambi giocati."""
@@ -533,10 +575,24 @@ def build_reference(n_matches=N_MATCHES):
     # per l'app nuova: rosa e battitori del Decimo, modello degli obiettivi, momenti caldi
     season_files = [f for f in decimo_files if _season_of(f["data"]) == SEASONS[-1]]
     dec["battitori"] = server_stats(decimo_files[-n_matches:], rallies_of)
+    dec["cambi"] = change_stats(decimo_files, rallies_of)
     D = set_table(catalog, rallies_of)
     ref = {"generato": date.today().isoformat(), "n_partite": n_matches, "decimo": dec, "squadre": squadre,
            "rosa": build_roster(season_files or decimo_files[-2:], rallies_of),
            "modello": goal_model(D), "momenti_caldi": hot_moments(catalog, rallies_of)}
+    # probabilità di vincere il set (src/set_win_prob.py): totali del campionato per il "solito" delle squadre
+    from src.set_win_prob import prob_set_params
+    league = {"ric": 0, "so": 0, "bat": 0, "bp": 0}
+    for f in catalog:
+        try:
+            _, rr = rallies_of(f)
+        except Exception:
+            continue
+        for side in ("*", "a"):                  # tutte e due le squadre: la sola squadra di casa ha il vantaggio del campo
+            c = team_counts(rr, side)
+            for k in league:
+                league[k] += c[k]
+    ref["prob_set"] = prob_set_params(league)
     ref["_partite"] = past_matches(rallies_of, {**{x["c"].lower(): x["r"] for x in ref["rosa"] if x["r"] != "?"}, **fixed_roles()})
     return ref
 

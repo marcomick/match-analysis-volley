@@ -1,10 +1,8 @@
 {
- "generato": "2026-11-12",
+ "generato": "2026-11-28",
  "n_partite": 10,
  "decimo": {
   "partite": [
-   "26/04/2026 Decimo - Astrolabio",
-   "28/04/2026 Decimo - Poolstars",
    "02/05/2026 Decimo - NMC",
    "10/05/2026 Decimo - santa monica",
    "17/05/2026 Decimo - Civita Castellana",
@@ -12,146 +10,148 @@
    "18/10/2026 Decimo - San Paolo 27",
    "25/10/2026 Decimo - Volley Prati",
    "01/11/2026 Decimo - Genzano",
-   "07/11/2026 Decimo - Anguillara"
+   "07/11/2026 Decimo - Anguillara",
+   "15/11/2026 Decimo - Fenice",
+   "22/11/2026 Decimo - Top Five Tarquinia"
   ],
   "totali": {
-   "set": 37,
-   "scambi": 1618,
-   "ric": 815,
-   "so": 495,
-   "bat": 803,
-   "bp": 309,
+   "set": 38,
+   "scambi": 1642,
+   "ric": 830,
+   "so": 501,
+   "bat": 812,
+   "bp": 311,
    "ric_gioco": 692,
-   "pt1": 250,
-   "err1": 67,
-   "mur1": 38,
-   "pts": 184,
-   "errs": 75,
-   "murs": 30,
-   "ace": 38,
-   "err_bat": 87,
-   "muri": 79,
-   "gratuiti": 50,
-   "punti": 804,
-   "subiti": 814,
-   "so_ace_sub": 32,
-   "so_err_loro": 91,
-   "so3_n": 337,
-   "so3_w": 154,
-   "bat_gioco": 678,
-   "o_pt1": 231,
-   "o_err1": 58,
-   "o_mur1": 34,
-   "bp3_n": 355,
-   "bp3_w": 179,
+   "pt1": 247,
+   "err1": 75,
+   "mur1": 35,
+   "pts": 176,
+   "errs": 73,
+   "murs": 33,
+   "ace": 36,
+   "err_bat": 85,
+   "muri": 91,
+   "gratuiti": 55,
+   "punti": 812,
+   "subiti": 830,
+   "so_ace_sub": 41,
+   "so_err_loro": 97,
+   "so3_n": 335,
+   "so3_w": 157,
+   "bat_gioco": 691,
+   "o_pt1": 235,
+   "o_err1": 59,
+   "o_mur1": 43,
+   "bp3_n": 354,
+   "bp3_w": 173,
    "rot": {
     "1": {
-     "ric": 144,
-     "so": 88,
-     "ric_gioco": 117,
-     "pt1": 41,
+     "ric": 149,
+     "so": 91,
+     "ric_gioco": 122,
+     "pt1": 43,
      "err1": 10,
      "mur1": 8,
-     "bat": 121,
-     "bp": 44
+     "bat": 113,
+     "bp": 38
     },
     "2": {
-     "ric": 125,
-     "so": 70,
-     "ric_gioco": 101,
-     "pt1": 38,
-     "err1": 14,
-     "mur1": 6,
+     "ric": 118,
+     "so": 68,
+     "ric_gioco": 93,
+     "pt1": 36,
+     "err1": 16,
+     "mur1": 3,
      "bat": 112,
-     "bp": 37
+     "bp": 40
     },
     "3": {
-     "ric": 130,
-     "so": 79,
-     "ric_gioco": 107,
-     "pt1": 37,
-     "err1": 5,
-     "mur1": 6,
-     "bat": 132,
-     "bp": 55
+     "ric": 127,
+     "so": 75,
+     "ric_gioco": 99,
+     "pt1": 35,
+     "err1": 6,
+     "mur1": 5,
+     "bat": 123,
+     "bp": 50
     },
     "4": {
-     "ric": 131,
-     "so": 77,
-     "ric_gioco": 116,
-     "pt1": 42,
+     "ric": 130,
+     "so": 74,
+     "ric_gioco": 111,
+     "pt1": 37,
      "err1": 11,
-     "mur1": 6,
-     "bat": 138,
-     "bp": 53
+     "mur1": 7,
+     "bat": 145,
+     "bp": 54
     },
     "5": {
-     "ric": 130,
-     "so": 92,
-     "ric_gioco": 112,
+     "ric": 144,
+     "so": 98,
+     "ric_gioco": 125,
      "pt1": 47,
-     "err1": 9,
+     "err1": 13,
      "mur1": 6,
-     "bat": 161,
+     "bat": 167,
      "bp": 70
     },
     "6": {
-     "ric": 154,
-     "so": 89,
-     "ric_gioco": 138,
-     "pt1": 45,
-     "err1": 18,
+     "ric": 160,
+     "so": 94,
+     "ric_gioco": 141,
+     "pt1": 49,
+     "err1": 19,
      "mur1": 6,
-     "bat": 139,
-     "bp": 50
+     "bat": 151,
+     "bp": 59
     }
    }
   },
   "battitori": {
    "Carrer": {
-    "battute": 60,
-    "ace": 5,
-    "errori": 13
+    "battute": 56,
+    "ace": 2,
+    "errori": 10
    },
-   "Cepparano": {
-    "battute": 93,
-    "ace": 4,
-    "errori": 13
+   "Chimenton": {
+    "battute": 129,
+    "ace": 9,
+    "errori": 9
    },
    "Pessei": {
-    "battute": 133,
+    "battute": 129,
     "ace": 4,
     "errori": 12
    },
    "Caranzetti": {
-    "battute": 97,
+    "battute": 76,
     "ace": 3,
-    "errori": 9
-   },
-   "Chimenton": {
-    "battute": 129,
-    "ace": 8,
-    "errori": 15
-   },
-   "Moscetta": {
-    "battute": 103,
-    "ace": 5,
     "errori": 6
    },
+   "Cepparano": {
+    "battute": 84,
+    "ace": 3,
+    "errori": 16
+   },
+   "Moscetta": {
+    "battute": 100,
+    "ace": 5,
+    "errori": 8
+   },
+   "Sardella": {
+    "battute": 28,
+    "ace": 2,
+    "errori": 3
+   },
    "D'Arienzo": {
-    "battute": 92,
-    "ace": 7,
+    "battute": 83,
+    "ace": 6,
     "errori": 15
    },
    "Licenziati": {
-    "battute": 7,
+    "battute": 5,
     "ace": 0,
     "errori": 0
-   },
-   "Sardella": {
-    "battute": 15,
-    "ace": 1,
-    "errori": 1
    },
    "Principato": {
     "battute": 1,
@@ -159,18 +159,134 @@
     "errori": 0
    },
    "D'Elia": {
-    "battute": 56,
-    "ace": 1,
-    "errori": 3
+    "battute": 89,
+    "ace": 2,
+    "errori": 6
    },
    "Racheli": {
-    "battute": 17,
+    "battute": 32,
     "ace": 0,
     "errori": 0
+   }
+  },
+  "cambi": {
+   "doppio_cambio": {
+    "si": {
+     "ric": 105,
+     "so": 67,
+     "bat": 84,
+     "bp": 27
+    },
+    "no": {
+     "ric": 1265,
+     "so": 720,
+     "bat": 1198,
+     "bp": 458
+    }
+   },
+   "battitori": {
+    "Cepparano": {
+     "bat": 348,
+     "bp": 144
+    },
+    "Pessei": {
+     "bat": 363,
+     "bp": 143
+    },
+    "Caranzetti": {
+     "bat": 296,
+     "bp": 117
+    },
+    "Moscetta": {
+     "bat": 335,
+     "bp": 143
+    },
+    "D'Arienzo": {
+     "bat": 255,
+     "bp": 92
+    },
+    "Chimenton": {
+     "bat": 455,
+     "bp": 181
+    },
+    "Martignoni": {
+     "bat": 30,
+     "bp": 9
+    },
+    "Sardella": {
+     "bat": 111,
+     "bp": 43
+    },
+    "Licenziati": {
+     "bat": 119,
+     "bp": 49
+    },
+    "Carrer": {
+     "bat": 215,
+     "bp": 71
+    },
+    "Liberatori": {
+     "bat": 5,
+     "bp": 1
+    },
+    "Ferrazzi": {
+     "bat": 13,
+     "bp": 6
+    },
+    "Principato": {
+     "bat": 1,
+     "bp": 0
+    },
+    "D'Elia": {
+     "bat": 89,
+     "bp": 38
+    },
+    "Racheli": {
+     "bat": 32,
+     "bp": 11
+    }
    }
   }
  },
  "squadre": {
+  "afrogiro volley": {
+   "nome": "Afrogiro Volley",
+   "partite": [
+    "01/11/2026 Afrogiro Volley - Team Power Albano Velletri",
+    "15/11/2026 Afrogiro Volley - Valsugana Panizzo"
+   ],
+   "totali": {
+    "set": 7,
+    "scambi": 309,
+    "ric": 160,
+    "so": 90,
+    "bat": 149,
+    "bp": 58,
+    "ric_gioco": 125,
+    "pt1": 36,
+    "err1": 16,
+    "mur1": 4,
+    "pts": 31,
+    "errs": 11,
+    "murs": 7,
+    "ace": 9,
+    "err_bat": 24,
+    "muri": 10,
+    "gratuiti": 21,
+    "punti": 148,
+    "subiti": 161,
+    "so_ace_sub": 11,
+    "so_err_loro": 24,
+    "so3_n": 69,
+    "so3_w": 30,
+    "bat_gioco": 116,
+    "o_pt1": 35,
+    "o_err1": 7,
+    "o_mur1": 7,
+    "bp3_n": 67,
+    "bp3_w": 35
+   }
+  },
   "anguillara": {
    "nome": "Anguillara",
    "partite": [
@@ -331,9 +447,9 @@
     "bat_gioco": 478,
     "o_pt1": 171,
     "o_err1": 46,
-    "o_mur1": 38,
-    "bp3_n": 223,
-    "bp3_w": 129
+    "o_mur1": 37,
+    "bp3_n": 224,
+    "bp3_w": 130
    }
   },
   "civitavecchia": {
@@ -375,6 +491,44 @@
     "o_mur1": 17,
     "bp3_n": 185,
     "bp3_w": 103
+   }
+  },
+  "fenice": {
+   "nome": "Fenice",
+   "partite": [
+    "07/11/2026 Fenice - Roma7",
+    "15/11/2026 Fenice - Decimo"
+   ],
+   "totali": {
+    "set": 7,
+    "scambi": 295,
+    "ric": 159,
+    "so": 93,
+    "bat": 136,
+    "bp": 41,
+    "ric_gioco": 127,
+    "pt1": 42,
+    "err1": 11,
+    "mur1": 10,
+    "pts": 21,
+    "errs": 10,
+    "murs": 10,
+    "ace": 9,
+    "err_bat": 17,
+    "muri": 14,
+    "gratuiti": 13,
+    "punti": 134,
+    "subiti": 161,
+    "so_ace_sub": 11,
+    "so_err_loro": 21,
+    "so3_n": 64,
+    "so3_w": 30,
+    "bat_gioco": 110,
+    "o_pt1": 49,
+    "o_err1": 8,
+    "o_mur1": 6,
+    "bp3_n": 47,
+    "bp3_w": 18
    }
   },
   "genzano": {
@@ -601,12 +755,12 @@
     "err1": 19,
     "mur1": 20,
     "pts": 94,
-    "errs": 30,
+    "errs": 29,
     "murs": 18,
     "ace": 15,
     "err_bat": 31,
     "muri": 28,
-    "gratuiti": 12,
+    "gratuiti": 13,
     "punti": 347,
     "subiti": 336,
     "so_ace_sub": 20,
@@ -626,38 +780,39 @@
    "partite": [
     "18/10/2025 Roma7 - santa monica",
     "08/11/2025 Roma7 - Decimo",
-    "08/03/2026 Roma7 - Decimo"
+    "08/03/2026 Roma7 - Decimo",
+    "07/11/2026 Roma7 - Fenice"
    ],
    "totali": {
-    "set": 12,
-    "scambi": 481,
-    "ric": 263,
-    "so": 121,
-    "bat": 218,
-    "bp": 94,
-    "ric_gioco": 203,
-    "pt1": 39,
-    "err1": 18,
-    "mur1": 10,
-    "pts": 54,
-    "errs": 9,
-    "murs": 14,
-    "ace": 17,
-    "err_bat": 25,
-    "muri": 14,
-    "gratuiti": 15,
-    "punti": 215,
-    "subiti": 266,
-    "so_ace_sub": 28,
-    "so_err_loro": 32,
-    "so3_n": 136,
-    "so3_w": 50,
-    "bat_gioco": 176,
-    "o_pt1": 54,
-    "o_err1": 18,
+    "set": 14,
+    "scambi": 570,
+    "ric": 303,
+    "so": 151,
+    "bat": 267,
+    "bp": 114,
+    "ric_gioco": 236,
+    "pt1": 56,
+    "err1": 20,
+    "mur1": 11,
+    "pts": 63,
+    "errs": 12,
+    "murs": 16,
+    "ace": 23,
+    "err_bat": 34,
+    "muri": 17,
+    "gratuiti": 18,
+    "punti": 265,
+    "subiti": 305,
+    "so_ace_sub": 31,
+    "so_err_loro": 36,
+    "so3_n": 149,
+    "so3_w": 59,
+    "bat_gioco": 210,
+    "o_pt1": 65,
+    "o_err1": 22,
     "o_mur1": 8,
-    "bp3_n": 96,
-    "bp3_w": 51
+    "bp3_n": 115,
+    "bp3_w": 61
    }
   },
   "roman": {
@@ -696,10 +851,10 @@
     "so3_w": 83,
     "bat_gioco": 391,
     "o_pt1": 129,
-    "o_err1": 35,
-    "o_mur1": 19,
-    "bp3_n": 208,
-    "bp3_w": 119
+    "o_err1": 34,
+    "o_mur1": 18,
+    "bp3_n": 210,
+    "bp3_w": 121
    }
   },
   "san paolo 27": {
@@ -757,7 +912,7 @@
     "bp": 142,
     "ric_gioco": 309,
     "pt1": 75,
-    "err1": 41,
+    "err1": 40,
     "mur1": 15,
     "pts": 94,
     "errs": 45,
@@ -765,12 +920,12 @@
     "ace": 20,
     "err_bat": 48,
     "muri": 23,
-    "gratuiti": 15,
+    "gratuiti": 16,
     "punti": 337,
     "subiti": 401,
     "so_ace_sub": 36,
     "so_err_loro": 52,
-    "so3_n": 178,
+    "so3_n": 179,
     "so3_w": 68,
     "bat_gioco": 273,
     "o_pt1": 90,
@@ -823,41 +978,154 @@
     "bp3_w": 105
    }
   },
+  "team power albano velletri": {
+   "nome": "Team Power Albano Velletri",
+   "partite": [
+    "01/11/2026 Team Power Albano Velletri - Afrogiro Volley"
+   ],
+   "totali": {
+    "set": 4,
+    "scambi": 185,
+    "ric": 97,
+    "so": 55,
+    "bat": 88,
+    "bp": 32,
+    "ric_gioco": 79,
+    "pt1": 21,
+    "err1": 6,
+    "mur1": 5,
+    "pts": 15,
+    "errs": 10,
+    "murs": 3,
+    "ace": 6,
+    "err_bat": 16,
+    "muri": 6,
+    "gratuiti": 11,
+    "punti": 87,
+    "subiti": 98,
+    "so_ace_sub": 4,
+    "so_err_loro": 14,
+    "so3_n": 47,
+    "so3_w": 20,
+    "bat_gioco": 66,
+    "o_pt1": 19,
+    "o_err1": 7,
+    "o_mur1": 3,
+    "bp3_n": 37,
+    "bp3_w": 16
+   }
+  },
+  "top five tarquinia": {
+   "nome": "Top Five Tarquinia",
+   "partite": [
+    "01/11/2026 Top Five Tarquinia - Valsugana",
+    "22/11/2026 Top Five Tarquinia - Decimo"
+   ],
+   "totali": {
+    "set": 4,
+    "scambi": 177,
+    "ric": 79,
+    "so": 53,
+    "bat": 98,
+    "bp": 46,
+    "ric_gioco": 69,
+    "pt1": 28,
+    "err1": 6,
+    "mur1": 4,
+    "pts": 26,
+    "errs": 7,
+    "murs": 4,
+    "ace": 9,
+    "err_bat": 17,
+    "muri": 5,
+    "gratuiti": 4,
+    "punti": 99,
+    "subiti": 78,
+    "so_ace_sub": 3,
+    "so_err_loro": 7,
+    "so3_n": 31,
+    "so3_w": 18,
+    "bat_gioco": 72,
+    "o_pt1": 20,
+    "o_err1": 9,
+    "o_mur1": 2,
+    "bp3_n": 41,
+    "bp3_w": 26
+   }
+  },
   "valsugana": {
    "nome": "Valsugana",
    "partite": [
-    "18/10/2026 Valsugana - Volley Prati"
+    "18/10/2026 Valsugana - Volley Prati",
+    "01/11/2026 Valsugana - Top Five Tarquinia"
    ],
    "totali": {
-    "set": 5,
-    "scambi": 200,
-    "ric": 101,
-    "so": 62,
-    "bat": 99,
-    "bp": 37,
-    "ric_gioco": 87,
-    "pt1": 32,
-    "err1": 1,
-    "mur1": 6,
-    "pts": 21,
-    "errs": 8,
-    "murs": 2,
+    "set": 6,
+    "scambi": 244,
+    "ric": 126,
+    "so": 75,
+    "bat": 118,
+    "bp": 43,
+    "ric_gioco": 107,
+    "pt1": 39,
+    "err1": 2,
+    "mur1": 7,
+    "pts": 26,
+    "errs": 9,
+    "murs": 3,
     "ace": 7,
-    "err_bat": 9,
+    "err_bat": 12,
     "muri": 6,
-    "gratuiti": 14,
-    "punti": 99,
-    "subiti": 101,
-    "so_ace_sub": 4,
-    "so_err_loro": 10,
-    "so3_n": 48,
-    "so3_w": 20,
-    "bat_gioco": 83,
-    "o_pt1": 32,
-    "o_err1": 5,
+    "gratuiti": 15,
+    "punti": 118,
+    "subiti": 126,
+    "so_ace_sub": 6,
+    "so_err_loro": 13,
+    "so3_n": 59,
+    "so3_w": 23,
+    "bat_gioco": 99,
+    "o_pt1": 40,
+    "o_err1": 6,
     "o_mur1": 5,
-    "bp3_n": 41,
-    "bp3_w": 20
+    "bp3_n": 48,
+    "bp3_w": 25
+   }
+  },
+  "valsugana panizzo": {
+   "nome": "Valsugana Panizzo",
+   "partite": [
+    "15/11/2026 Valsugana Panizzo - Afrogiro Volley"
+   ],
+   "totali": {
+    "set": 3,
+    "scambi": 124,
+    "ric": 52,
+    "so": 36,
+    "bat": 72,
+    "bp": 38,
+    "ric_gioco": 37,
+    "pt1": 14,
+    "err1": 1,
+    "mur1": 2,
+    "pts": 17,
+    "errs": 5,
+    "murs": 0,
+    "ace": 5,
+    "err_bat": 8,
+    "muri": 5,
+    "gratuiti": 5,
+    "punti": 74,
+    "subiti": 50,
+    "so_ace_sub": 5,
+    "so_err_loro": 10,
+    "so3_n": 20,
+    "so3_w": 12,
+    "bat_gioco": 59,
+    "o_pt1": 17,
+    "o_err1": 9,
+    "o_mur1": 1,
+    "bp3_n": 32,
+    "bp3_w": 23
    }
   },
   "volley prati": {
@@ -909,7 +1177,7 @@
   {
    "n": 3,
    "c": "Liberatori",
-   "referto": false,
+   "referto": true,
    "r": "M"
   },
   {
@@ -973,12 +1241,6 @@
    "r": "L"
   },
   {
-   "n": 40,
-   "c": "Colletti",
-   "referto": false,
-   "r": "?"
-  },
-  {
    "n": 66,
    "c": "Sardella",
    "referto": true,
@@ -995,85 +1257,96 @@
   },
   "coef": {
    "b0": 0.0,
-   "bat": 1.287,
-   "a1": 2.061,
-   "ac": 2.403,
-   "muri": 0.477,
-   "grat": 0.437,
-   "o_bat": -1.287,
-   "o_a1": -2.061,
-   "o_ac": -2.403,
-   "o_muri": -0.477,
-   "o_grat": -0.437
+   "bat": 1.276,
+   "a1": 2.056,
+   "ac": 2.404,
+   "muri": 0.472,
+   "grat": 0.45,
+   "o_bat": -1.276,
+   "o_a1": -2.056,
+   "o_ac": -2.404,
+   "o_muri": -0.472,
+   "o_grat": -0.45
   },
   "vale": {
-   "bat": 0.151,
-   "a1": 0.265,
-   "ac": 0.321,
+   "bat": 0.152,
+   "a1": 0.267,
+   "ac": 0.324,
    "muri": 0.058,
-   "grat": 0.052,
-   "o_bat": -0.151,
-   "o_a1": -0.265,
-   "o_ac": -0.321,
+   "grat": 0.055,
+   "o_bat": -0.152,
+   "o_a1": -0.267,
+   "o_ac": -0.324,
    "o_muri": -0.058,
-   "o_grat": -0.052
+   "o_grat": -0.055
   },
-  "set": 382,
+  "set": 416,
   "ritmo_noi": {
    "bat": {
-    "m": -0.0397,
-    "v": 0.0841
+    "m": -0.0388,
+    "v": 0.0862
    },
    "a1": {
-    "m": 0.0659,
-    "v": 0.1749
+    "m": 0.0671,
+    "v": 0.1762
    },
    "ac": {
-    "m": 0.0589,
-    "v": 0.1901
+    "m": 0.0562,
+    "v": 0.1976
    },
    "muri": {
-    "m": 0.0431,
-    "v": 0.041
+    "m": 0.0451,
+    "v": 0.0458
    },
    "grat": {
-    "m": 0.0325,
-    "v": 0.0286
+    "m": 0.0332,
+    "v": 0.0299
    }
   },
   "ritmo_tutti": {
    "bat": {
     "m": -0.0382,
-    "v": 0.0798
+    "v": 0.0792
    },
    "a1": {
-    "m": 0.066,
-    "v": 0.1705
+    "m": 0.0672,
+    "v": 0.1736
    },
    "ac": {
-    "m": 0.0632,
-    "v": 0.1941
+    "m": 0.0611,
+    "v": 0.1946
    },
    "muri": {
     "m": 0.0438,
-    "v": 0.0445
+    "v": 0.0451
    },
    "grat": {
-    "m": 0.0271,
-    "v": 0.0275
+    "m": 0.0288,
+    "v": 0.0299
    }
   },
-  "scambi_set": 45.0
+  "scambi_set": 44.9
  },
  "momenti_caldi": {
   "quote": [
-   0.253,
-   0.134,
-   0.072,
-   0.096,
-   0.182,
-   0.263
+   0.255,
+   0.135,
+   0.07,
+   0.093,
+   0.18,
+   0.267
   ],
-  "set": 202
+  "set": 212
+ },
+ "prob_set": {
+  "K": 60,
+  "W": 1.5,
+  "prior_n": 600,
+  "lega": {
+   "ric": 9618,
+   "so": 5638,
+   "bat": 9618,
+   "bp": 3980
+  }
  }
 }

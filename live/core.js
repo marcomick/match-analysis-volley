@@ -639,6 +639,314 @@
     return usual !== null && usual < goal && v >= usual ? 'amb' : 'bad';
   }
 
+  // ---------- probabilità di vincere il set (stesso conto di src/set_win_prob.py) ----------
+  // Catena di Markov sul punteggio: ogni scambio lo vinciamo con pSO quando battono loro e pBP quando battiamo noi.
+  // pSO e pBP: il nostro solito contro il loro (scala logit sulla media del campionato), poi quello che succede oggi
+  // (set in corso pieno, set prima con peso W, il solito vale K scambi). Obiettivi, errori e ultimi scambi provati
+  // in più non miglioravano la previsione (sono già dentro il cambio palla e il break-point di oggi).
+  function markovSet(a, b, serveUs, pso, pbp, target) {
+    pso = Math.min(Math.max(pso, 1e-3), 1 - 1e-3); pbp = Math.min(Math.max(pbp, 1e-3), 1 - 1e-3);
+    const a11 = 1 - (1 - pbp) * pso, a12 = -pbp * (1 - pbp), c1 = pbp * pbp;
+    const a21 = -(1 - pso) * pso, a22 = 1 - pso * (1 - pbp), c2 = pso * pbp, det = a11 * a22 - a12 * a21;
+    const tieUs = (c1 * a22 - a12 * c2) / det, tieThem = (a11 * c2 - a21 * c1) / det;
+    const memo = new Map();
+    const f = (x, y, s) => {
+      if (x >= target && x - y >= 2) return 1;
+      if (y >= target && y - x >= 2) return 0;
+      if (x >= target - 1 && y >= target - 1) {
+        const d = x - y;
+        if (d === 0) return s ? tieUs : tieThem;
+        if (d === 1) return pbp + (1 - pbp) * tieThem;
+        return pso * tieUs;
+      }
+      const k = x * 4096 + y * 2 + (s ? 1 : 0);
+      if (!memo.has(k)) { const p = s ? pbp : pso; memo.set(k, p * f(x + 1, y, true) + (1 - p) * f(x, y + 1, false)); }
+      return memo.get(k);
+    };
+    return f(a, b, serveUs);
+  }
+  const lgt = p => { p = Math.min(Math.max(p, 1e-4), 1 - 1e-4); return Math.log(p / (1 - p)); };
+  const sgm = z => 1 / (1 + Math.exp(-z));
+  function setWinProb(m, REF, n) {
+    const P = REF && REF.prob_set; if (!P) return null;
+    const st = replay(m, n);
+    if (st.winner) return { p: st.winner === 'noi' ? 1 : 0, done: true, st };
+    const L = P.lega, so0 = L.so / L.ric, bp0 = L.bp / L.bat, N = P.prior_n;
+    const rate = (c, k, d, p0) => ((c && c[k] || 0) + N * p0) / ((c && c[d] || 0) + N);
+    const us = REF.decimo && REF.decimo.totali, them = m.refKey && REF.squadre[m.refKey] ? REF.squadre[m.refKey].totali : null;
+    const p0so = sgm(lgt(rate(us, 'so', 'ric', so0)) - lgt(rate(them, 'bp', 'bat', bp0)) + lgt(bp0));
+    const p0bp = sgm(lgt(rate(us, 'bp', 'bat', bp0)) - lgt(rate(them, 'so', 'ric', so0)) + lgt(so0));
+    const prev = { ric: 0, so: 0, bat: 0, bp: 0 };
+    for (let i = 1; i < n; i++) { const c = stageCounts(replay(m, i).rallies, 'noi'); ['ric', 'so', 'bat', 'bp'].forEach(k => { prev[k] += c[k]; }); }
+    const cur = stageCounts(st.rallies, 'noi');
+    const pso = (cur.so + P.W * prev.so + P.K * p0so) / (cur.ric + P.W * prev.ric + P.K);
+    const pbp = (cur.bp + P.W * prev.bp + P.K * p0bp) / (cur.bat + P.W * prev.bat + P.K);
+    return { p: markovSet(st.pts.noi, st.pts.loro, st.server === 'noi', pso, pbp, st.target), pso, pbp, done: false, st };
+  }
+
+  // ---------- decisioni: cambi e KPI (2026-11-28, solo sul Decimo) ----------
+  // Markov in cui cambio palla e break-point dipendono da k = cambi palla vinti da adesso (le rotazioni che verranno):
+  // oltre kmax valgono quelli di kmax.
+  function markovK(a, b, serveUs, psoK, pbpK, target, kmax) {
+    const memo = new Map();
+    const f = (x, y, s, k) => {
+      if (x >= target && x - y >= 2) return 1;
+      if (y >= target && y - x >= 2) return 0;
+      if (x >= target - 1 && y >= target - 1) return markovSet(x, y, s, psoK(kmax), pbpK(kmax), target);
+      const kk = Math.min(k, kmax), key = ((x * 64 + y) * 2 + (s ? 1 : 0)) * 32 + kk;
+      if (memo.has(key)) return memo.get(key);
+      const v = s ? pbpK(kk) * f(x + 1, y, true, kk) + (1 - pbpK(kk)) * f(x, y + 1, false, kk)
+        : psoK(kk) * f(x + 1, y, true, kk + 1) + (1 - psoK(kk)) * f(x, y + 1, false, kk);
+      memo.set(key, v); return v;
+    };
+    return f(a, b, serveUs, 0);
+  }
+  // estrazioni da una Beta (Marsaglia-Tsang), con un seme fisso: lo stesso stato dà sempre la stessa risposta
+  let seed = 1;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const gauss = () => { let u = 0; while (!u) u = rnd(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * rnd()); };
+  function gammaR(k) {
+    if (k < 1) return gammaR(k + 1) * Math.pow(rnd(), 1 / k);
+    const d = k - 1 / 3, c = 1 / Math.sqrt(9 * d);
+    for (;;) {
+      let x, v; do { x = gauss(); v = 1 + c * x; } while (v <= 0);
+      v = v * v * v; const u = rnd();
+      if (u < 1 - 0.0331 * x * x * x * x || Math.log(u) < 0.5 * x * x + d * (1 - v + Math.log(v))) return d * v;
+    }
+  }
+  const betaR = (w, n) => { const x = gammaR(w + 1); return x / (x + gammaR(n - w + 1)); };   // Beta(1,1) a priori
+  const dLogit = (a, b) => lgt(betaR(a.w, a.n)) - lgt(betaR(b.w, b.n));
+  // una proposta si mostra solo se la probabilità del set sale con affidabilità >= DEC_REL e di almeno DEC_MIN in media
+  const DEC_NSIM = 120, DEC_REL = 0.9, DEC_MIN = 0.02;
+  function simGain(wp, kmax, draw) {
+    seed = 7; const st = wp.st, gains = [];
+    for (let i = 0; i < DEC_NSIM; i++) {
+      const d = draw();
+      const p = markovK(st.pts.noi, st.pts.loro, st.server === 'noi', k => sgm(lgt(wp.pso) + (d.so[k] || 0)),
+        k => sgm(lgt(wp.pbp) + (d.bp[k] || 0)), st.target, kmax);
+      gains.push(p - wp.p);
+    }
+    const mean = gains.reduce((x, y) => x + y, 0) / gains.length;
+    return { gain: mean, rel: gains.filter(g => g > 0).length / gains.length };
+  }
+  // doppio cambio: quando la prossima rotazione mette il palleggiatore di partenza in P4 (si propone con il servizio
+  // agli altri); cambio palla e break-point in P4-P3-P2 con e senza doppio cambio, storia del Decimo più oggi
+  function dcProposal(m, REF, n, wp) {
+    const st = wp && wp.st, H = REF && REF.decimo && REF.decimo.cambi;
+    if (!st || !H || st.server !== 'loro' || st.dc || !st.lr || nextZone(st.lr) !== 4 || st.subs.length > MAX_SUBS - 2) return null;
+    const onC = new Set(st.six.concat([st.libero])), setter = st.six.find(x => x && roleOf(m, x) === 'P'), opp = st.six.find(x => x && roleOf(m, x) === 'O');
+    if (!setter || !opp) return null;
+    const bench = (m.roster || []).filter(p => !onC.has(p.n));
+    const newS = bench.find(p => p.r === 'P' && !subLegal(m, st, p.n, opp)), newO = bench.find(p => p.r === 'O' && !subLegal(m, st, p.n, setter));
+    if (!newS || !newO) return null;
+    const c = { si: Object.assign({}, H.doppio_cambio.si), no: Object.assign({}, H.doppio_cambio.no) };
+    allRallies(m).filter(r => r.lr && [2, 3, 4].includes(r.lr)).forEach(r => {
+      const x = c[r.dc ? 'si' : 'no'], w = r.winner === 'noi' ? 1 : 0;
+      if (r.server === 'loro') { x.ric++; x.so += w; } else { x.bat++; x.bp += w; }
+    });
+    if (c.si.ric < 20 || c.si.bat < 20) return null;
+    const g = simGain(wp, 4, () => {
+      const so = dLogit({ w: c.si.so, n: c.si.ric }, { w: c.no.so, n: c.no.ric }), bp = dLogit({ w: c.si.bp, n: c.si.bat }, { w: c.no.bp, n: c.no.bat });
+      return { so: { 1: so, 2: so, 3: so }, bp: { 1: bp, 2: bp, 3: bp } };
+    });
+    return Object.assign(g, { kind: 'dc', inS: newS, outS: opp, inO: newO, outO: setter, show: g.rel >= DEC_REL && g.gain >= DEC_MIN });
+  }
+  // cambio in battuta per il prossimo battitore (si batte dopo il prossimo cambio palla): break-point vinti sulle
+  // battute di chi entra e di chi uscirebbe, storia del Decimo più oggi; solo chi può entrare per lui
+  function serveProposal(m, REF, n, wp) {
+    const st = wp && wp.st, H = REF && REF.decimo && REF.decimo.cambi;
+    if (!st || !H || st.server !== 'loro' || !st.six.every(Boolean)) return null;
+    const srv = rotate(st.six)[0], cnt = {};
+    const get = p => { const k = player(m, p).c, h = H.battitori[k] || { bat: 0, bp: 0 }; return cnt[p] = cnt[p] || { w: h.bp, n: h.bat }; };
+    allRallies(m).filter(r => r.server === 'noi' && r.six[0]).forEach(r => { const x = get(r.six[0]); x.n++; if (r.winner === 'noi') x.w++; });
+    if (['P', 'L'].includes(roleOf(m, srv))) return null;          // il palleggiatore non si toglie per la battuta
+    const s = get(srv); if (s.n < 20) return null;
+    const onC = new Set(st.six.concat([st.libero]));
+    const cands = (m.roster || []).filter(p => !onC.has(p.n) && p.r !== 'L' && !subLegal(m, st, p.n, srv)).filter(p => get(p.n).n >= 20);
+    let best = null;
+    for (const p of cands) {
+      const c = get(p.n), g = simGain(wp, 2, () => ({ so: {}, bp: { 1: dLogit(c, s) } }));
+      if (!best || g.gain > best.gain) best = Object.assign(g, { kind: 'srv', inN: p.n, outN: srv, show: g.rel >= DEC_REL && g.gain >= DEC_MIN });
+    }
+    return best;
+  }
+
+  // "cosa serve per vincere il set" (indicazioni dell'utente del 2026-11-28): cambio palla e break-point divisi nei
+  // loro pezzi, ognuno di oggi (tutta la partita) avvicinato al nostro solito con KPI_K occasioni. Si porta un pezzo a
+  // un altro valore per il resto del set e si rifà la Markov (lo scarto si aggiunge a pSO e pBP del modello, così la
+  // base è la percentuale del quadrato). Sotto GOAL_P si cerca il KPI che ci porta a GOAL_P con l'obiettivo più vicino
+  // al nostro solito: "fatica" z = quanto l'obiettivo va oltre il nostro solito, in deviazioni standard tra le squadre
+  // del girone (z < 0 = ancora sotto il solito: facile); obiettivo = max(oggi, solito + z·sd), mai oltre la squadra
+  // migliore del girone. Se nessun KPI basta da solo, la coppia (poi la terna) con la fatica minore (stessa z per tutti);
+  // se nemmeno tre bastano, i tre che al livello della migliore ci fanno salire di più, con la probabilità raggiunta.
+  // Due casi (indicazione dell'utente): sotto il 50% (LOSING_P) si cerca cosa serve per arrivare a GOAL_P; altrimenti si
+  // propone di riportare al nostro solito un KPI in cui oggi siamo sotto, se questo alza la probabilità di almeno
+  // MORE_GAIN ("vinciamo di più"), scegliendo quello che la alza di più.
+  const KPI_K = 20, GOAL_P = 0.6, LOSING_P = 0.5, MORE_GAIN = 0.05, KPI_MIN_N = 100, SD_MIN = 0.02;
+  function parts(c) {
+    const eL = c.so_err_loro != null ? c.so_err_loro : c.ric - c.ric_gioco - c.so_ace_sub;
+    return { ric: c.ric, aceS: c.so_ace_sub, errL: eL, g1: c.ric_gioco, pt1: c.pt1, bad1: c.err1 + c.mur1, so3n: c.so3_n, so3w: c.so3_w,
+      bat: c.bat, ace: c.ace, errB: c.err_bat, gb: c.bat_gioco, opt: c.o_pt1, obad: c.o_err1 + c.o_mur1, bp3n: c.bp3_n, bp3w: c.bp3_w };
+  }
+  function partRates(t, u) {
+    const r = (x, n, ux, un) => (x + KPI_K * (un ? ux / un : 0)) / (n + KPI_K);
+    return { aceS: r(t.aceS, t.ric, u.aceS, u.ric), errL: r(t.errL, t.ric, u.errL, u.ric), pt1: r(t.pt1, t.g1, u.pt1, u.g1),
+      bad1: r(t.bad1, t.g1, u.bad1, u.g1), wso: r(t.so3w, t.so3n, u.so3w, u.so3n),
+      ace: r(t.ace, t.bat, u.ace, u.bat), errB: r(t.errB, t.bat, u.errB, u.bat), opt: r(t.opt, t.gb, u.opt, u.gb),
+      obad: r(t.obad, t.gb, u.obad, u.gb), wbp: r(t.bp3w, t.bp3n, u.bp3w, u.bp3n) };
+  }
+  const pSOparts = v => v.errL + Math.max(0, 1 - v.aceS - v.errL) * (v.pt1 + Math.max(0, 1 - v.pt1 - v.bad1) * v.wso);
+  const pBPparts = v => v.ace + Math.max(0, 1 - v.ace - v.errB) * (v.obad + Math.max(0, 1 - v.opt - v.obad) * v.wbp);
+  const KPIS = [
+    // val: valore di oggi e del solito dai conteggi; set: il pezzo portato a x; up: più alto è meglio
+    { k: 'a1', lab: '1° attacco', name: '1° attacco dopo ricezione', short: 'il 1° attacco', up: true, eff: true,
+      val: t => ({ pos: t.pt1, neg: t.bad1, n: t.g1 }), cur: v => v.pt1 - v.bad1,
+      set: (v, x) => { const d = (x - (v.pt1 - v.bad1)) / 2; v.pt1 = Math.max(0, v.pt1 + d); v.bad1 = Math.max(0, v.bad1 - d); } },
+    { k: 'lunghi', lab: 'Scambi lunghi vinti', name: 'scambi lunghi vinti', short: 'gli scambi lunghi vinti', up: true, val: t => ({ pos: t.so3w + t.bp3w, neg: 0, n: t.so3n + t.bp3n }),
+      cur: v => (v.wso + v.wbp) / 2, set: (v, x) => { const d = x - (v.wso + v.wbp) / 2; v.wso = Math.min(1, Math.max(0, v.wso + d)); v.wbp = Math.min(1, Math.max(0, v.wbp + d)); } },
+    { k: 'opt', lab: 'Loro punti al 1° attacco (in battuta)', name: 'loro punti al 1° attacco quando battiamo', short: 'i loro punti al 1° attacco (quando battiamo)', up: false, val: t => ({ pos: t.opt, neg: 0, n: t.gb }), cur: v => v.opt, set: (v, x) => { v.opt = x; } },
+    { k: 'aceS', lab: 'Ace subiti', name: 'ace subiti', short: 'gli ace subiti', up: false, val: t => ({ pos: t.aceS, neg: 0, n: t.ric }), cur: v => v.aceS, set: (v, x) => { v.aceS = x; } },
+    { k: 'errB', lab: 'Errori in battuta', name: 'errori in battuta', short: 'gli errori in battuta', up: false, val: t => ({ pos: t.errB, neg: 0, n: t.bat }), cur: v => v.errB, set: (v, x) => { v.errB = x; } },
+    { k: 'ace', lab: 'Ace', name: 'ace', short: 'gli ace', up: true, val: t => ({ pos: t.ace, neg: 0, n: t.bat }), cur: v => v.ace, set: (v, x) => { v.ace = x; } },
+  ];
+  // opts: mode ('win' = cosa serve per arrivare a GOAL_P, 'more' = un KPI sotto il solito che ci fa vincere di più;
+  // di default dal punteggio), keep (KPI già proposti da tenere: un suggerimento resta finché non si raggiunge),
+  // exclude (KPI già raggiunti in questo set: si propongono solo se non c'è altro)
+  function kpiWhatIf(m, REF, n, wp, opts) {
+    opts = opts || {};
+    const keep = opts.keep || [], excl = new Set(opts.exclude || []);
+    const st = wp && wp.st, U = REF && REF.decimo && REF.decimo.totali;
+    if (!st || wp.done || !U) return null;
+    const t = parts(stageCounts(allRallies(m), 'noi')), u = parts(U), v0 = partRates(t, u);
+    const base = { so: pSOparts(v0), bp: pBPparts(v0) };
+    const prob = v => markovSet(st.pts.noi, st.pts.loro, st.server === 'noi', wp.pso + pSOparts(v) - base.so, wp.pbp + pBPparts(v) - base.bp, st.target);
+    const teams = Object.values(REF.squadre || {}).map(x => parts(x.totali)).concat([u]);
+    const ks = [];
+    for (const K of KPIS) {
+      const vals = teams.map(K.val).filter(x => x.n >= KPI_MIN_N).map(x => (x.pos - x.neg) / x.n);
+      if (vals.length < 3) continue;
+      const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+      const sd = Math.max(SD_MIN, Math.sqrt(vals.reduce((a, b) => a + (b - mean) ** 2, 0) / (vals.length - 1)));
+      const uv = K.val(u), usual = (uv.pos - uv.neg) / uv.n, dir = K.up ? 1 : -1;
+      const best = K.up ? Math.max(...vals) : Math.min(...vals), zMax = dir * (best - usual) / sd;
+      const from = K.cur(v0), tv = K.val(t);
+      if (dir * (best - from) <= 0) continue;                  // oggi siamo già al livello della migliore
+      ks.push({ K, from, usual, sd, dir, zMax, best, tv, today: tv.n ? (tv.pos - tv.neg) / tv.n : null });
+    }
+    const mode = opts.mode || (wp.p >= LOSING_P ? 'more' : 'win');
+    const kept = keep.map(k => ks.find(x => x.K.k === k)).filter(Boolean);
+    const item = (x, target) => ({ k: x.K.k, lab: x.K.lab, name: x.K.name, short: x.K.short, up: x.K.up, today: x.today, nToday: x.tv.n,
+      posToday: x.tv.pos, negToday: x.tv.neg, from: x.from, usual: x.usual, best: x.best, target });
+    if (mode === 'more') {
+      // stiamo vincendo: un KPI sotto il nostro solito che, riportato al solito, ci fa vincere di più
+      const atUsual = x => { const v = Object.assign({}, v0); x.K.set(v, x.usual); return prob(v); };
+      if (kept.length && kept[0].dir * (kept[0].usual - kept[0].from) > 0)
+        return { mode: 'more', p: wp.p, goal: atUsual(kept[0]), items: [item(kept[0], kept[0].usual)] };
+      let more = null;
+      for (const x of ks) {
+        if (excl.has(x.K.k) || x.dir * (x.usual - x.from) <= 0 || x.tv.n < 5) continue;
+        const v = Object.assign({}, v0); x.K.set(v, x.usual);
+        const pNew = prob(v);
+        if (pNew - wp.p >= MORE_GAIN && (!more || pNew > more.goal)) more = { mode: 'more', p: wp.p, goal: pNew, items: [item(x, x.usual)] };
+      }
+      return more;
+    }
+    // obiettivo di un KPI a fatica z: mai peggio di oggi
+    const tgt = (x, z) => { const v = x.usual + x.dir * z * x.sd; return x.dir > 0 ? Math.max(x.from, v) : Math.min(x.from, v); };
+    const at = (list, z) => { const v = Object.assign({}, v0); list.forEach(x => x.K.set(v, tgt(x, z))); return prob(v); };
+    const solve = list => {
+      const hi0 = Math.min(...list.map(x => x.zMax));
+      if (at(list, hi0) < GOAL_P) return null;
+      let lo = -4, hi = hi0;
+      if (at(list, lo) >= GOAL_P) return lo;
+      for (let i = 0; i < 16; i++) { const mid = (lo + hi) / 2; if (at(list, mid) >= GOAL_P) hi = mid; else lo = mid; }
+      return hi;
+    };
+    const plan = list => { const z = solve(list); return z == null ? null : { z, items: list.map(x => ({
+      k: x.K.k, lab: x.K.lab, name: x.K.name, short: x.K.short, up: x.K.up, today: x.today, nToday: x.tv.n, posToday: x.tv.pos, negToday: x.tv.neg,
+      from: x.from, usual: x.usual, best: x.best, target: tgt(x, z) })) }; };
+    // uno, poi due, poi tre KPI insieme (stessa fatica z): il gruppo più piccolo che basta, con la z minore
+    // i KPI già proposti restano sempre nel gruppo; gli altri si aggiungono solo se servono
+    const search = pool => {
+      const combos = size => { const out = [], rec = (st, acc) => { if (acc.length === size) return out.push(kept.concat(acc));
+        for (let i = st; i < pool.length; i++) rec(i + 1, acc.concat([pool[i]])); }; rec(0, []); return out; };
+      for (let size = Math.max(0, 1 - kept.length); size <= 3 - kept.length; size++) {
+        let bestPlan = null;
+        for (const c of combos(size)) { const p = plan(c); if (p && (!bestPlan || p.z < bestPlan.z)) bestPlan = p; }
+        if (bestPlan) return Object.assign(bestPlan, { mode: 'win', p: wp.p, goal: GOAL_P });
+      }
+      return null;
+    };
+    const all = ks.filter(x => !kept.includes(x)), fresh = all.filter(x => !excl.has(x.K.k));
+    const found = search(fresh);
+    if (found) return found;
+    const others = fresh.length ? fresh : all;                     // i raggiunti da poco solo se non c'è altro
+    const combos = size => { const out = [], rec = (st, acc) => { if (acc.length === size) return out.push(kept.concat(acc));
+      for (let i = st; i < others.length; i++) rec(i + 1, acc.concat([others[i]])); }; rec(0, []); return out; };
+    // nemmeno tre bastano con la stessa fatica: i tre che, portati verso il livello della migliore del girone, ci fanno
+    // salire di più; ognuno fa la stessa quota f di strada da oggi alla migliore, la minima che porta al 60%, o tutta
+    // (f = 1) con la probabilità a cui si arriva ("per recuperare dobbiamo agire qui, qui e qui")
+    const atF = (c, f) => { const v = Object.assign({}, v0); c.forEach(x => x.K.set(v, x.from + (x.best - x.from) * f)); return prob(v); };
+    let rec = null;
+    for (const c of combos(Math.max(0, Math.min(3, kept.length + others.length) - kept.length))) {
+      const p = atF(c, 1);
+      if (!rec || p > rec.pMax) rec = { c, pMax: p };
+    }
+    if (!rec || rec.pMax <= wp.p) return null;
+    let f = 1;
+    if (rec.pMax >= GOAL_P) { let lo = 0, hi = 1; for (let i = 0; i < 16; i++) { const mid = (lo + hi) / 2; if (atF(rec.c, mid) >= GOAL_P) hi = mid; else lo = mid; } f = hi; }
+    return { mode: 'win', p: wp.p, goal: Math.min(GOAL_P, rec.pMax), short: rec.pMax < GOAL_P, z: null,
+      items: rec.c.map(x => item(x, x.from + (x.best - x.from) * f)) };
+  }
+
+  // il suggerimento del set, scambio per scambio (indicazione dell'utente del 2026-11-28: non cambiarlo a ogni punto).
+  // Un KPI proposto resta finché, dagli scambi in cui è stato proposto, non arriva al suo obiettivo (almeno SUG_MIN
+  // occasioni); allora "ok, ora agite su…" (per OK_SHOW scambi) e si passa a un altro; il KPI raggiunto non si
+  // ripropone per COOLDOWN scambi. Se da solo non basta più, gli se ne affianca un altro. "Cosa serve per
+  // vincere" resta finché non arriviamo al 60%, "vinciamo di più" finché non scendiamo sotto il 50%.
+  const SUG_MIN = 4, OK_SHOW = 3, COOLDOWN = 6, trackCache = new Map();
+  function truncate(m, n, k) {
+    const mm = Object.assign({}, m); let c = 0; mm.events = [];
+    for (const e of m.events) { if (e.set > n) break; if (e.set === n && e.t === 'r' && c++ >= k) break; mm.events.push(e); }
+    mm.sets = m.sets.slice(0, n); return mm;
+  }
+  const kpiValue = (K, rs) => { const v = K.val(parts(stageCounts(rs, 'noi'))); return { pos: v.pos, neg: v.neg, n: v.n, x: v.n ? (v.pos - v.neg) / v.n : null }; };
+  function kpiPlan(m, REF, n) {
+    const rs = replay(m, n).rallies, sigs = [''];
+    rs.forEach((r, i) => sigs.push(sigs[i] + r.winner[0] + r.action + ','));
+    const key = k => `${m.id}|${n}|${JSON.stringify(m.events.filter(e => e.set < n).length)}|${sigs[k]}`;
+    let state = { keep: [], excl: [], mode: null, plan: null, reached: null }, k0 = 0;
+    for (let k = rs.length; k >= 0; k--) { const c = trackCache.get(key(k)); if (c) { state = c; k0 = k + 1; break; } }
+    if (trackCache.size > 3000) trackCache.clear();
+    for (let k = k0; k <= rs.length; k++) {
+      const mm = truncate(m, n, k), wp = setWinProb(mm, REF, n), done = rs.slice(0, k);
+      const s = { keep: state.keep.slice(), excl: state.excl.filter(x => k - x.at < COOLDOWN), mode: state.mode, plan: null,
+        reached: state.reached && k - state.reached.at < OK_SHOW ? state.reached : null };
+      if (wp && !wp.done) {
+        s.keep = s.keep.filter(x => {
+          const K = KPIS.find(q => q.k === x.k), v = kpiValue(K, done.slice(x.start));
+          const ok = v.n >= SUG_MIN && (K.up ? v.x >= x.target : v.x <= x.target);
+          if (ok) { s.excl.push({ k: x.k, at: k }); s.reached = { k: x.k, lab: K.lab, short: K.short, up: K.up, pos: v.pos, neg: v.neg, n: v.n, x: v.x, since: x.score, at: k, target: x.target }; }
+          return !ok;
+        });
+        let want = wp.p >= LOSING_P ? 'more' : 'win';
+        if (s.mode === 'win' && wp.p < GOAL_P) want = 'win';
+        if (s.mode === 'win' && wp.p >= GOAL_P) s.keep = [];                      // obiettivo di probabilità raggiunto
+        const plan = kpiWhatIf(mm, REF, n, wp, { mode: want, keep: s.keep.map(x => x.k), exclude: s.excl.map(x => x.k) });
+        if (plan && plan.items.length) {
+          const score = `${wp.st.pts.noi}-${wp.st.pts.loro}`;
+          s.keep = plan.items.map(it => { const old = s.keep.find(x => x.k === it.k);
+            return { k: it.k, target: it.target, start: old ? old.start : k, score: old ? old.score : score }; });
+          plan.items.forEach(it => { const x = s.keep.find(q => q.k === it.k), v = kpiValue(KPIS.find(q => q.k === it.k), done.slice(x.start));
+            it.since = { score: x.score, pos: v.pos, neg: v.neg, n: v.n }; });
+          s.mode = want; s.plan = plan;
+        } else { s.keep = []; s.mode = null; }
+      }
+      trackCache.set(key(k), s); state = s;
+    }
+    return state;
+  }
+
   // ---------- partita nuova / set nuovo ----------
   function nextSetStart(m) {   // formazione del set dopo: quella di partenza del set appena finito
     const prev = m.sets[m.sets.length - 1];
@@ -649,6 +957,6 @@
     owner, subStatus, subLegal, frontLine, attackLine, goalValues, stageCounts, STAGES, stageReport, SYM, verdictOf, GOALS, goalState,
     goalClass, reached, whenP4, todayRates, serverStats, usualServe, serveSuggestions, computeCalls, updateCalls, rebuildCalls, CALLS_VERSION, stagePhrases, goalDetails, relText,
     relClass, compareRates, lineSplit, usualLine, pointCauses, CAUSES, nextSetStart, usualTxt, pc, xy,
-    ATT1_LINES, ATT1_GOALS, att1Counts, att1Eff, att1Class };
+    ATT1_LINES, ATT1_GOALS, att1Counts, att1Eff, att1Class, markovSet, setWinProb, markovK, dcProposal, serveProposal, kpiWhatIf, KPIS, kpiPlan };
   if (typeof module !== 'undefined' && module.exports) module.exports = Core; else root.Core = Core;
 })(this);

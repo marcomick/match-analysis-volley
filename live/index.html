@@ -73,6 +73,19 @@
   .pts .n { font-size: 54px; font-weight: 700; line-height: 1.05; }
   .pts .sep { font-size: 24px; color: var(--muted); }
   .setinfo { font-size: 13px; color: var(--muted); }
+  .scorewrap { display: flex; align-items: center; gap: 12px; }
+  .scorewrap .score { flex: 1; min-width: 0; }
+  .wp { width: 92px; height: 92px; flex: none; border-radius: 16px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+        background: var(--card); border: 3px solid var(--muted); }
+  .wp b { font-size: 34px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+  .wp span { font-size: 11px; color: var(--muted); margin-top: 3px; text-align: center; line-height: 1.15; }
+  .wp.ok { border-color: var(--pt-hi); background: var(--good-bg); } .wp.ok b { color: var(--pt-hi); }
+  .wp.amb { border-color: var(--amb); background: var(--amb-bg); } .wp.amb b { color: var(--amb); }
+  .wp.bad { border-color: var(--err-hi); background: var(--bad-bg); } .wp.bad b { color: var(--err-hi); }
+  .whatif { background: var(--card); border-left: 4px solid var(--pt-hi); border-radius: 10px; padding: 6px 12px; font-size: 14px; line-height: 1.35; }
+  .wp { order: 2; } .scorewrap .score { order: 1; }
+  .whatif b { color: var(--pt-hi); } .whatif .muted { font-size: 12px; } .whatif .li { padding: 1px 0; } .whatif .li.goal { margin-top: 2px; } .whatif .legend { font-size: 10.5px; color: var(--muted); margin-top: 3px; opacity: .8; }
+  .prop { display: block; margin-top: 4px; color: var(--pt-hi); }
   .banner { background: var(--card); border: 2px solid var(--pt-hi); border-radius: 14px; padding: 12px; display: flex; gap: 10px; align-items: center; font-size: 16px; }
   .banner .grow { flex: 1; }
   .banner button { background: var(--text); color: var(--bg); padding: 10px 14px; border-radius: 10px; font-weight: 600; }
@@ -319,11 +332,15 @@
   <div class="court">
     <div id="side-left"></div>
     <div class="center">
+      <div class="scorewrap">
       <div class="score">
         <div class="names"><span id="name-left"></span><span id="name-right"></span></div>
         <div class="pts"><span class="n" id="pt-left">0</span><span class="sep">–</span><span class="n" id="pt-right">0</span></div>
         <div class="setinfo" id="setinfo"></div>
       </div>
+      <div class="wp hidden" id="winprob" title="Probabilità di vincere il set: punteggio, chi batte, cambio palla e break-point di oggi e il solito delle due squadre"></div>
+      </div>
+      <div class="whatif hidden" id="whatif"></div>
       <div id="banner" class="banner hidden"></div>
       <div class="goals" id="goals"></div>
       <div class="a1mini hidden" id="att1"></div>
@@ -532,7 +549,32 @@ function nextHtml(m, st) {
     const ru = REF && REF.decimo ? REF.decimo.totali.rot[rot] : null;
     if (rr.length >= 3 && ru && C.compareRates(w, rr.length, ru.so, ru.ric, ru.so / ru.ric, 10) >= 0.8) warnR = ` <span class="warnic">⚠ ${w} su ${rr.length}</span> <span class="muted">(di solito ${pc(ru.so / ru.ric)})</span>`;
   }
-  return `<div class="l">IN ARRIVO${rot ? ' · P' + rot : ''}</div><div class="r">Batte <b>${esc(C.nameOf(m, srv))}</b>${warnS}<br>In attacco <b>${esc(C.attackLine(m, six))}</b>${warnR}</div>`;
+  // proposte di cambio (C.dcProposal, C.serveProposal): solo se la probabilità del set sale in modo dimostrabile
+  let prop = '';
+  const wp = C.setWinProb(m, REF, m.sets.length);
+  if (wp && !wp.done) {
+    const pts = g => `+${Math.round(100 * g.gain)} punti sul set, affidabile al ${Math.round(100 * g.rel)}%`;
+    const dc = C.dcProposal(m, REF, m.sets.length, wp);
+    if (dc && dc.show) prop += `<span class="prop">💡 Doppio cambio: <b>${esc(dc.inS.c)}</b> per ${esc(C.nameOf(m, dc.outS))}, <b>${esc(dc.inO.c)}</b> per ${esc(C.nameOf(m, dc.outO))} · ${pts(dc)}</span>`;
+    const sv = C.serveProposal(m, REF, m.sets.length, wp);
+    if (sv && sv.show) prop += `<span class="prop">💡 In battuta <b>${esc(C.nameOf(m, sv.inN))}</b> per ${esc(C.nameOf(m, sv.outN))} · ${pts(sv)}</span>`;
+  }
+  return `<div class="l">IN ARRIVO${rot ? ' · P' + rot : ''}</div><div class="r">Batte <b>${esc(C.nameOf(m, srv))}</b>${warnS}<br>In attacco <b>${esc(C.attackLine(m, six))}</b>${warnR}${prop}</div>`;
+}
+// testo del suggerimento (C.kpiPlan): un KPI per riga con il suo "di solito" e i progressi da quando è stato proposto
+function planHtml(st) {
+  // elenco con legenda: ✅ obiettivo raggiunto · 🎯 da migliorare · 🔁 da riportare al solito · 🆕 appena aggiunto
+  const w = st && st.plan, r = st && st.reached, p = x => Math.round(100 * x) + '%';
+  const cnt = (k, v) => k === 'a1' ? `${v.pos} punti, ${v.neg} err. su ${v.n}` : `${v.pos}/${v.n}`;
+  let h = '';
+  if (r) h += `<div class="li ok">✅ <b>${esc(r.lab)}</b> ${p(r.x)} <span class="muted">obiettivo raggiunto · dal ${r.since}: ${cnt(r.k, r)}</span></div>`;
+  if (!w) return h || null;
+  const isNew = x => r && x.since && x.since.n === 0 && x.since.score !== r.since;
+  h += w.items.map(x => `<div class="li">${w.mode === 'more' ? '🔁' : '🎯'}${isNew(x) ? '🆕' : ''} <b>${esc(x.lab)}</b> ${x.up ? '↑' : '↓'} `
+    + `${p(x.nToday >= 5 ? x.today : x.from)} → <b>${p(x.target)}</b> <span class="muted">solito ${p(x.usual)}${x.since && x.since.n ? ` · dal ${x.since.score}: ${cnt(x.k, x.since)}` : ''}</span></div>`).join('');
+  h += `<div class="li goal">→ vittoria ${w.mode === 'more' ? `dal ${p(w.p)} ` : ''}al <b>${p(w.goal)}</b></div>`;
+  h += `<div class="legend">✅ raggiunto · 🎯 da migliorare · 🔁 riportare al solito · 🆕 nuovo · ↑ alzare · ↓ abbassare</div>`;
+  return h;
 }
 function renderLive() {
   const m = cur(); if (!m) return;
@@ -548,6 +590,16 @@ function renderLive() {
   const prev = m.sets.slice(0, -1).map((_, i) => { const p = C.replay(m, i + 1).pts; return `${p[L]}-${p[R]}`; });
   document.getElementById('setinfo').textContent = `Set ${n} · set ${won[L]}-${won[R]}` + (prev.length ? ' · ' + prev.join(', ') : '');
 
+  // probabilità di vincere il set (C.setWinProb): solo a set in corso, tra 1% e 99%
+  const wp = C.setWinProb(m, REF, n), wpEl = document.getElementById('winprob');
+  if (wp && !wp.done) {
+    const v = Math.min(99, Math.max(1, Math.round(100 * wp.p)));
+    wpEl.className = 'wp ' + (v >= 60 ? 'ok' : v >= 40 ? 'amb' : 'bad');
+    wpEl.innerHTML = `<b>${v}%</b><span>vinciamo<br>il set</span>`;
+  } else wpEl.className = 'wp hidden';
+  // accanto al quadrato: il suggerimento del set (C.kpiPlan), che resta finché non si raggiunge
+  const wiEl = document.getElementById('whatif'), wh = wp && !wp.done ? planHtml(C.kpiPlan(m, REF, n)) : null;
+  wiEl.innerHTML = wh || ''; wiEl.classList.toggle('hidden', !wh);
   const gs = C.goalState(m, REF, n);
   document.getElementById('goals').innerHTML = gs ? focusText(m, gs.focus) + tugHtml(m, [{ label: 'S' + n, items: gs.items, done: gs.done, det: det(st.rallies) }], decimoLeft())
     : '<div class="empty">Obiettivi: servono i riferimenti (riferimenti.json).</div>';
