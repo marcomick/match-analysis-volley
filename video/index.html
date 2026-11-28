@@ -1,0 +1,520 @@
+<!doctype html>
+<html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Studio video</title>
+<!--
+Studio video (richiesta dell'utente del 2026-11-27), pagina a sé servita da src/video_server.py
+(python -m src.video_server, oppure dalla dashboard): il server manda una volta tutte le azioni degli scout con il
+minuto del video (src.video_study.season_data) e qui si filtra e si riproduce tutto nel browser, senza ricaricare.
+Allineamento a mano come prima: l'istante vero di un'azione si salva in video_scout.json (POST /fix); le azioni non
+allineate prendono lo scarto delle allineate vicine nello stesso video (stessa regola di src.video_study.aligned_time).
+-->
+<style>
+*{box-sizing:border-box} html,body{height:100%}
+body{margin:0;font-family:-apple-system,system-ui,sans-serif;background:#0f1420;color:#e8ecf3;font-size:14px}
+header{display:flex;gap:12px;align-items:center;padding:8px 12px;border-bottom:1px solid #243049;flex-wrap:wrap}
+header h1{font-size:17px;margin:0 6px 0 0}
+select,input[type=number],input[type=text]{background:#18213a;color:#e8ecf3;border:1px solid #33415f;border-radius:6px;padding:5px 7px;font-size:13px}
+button{background:#243049;color:#e8ecf3;border:1px solid #33415f;border-radius:6px;padding:6px 9px;font-size:13px;cursor:pointer}
+button:hover{background:#2e3c5c} button.on{background:#3b5bdb;border-color:#3b5bdb}
+button.mark{background:#1f7a3f;border-color:#1f7a3f;font-weight:600} button.mark:hover{background:#25924b}
+button:disabled{opacity:.5;cursor:default}
+.app{display:grid;grid-template-columns:290px minmax(0,1fr) 300px;gap:10px;height:calc(100% - 52px);padding:8px}
+aside{overflow-y:auto;padding-right:4px}
+.grp{margin-bottom:11px} .grp h3{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:#9aa6bd;margin:0 0 5px;font-weight:600}
+.grp h3 small{text-transform:none;letter-spacing:0;font-weight:400}
+.chips{display:flex;flex-wrap:wrap;gap:4px}
+.chip{padding:4px 8px;font-size:12.5px;border-radius:14px;background:#18213a;border:1px solid #2a3654}
+.chip.on{background:#3b5bdb;border-color:#3b5bdb}
+.grp select{width:100%}
+.ddb{width:100%;text-align:left;background:#18213a;display:flex;align-items:center;gap:6px}
+.ddb span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .ddb.set{border-color:#3b5bdb}
+.ddp{display:none;margin-top:3px;background:#141b2c;border:1px solid #33415f;border-radius:6px;max-height:260px;overflow-y:auto;padding:4px 0}
+.dd.open .ddp{display:block}
+.ddp label{display:flex;align-items:center;gap:7px;padding:4px 9px;font-size:13px;cursor:pointer} .ddp label:hover{background:#1e2942}
+.ddp input{accent-color:#3b5bdb;margin:0} .ddp .dot{width:9px;height:9px;border-radius:50%;flex:none}
+.ddp .acts{display:flex;gap:10px;padding:3px 9px 5px;border-bottom:1px solid #243049;margin-bottom:3px}
+.ddp .acts a{color:#8fb0ff;font-size:12px;cursor:pointer}
+.screen > .capov{inset:auto;left:12px;top:10px;width:auto;height:auto;max-width:calc(100% - 24px);background:rgba(8,10,18,.85);border-left:5px solid #dc2832;padding:6px 12px;border-radius:6px;font-weight:600;font-size:18px;pointer-events:none;display:none}
+.vol{display:flex;align-items:center;gap:5px} .vol input{width:90px;accent-color:#3b5bdb}
+.sub{font-size:12px;color:#9aa6bd} .ok{color:#5fd38b} .ko{color:#ff8a8a} .warn{color:#e3b341}
+.stage{display:flex;flex-direction:column;min-width:0;min-height:0}
+.screen{position:relative;width:100%;flex:1 1 auto;min-height:200px;background:#000;border-radius:8px;overflow:hidden}
+.screen > div, .screen video{position:absolute;inset:0;width:100%;height:100%}
+.screen iframe{position:absolute;inset:0;width:100%;height:100%}
+.bar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:7px}
+.seekbar{display:flex;gap:8px;align-items:center;margin-top:6px;font-size:12px;color:#9aa6bd;font-variant-numeric:tabular-nums}
+.seekbar input{flex:1;accent-color:#3b5bdb}
+.now{margin-top:6px;font-size:14px;min-height:20px}
+.fade{position:absolute;inset:0;background:#000;opacity:0;transition:opacity .28s ease;pointer-events:none;display:flex;align-items:center;justify-content:center;font-size:18px;text-align:center;padding:20px}
+.fade.on{opacity:1} .shield{position:absolute;inset:0;cursor:pointer}
+.msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#9aa6bd;font-size:15px;text-align:center;padding:20px}
+.listwrap{display:flex;flex-direction:column;min-height:0}
+.list{overflow-y:auto;border:1px solid #243049;border-radius:8px;flex:1}
+.it{padding:6px 9px;border-bottom:1px solid #1c2538;cursor:pointer;font-size:13px;line-height:1.3;border-left:4px solid transparent}
+.it:hover{background:#18213a} .it.cur{background:#22305a}
+.it.off{opacity:.45} .it.off .lbl{text-decoration:line-through}
+.tg{float:left;width:20px;height:20px;margin:1px 7px 0 0;border-radius:4px;border:1px solid #4a5a80;background:#18213a;color:#5fd38b;font-size:13px;line-height:18px;text-align:center;padding:0}
+.it.off .tg{color:transparent}
+.capbar{display:flex;gap:8px;align-items:center;margin-bottom:6px}
+.capbar input{flex:1;font-size:15px;font-weight:600}
+.it small{display:block;color:#9aa6bd;font-size:11.5px} .n{color:#9aa6bd;margin-right:6px} .fx{float:right;font-size:12px}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:flex-start;justify-content:center;padding-top:60px;z-index:10}
+.modal.on{display:flex} .box{background:#141b2c;border:1px solid #33415f;border-radius:10px;padding:16px;width:min(900px,94vw);max-height:80vh;overflow:auto}
+.lrow{display:grid;grid-template-columns:1fr 2.2fr 80px 70px;gap:8px;align-items:center;margin:8px 0}
+.lrow input[type=text]{width:100%}
+</style></head><body>
+<header>
+  <h1>🎬 Studio video</h1>
+  <label class="sub">Stagione <select id="season"></select></label>
+  <button id="links">🔗 Link dei video</button>
+  <span id="status" class="sub"></span>
+  <span style="margin-left:auto" class="sub" id="count"></span>
+  <button id="montage">⬇️ Scarica il montaggio</button>
+</header>
+<div class="app">
+  <aside id="filters"></aside>
+  <div class="stage">
+    <div class="capbar"><span class="sub">Scritta</span><input type="text" id="caption" title="Si scrive da sola dai filtri; puoi correggerla: compare sul video e nel montaggio"></div>
+    <div class="screen"><div id="yt"></div><video id="vid" playsinline preload="metadata"></video><div class="shield" id="shield"></div><div id="capov" class="capov"></div><div class="fade" id="fade"></div>
+      <div class="msg" id="msg">Caricamento…</div></div>
+    <div class="seekbar"><span id="tcur">–</span><input type="range" id="seek" min="0" max="1000" value="0"><span id="tend">–</span></div>
+    <div class="bar">
+      <button id="prev" title="Azione precedente (P)">⏮</button><button id="play" title="Spazio">▶ Riproduci</button>
+      <button id="again">⟲ Rivedi</button><button id="next" title="Azione successiva (N)">⏭</button>
+      <span style="width:6px"></span>
+      <button id="auto" class="on">Di seguito</button><button id="loop">Ripeti la clip</button>
+      <span style="width:6px"></span>
+      <button class="rate" data-r="0.25">0,25×</button><button class="rate" data-r="0.5">0,5×</button><button class="rate on" data-r="1">1×</button>
+      <span class="vol sub" title="Volume dell'anteprima (il montaggio è senza audio)"><span id="volIcon">🔊</span><input type="range" id="vol" min="0" max="100" step="1"></span>
+      <span style="width:6px"></span>
+      <span class="sub">Prima <input type="number" id="before" min="0" max="15" step="1" style="width:48px"> s · dopo <input type="number" id="after" min="0" max="15" step="1" style="width:48px"> s</span>
+    </div>
+    <div class="bar">
+      <span class="sub">Allinea:</span>
+      <button class="step" data-d="-1" title="Maiusc + ←">⏪ 1 s</button><button class="step" data-d="-0.2" title="←">◀ 0,2 s</button>
+      <button class="step" data-d="0.2" title="→">0,2 s ▶</button><button class="step" data-d="1" title="Maiusc + →">1 s ⏩</button>
+      <button class="mark" id="mark" title="Tasto A (o Invio)">📍 L'azione è qui (A)</button><button id="unfix" title="Torna al minuto dello scout">✕</button>
+      <span class="sub" id="fixst"></span>
+    </div>
+    <div class="sub" style="margin-top:4px">Tasti: A allinea · ← → 0,2 s (Maiusc 1 s) · spazio pausa · N / P azione successiva / precedente · X toglie o rimette la clip nel montaggio.
+      Se la clip parte nel momento sbagliato, fermati sull'istante dell'azione e premi A: si salva su Drive; le azioni vicine si spostano di conseguenza (≈), ✓ = allineata a mano.</div>
+    <div class="now" id="now"></div>
+  </div>
+  <div class="listwrap"><div class="bar" style="margin:0 0 6px"><span class="sub" id="inmont"></span><button id="allIn" style="margin-left:auto">Rimetti tutte</button></div><div class="list" id="list"></div></div>
+</div>
+<div class="modal" id="linkModal"><div class="box">
+  <div style="display:flex;align-items:center"><b>Link dei video</b><button style="margin-left:auto" id="closeLinks">Chiudi</button></div>
+  <p class="sub">Per ogni scout il link YouTube del video su cui l'hai fatto, oppure il percorso del file su Drive (anche relativo alla cartella della stagione). Scarto in secondi solo se il video non è lo stesso dello scout (es. tagliato all'inizio). Si salva su Drive, in video_scout.json.</p>
+  <div id="linkRows"></div>
+</div></div>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const SKILLS = ['battuta', 'ricezione', 'alzata', 'attacco', 'muro', 'rigore', 'difesa', 'free ball'];
+const SITUATIONS = ['R#/R+', 'R!', 'R-', 'Free ball', 'Contrattacco'];
+const ROTS = ['P1', 'P6', 'P5', 'P4', 'P3', 'P2'];
+const SERVES = ['salto float', 'salto spin', 'float a terra'];
+const VOTES = ['#', '+', '!', '-', '/', '='];
+const BLUE = '#4c7df0', ORANGE = '#f08c3a';
+let DATA = null, SEASON = null, F = null, CLIPS = [], FILES = {}, RAWS = {}, WITH_DECIMO = new Set(), TEAMS_OF = {}, EXCL = new Set();
+
+// ------------------------------------------------------------------ dati
+async function loadSeasons() {
+  const s = await (await fetch('/api/seasons')).json();
+  const want = new URLSearchParams(location.search).get('season');
+  $('season').innerHTML = s.map(x => `<option>${esc(x)}</option>`).join('');
+  $('season').value = s.includes(want) ? want : s[s.length - 1];
+  $('season').onchange = () => loadData($('season').value);
+  await loadData($('season').value);
+}
+async function loadData(season, keepIdx) {
+  SEASON = season; $('status').textContent = 'Lettura degli scout…';
+  const r = await fetch('/api/data?season=' + encodeURIComponent(season));
+  const d = await r.json();
+  if (d.error) { $('status').innerHTML = `<span class="ko">${esc(d.error)}</span>`; return; }
+  DATA = d; FILES = {}; d.files.forEach(f => FILES[f.file] = f);
+  TEAMS_OF = {}; d.actions.forEach(a => (TEAMS_OF[a.file] = TEAMS_OF[a.file] || new Set()).add(a.squadra));
+  RAWS = {}; WITH_DECIMO = new Set(d.actions.filter(a => /decimo/i.test(a.squadra)).map(a => a.file));
+  for (const a of d.actions) { const f = FILES[a.file]; if (f && f.fix && f.fix[a.chiave] != null) (RAWS[a.file] = RAWS[a.file] || {})[a.chiave] = a.sec + f.offset; }
+  const missing = d.files.filter(f => !f.src).length;
+  $('status').innerHTML = !d.files.length ? '<span class="warn">Nessuno scout fatto con lo scout a tocchi in questa stagione: solo quelli hanno il minuto del video.</span>'
+    : missing ? `<span class="warn">${missing} scout senza link del video</span>` : '';
+  loadFilters(); drawFilters(); apply(keepIdx);
+}
+function defaults() {
+  const withVideo = DATA.files.filter(f => f.src).map(f => f.file);
+  return {matches: withVideo.length ? withVideo : DATA.files.slice(0, 1).map(f => f.file), team: '', skills: ['attacco'], players: [], votes: [],
+          serves: [], rots: [], sets: [], sits: [], ball: '', shot: '', final: false, res: '', before: 4, after: 3};
+}
+function loadFilters() {
+  F = defaults();
+  try { Object.assign(F, JSON.parse(localStorage.getItem('videoStudy:' + SEASON) || '{}')); } catch (_) {}
+  F.matches = F.matches.filter(m => FILES[m]);
+  delete F.line;                       // filtro tolto il 2026-11-28: la linea del palleggiatore si ricava dalle rotazioni
+  try { EXCL = new Set(JSON.parse(localStorage.getItem('videoStudyExcl:' + SEASON) || '[]')); } catch (_) { EXCL = new Set(); }
+  $('before').value = F.before; $('after').value = F.after;
+}
+const saveFilters = () => localStorage.setItem('videoStudy:' + SEASON, JSON.stringify(F));
+const saveExcl = () => localStorage.setItem('videoStudyExcl:' + SEASON, JSON.stringify([...EXCL]));
+// partite di una squadra (tutte se nessuna squadra), prima quelle con il video
+const teamFiles = team => DATA.files.filter(f => !team || (TEAMS_OF[f.file] && TEAMS_OF[f.file].has(team))).map(f => f.file);
+const withVideo = files => { const v = files.filter(f => FILES[f].src); return v.length ? v : files; };
+
+// ------------------------------------------------------------------ filtri
+function stage1() {          // partite, squadra, fondamentale: decidono i giocatori proposti
+  const m = new Set(F.matches);
+  return DATA.actions.filter(a => m.has(a.file) && (!F.team || a.squadra === F.team) && (!F.skills.length || F.skills.includes(a.fondamentale)));
+}
+function filtered() {
+  let d = stage1();
+  const has = (arr, v) => !arr.length || arr.includes(v);
+  d = d.filter(a => has(F.players, a.giocatore) && has(F.votes, a.voto)
+    && has(F.rots, a.rotazione) && has(F.sets, a.set) && (!F.final || a.finale)
+    && (!F.res || a.scambio_vinto === (F.res === 'vinto')));
+  // situazione, palla e colpo valgono solo per gli attacchi (le altre azioni restano)
+  // tipo di battuta: vale per battute e ricezioni (la ricezione dice che battuta ha ricevuto)
+  d = d.filter(a => !F.serves.length || !['battuta', 'ricezione'].includes(a.fondamentale) || F.serves.includes(a.tipo_battuta));
+  d = d.filter(a => a.fondamentale !== 'attacco' || (has(F.sits, a.situazione) && (!F.ball || a.palla === F.ball) && (!F.shot || a.colpo === F.shot)));
+  const order = {}; DATA.files.forEach((f, i) => order[f.file] = i);
+  return d.sort((a, b) => order[a.file] - order[b.file] || a.sec - b.sec);
+}
+// menu a tendina: a scelta multipla (dd) o singola (sel). OPEN = menu aperto, resta aperto quando si ridisegna
+let OPEN = null;
+function dd(key, opts, {labels, colors, empty = 'tutti', all = false} = {}) {
+  const sel = F[key], lab = o => labels ? labels(o) : String(o);
+  const shown = !sel.length ? empty : sel.length <= 2 ? sel.map(lab).join(', ') : `${sel.length} selezionati`;
+  return `<div class="dd${OPEN === key ? ' open' : ''}" data-k="${key}"><button class="ddb${sel.length ? ' set' : ''}"><span>${esc(shown)}</span>▾</button><div class="ddp">`
+    + `<div class="acts">${all ? `<a data-act="all">Tutti</a>` : ''}<a data-act="none">${all ? 'Nessuno' : 'Togli la scelta'}</a></div>`
+    + opts.map(o => `<label><input type="checkbox" data-v="${esc(JSON.stringify(o))}"${sel.includes(o) ? ' checked' : ''}>`
+      + (colors && colors[o] ? `<span class="dot" style="background:${colors[o]}"></span>` : '') + `${esc(lab(o))}</label>`).join('')
+    + `</div></div>`;
+}
+const sel = (key, opts, labels) => `<select data-k="${key}">` + opts.map(o =>
+  `<option value="${esc(JSON.stringify(o))}"${F[key] === o ? ' selected' : ''}>${esc(labels ? labels(o) : o)}</option>`).join('') + `</select>`;
+const grp = (title, body, hint) => `<div class="grp"><h3>${title}${hint ? ` <small>${hint}</small>` : ''}</h3>${body}</div>`;
+function drawFilters() {
+  if (!DATA.files.length) { $('filters').innerHTML = ''; return; }
+  const scroll = (document.querySelector('.dd.open .ddp') || {}).scrollTop || 0;
+  const allTeams = [...new Set(DATA.actions.map(a => a.squadra))].sort((a, b) => (/decimo/i.test(b) - /decimo/i.test(a)) || a.localeCompare(b));
+  if (F.team && !allTeams.includes(F.team)) F.team = '';
+  const mine = teamFiles(F.team);
+  F.matches = F.matches.filter(x => mine.includes(x));
+  const m = new Set(F.matches), inMatches = DATA.actions.filter(a => m.has(a.file));
+  const s1 = stage1();
+  const players = [...new Set(s1.map(a => a.giocatore))].sort((a, b) => a.localeCompare(b));
+  F.players = F.players.filter(p => players.includes(p));
+  const sets = [...new Set(inMatches.map(a => a.set).filter(x => x != null))].sort();
+  const attack = !F.skills.length || F.skills.includes('attacco');
+  let h = grp('Squadra', sel('team', ['', ...allTeams], o => o || 'Tutte'), 'le sue azioni');
+  h += grp('Video', dd('matches', mine, {labels: f => FILES[f].label + (FILES[f].src ? '' : ' ⚠️ senza link'), empty: 'nessuno', all: true}),
+    `${F.matches.length} di ${mine.length}`);
+  h += grp('Fondamentale', dd('skills', SKILLS.filter(s => inMatches.some(a => a.fondamentale === s))));
+  const pcol = {}; if (!F.team) s1.forEach(a => pcol[a.giocatore] = teamColor(a));      // squadra dal colore del pallino
+  h += grp('Giocatore', dd('players', players, {colors: pcol}));
+  h += grp('Voto', dd('votes', VOTES));
+  h += grp('Rotazione', dd('rots', ROTS), 'P1-P6-P5 = palleggiatore in 2a linea');
+  h += grp('Set', dd('sets', sets, {labels: o => o + '° set'}));
+  if (!F.skills.length || F.skills.includes('battuta') || F.skills.includes('ricezione'))
+    h += grp('Tipo di battuta', dd('serves', SERVES), 'battute e ricezioni');
+  if (attack) {
+    h += grp('Situazione dell\'attacco', dd('sits', SITUATIONS), 'solo attacchi');
+    h += grp('Palla', sel('ball', ['', 'veloce', 'alta'], o => o || 'tutte'));
+    h += grp('Colpo', sel('shot', ['', 'forte', 'pallonetto'], o => o || 'tutti'));
+  }
+  h += grp('Scambio', sel('res', ['', 'vinto', 'perso'], o => o || 'tutti'), 'di chi fa l\'azione');
+  h += grp('Finali di set', sel('final', [false, true], o => o ? 'solo finali' : 'tutto'), 'da 20 (10 al 5°), scarto ≤ 3');
+  h += `<button id="reset" style="margin-top:4px">Azzera i filtri</button>`;
+  $('filters').innerHTML = h;
+  const p = document.querySelector('.dd.open .ddp'); if (p) p.scrollTop = scroll;
+  $('reset').onclick = () => { const mm = F.matches, tt = F.team; F = defaults(); F.matches = mm; F.team = tt; OPEN = null; saveFilters(); drawFilters(); apply(); };
+}
+const changed = () => { saveFilters(); drawFilters(); apply(); };
+$('filters').addEventListener('click', e => {
+  const b = e.target.closest('.ddb');
+  if (b) { const k = b.parentNode.dataset.k; OPEN = OPEN === k ? null : k; drawFilters(); return; }
+  const act = e.target.closest('[data-act]');
+  if (act) { const k = act.closest('.dd').dataset.k;
+    F[k] = act.dataset.act === 'all' ? withVideo(teamFiles(F.team)) : []; changed(); }
+});
+$('filters').addEventListener('change', e => {
+  const t = e.target;
+  if (t.matches('.ddp input')) { const k = t.closest('.dd').dataset.k, v = JSON.parse(t.dataset.v);
+    F[k] = t.checked ? [...F[k].filter(x => x !== v), v] : F[k].filter(x => x !== v); return changed(); }
+  if (t.matches('select[data-k]')) { const k = t.dataset.k; F[k] = JSON.parse(t.value);
+    if (k === 'team') { F.matches = withVideo(teamFiles(F[k])); OPEN = null; }    // cambiando squadra si prendono tutti i suoi video
+    changed(); }
+});
+document.addEventListener('click', e => { if (OPEN && !e.target.closest('.dd')) { OPEN = null; drawFilters(); } });
+['before', 'after'].forEach(k => $(k).addEventListener('change', () => { F[k] = Math.max(0, Number($(k).value) || 0); saveFilters(); }));
+
+// ------------------------------------------------------------------ scritta dei filtri (senza la squadra)
+const listOr = (a, w = ' o ') => a.length < 2 ? a.join('') : a.slice(0, -1).join(', ') + w + a[a.length - 1];
+const sitWord = s => s === 'Contrattacco' ? 'in contrattacco' : 'da ' + (s === 'Free ball' ? 'free ball' : s);
+function autoCaption() {
+  if (!DATA || !F) return '';
+  const sk = F.skills.map(k => k === 'attacco' && F.sits.length ? 'attacco ' + listOr(F.sits.map(sitWord)) : k);
+  let main = sk.length ? listOr(sk) : (F.sits.length ? 'attacco ' + listOr(F.sits.map(sitWord)) : 'tutte le azioni');
+  if (F.votes.length) main += ' ' + F.votes.join(' ');
+  const p = [main.charAt(0).toUpperCase() + main.slice(1)];
+  if (F.serves.length) p.push(listOr(F.serves));
+  if (F.ball) p.push('palla ' + F.ball);
+  if (F.shot) p.push(F.shot === 'pallonetto' ? 'pallonetto' : 'colpo forte');
+  if (F.players.length) p.push(listOr(F.players.map(x => x.replace(/\s*\(.*\)\s*$/, '')), ' e '));
+  const r = [...F.rots].sort().join();
+  if (r === 'P1,P5,P6') p.push('palleggiatore 2a linea');
+  else if (r === 'P2,P3,P4') p.push('palleggiatore 1a linea');
+  else if (F.rots.length) p.push(ROTS.filter(x => F.rots.includes(x)).join(', '));
+  if (F.sets.length) p.push(listOr(F.sets.map(x => x + '°'), ' e ') + ' set');
+  if (F.res) p.push('scambi ' + (F.res === 'vinto' ? 'vinti' : 'persi'));
+  if (F.final) p.push('finali di set');
+  return p.join(' · ');
+}
+const capText = () => $('caption').value.trim();
+function showCaption() { const t = capText(); $('capov').textContent = t; $('capov').style.display = t && idx >= 0 ? 'block' : 'none'; }
+$('caption').addEventListener('input', showCaption);
+
+// ------------------------------------------------------------------ clip
+// Decimo blu; nelle partite tra altre squadre casa blu e ospite arancio, come nello scout
+function teamColor(a) { return /decimo/i.test(a.squadra) ? BLUE : a.lato === '*' && !WITH_DECIMO.has(a.file) ? BLUE : ORANGE; }
+function apply(keepIdx) {
+  const d = filtered();
+  const cur = CLIPS[idx];
+  CLIPS = d.filter(a => FILES[a.file] && FILES[a.file].src).map(a => {
+    const f = FILES[a.file];
+    const extra = [a.tipo_battuta, a.situazione, a.rotazione, a.palla, a.colpo === 'pallonetto' ? 'pallonetto' : null, a.alzata_negativa ? 'alzata negativa' : null].filter(Boolean).join(' · ');
+    return {a, src: f.src, raw: a.sec + f.offset, file: a.file, key: a.chiave,
+            label: `${a.giocatore} · ${a.fondamentale} ${a.voto || ''}`,
+            sub: `${f.label} · set ${a.set} · ${a.punteggio}` + (extra ? ' · ' + extra : ''), color: teamColor(a)};
+  });
+  $('count').textContent = `${d.length} azioni` + (d.length !== CLIPS.length ? `, ${CLIPS.length} con il video` : '');
+  $('caption').value = autoCaption();
+  montageState();
+  const keep = cur ? CLIPS.findIndex(c => c.file === cur.file && c.key === cur.key) : -1;
+  if (keep >= 0) idx = keep;
+  else { if (idx >= 0) pause(); idx = -1; $('msg').style.display = 'flex'; $('msg').textContent = CLIPS.length ? 'Tocca un\'azione nell\'elenco o "Riproduci"' : 'Nessuna azione con questi filtri'; $('now').innerHTML = ''; $('fixst').innerHTML = ''; }
+  drawList(); showCaption();
+}
+function eff(c) {
+  const f = (FILES[c.file] || {}).fix || {}, r = RAWS[c.file] || {};
+  if (f[c.key] != null) return [f[c.key], 'fix'];
+  const pts = Object.keys(f).filter(k => r[k] != null).map(k => [r[k], f[k] - r[k]]).sort((a, b) => a[0] - b[0]);
+  if (!pts.length) return [c.raw, 'raw'];
+  const x = c.raw;
+  if (x <= pts[0][0]) return [x + pts[0][1], 'est'];
+  if (x >= pts[pts.length - 1][0]) return [x + pts[pts.length - 1][1], 'est'];
+  for (let i = 0; i < pts.length - 1; i++) { const [x0, o0] = pts[i], [x1, o1] = pts[i + 1];
+    if (x0 <= x && x <= x1) return [x + (x1 > x0 ? o0 + (o1 - o0) * (x - x0) / (x1 - x0) : o0), 'est']; }
+  return [x, 'raw'];
+}
+const badge = c => { const k = eff(c)[1]; return k === 'fix' ? '<span class="fx ok">✓</span>' : k === 'est' ? '<span class="fx warn">≈</span>' : ''; };
+// clip tolte dal montaggio (restano nell'elenco, attenuate; "Di seguito" le salta)
+const ckey = c => c.file + '|' + c.key;
+const isOff = c => EXCL.has(ckey(c));
+const included = () => CLIPS.filter(c => !isOff(c));
+function montageState() {
+  const n = included().length, off = CLIPS.length - n;
+  $('montage').disabled = !n || n > 80;
+  $('montage').title = n > 80 ? 'Al massimo 80 clip: restringi i filtri o togli qualche clip' : '';
+  $('inmont').textContent = CLIPS.length ? `${n} clip nel montaggio` + (off ? ` · ${off} tolte` : '') : '';
+  $('allIn').style.display = off ? '' : 'none';
+}
+function toggleClip(i) {
+  const c = CLIPS[i]; if (!c) return;
+  if (isOff(c)) EXCL.delete(ckey(c)); else EXCL.add(ckey(c));
+  saveExcl(); const e = $('list').querySelector(`.it[data-i="${i}"]`); if (e) e.outerHTML = itemHtml(c, i); markCur(); montageState();
+}
+$('allIn').onclick = () => { CLIPS.forEach(c => EXCL.delete(ckey(c))); saveExcl(); drawList(); montageState(); };
+const itemHtml = (c, i) => `<div class="it${i === idx ? ' cur' : ''}${isOff(c) ? ' off' : ''}" data-i="${i}" style="border-left-color:${c.color}"><button class="tg" title="${isOff(c) ? 'Rimetti nel montaggio' : 'Togli dal montaggio'} (X)">✓</button>${badge(c)}<span class="n">${i + 1}</span><span class="lbl">${esc(c.label)}</span><small>${esc(c.sub)}</small></div>`;
+function drawList() { $('list').innerHTML = CLIPS.map(itemHtml).join(''); markCur(); }
+function markCur() {
+  $('list').querySelectorAll('.it.cur').forEach(e => e.classList.remove('cur'));
+  const e = $('list').querySelector(`.it[data-i="${idx}"]`); if (e) { e.classList.add('cur'); e.scrollIntoView({block: 'nearest'}); }
+}
+function redrawBadges(file) { CLIPS.forEach((c, i) => { if (c.file === file) { const e = $('list').querySelector(`.it[data-i="${i}"]`); if (e) e.outerHTML = itemHtml(c, i); } }); markCur(); }
+$('list').addEventListener('click', e => { const it = e.target.closest('.it'); if (!it) return;
+  if (e.target.closest('.tg')) { e.stopPropagation(); toggleClip(Number(it.dataset.i)); return; }
+  play(Number(it.dataset.i)); });
+
+// ------------------------------------------------------------------ volume dell'anteprima
+let VOL = Number(localStorage.getItem('videoStudyVol') ?? 60);
+function applyVol() {
+  const v = $('vid'); v.volume = VOL / 100; v.muted = VOL === 0;
+  if (yt && ytReady && yt.setVolume) { yt.setVolume(VOL); VOL ? yt.unMute() : yt.mute(); }
+  $('volIcon').textContent = VOL === 0 ? '🔇' : VOL < 50 ? '🔉' : '🔊';
+}
+$('vol').value = VOL;
+$('vol').addEventListener('input', () => { VOL = Number($('vol').value); localStorage.setItem('videoStudyVol', VOL); applyVol(); });
+$('volIcon').style.cursor = 'pointer';
+$('volIcon').onclick = () => { VOL = VOL ? 0 : 60; $('vol').value = VOL; localStorage.setItem('videoStudyVol', VOL); applyVol(); };
+
+// ------------------------------------------------------------------ lettore
+let idx = -1, auto = true, loop = false, rate = 1, yt = null, ytReady = false, ytLoading = false, pending = null, playing = false;
+let endAt = 0, startAt = 0, dragging = false, fading = false;
+const vid = $('vid');
+$('prev').onclick = () => play(Math.max(0, idx - 1));
+$('next').onclick = () => play(Math.min(CLIPS.length - 1, idx + 1));
+$('again').onclick = () => play(Math.max(0, idx));
+$('play').onclick = () => { if (idx < 0) { const j = CLIPS.findIndex(c => !isOff(c)); return play(j < 0 ? 0 : j); } if (playing) pause(); else resume(); };
+$('auto').onclick = () => { auto = !auto; $('auto').classList.toggle('on', auto); };
+$('loop').onclick = () => { loop = !loop; $('loop').classList.toggle('on', loop); };
+document.querySelectorAll('.rate').forEach(b => b.onclick = () => {
+  rate = Number(b.dataset.r); document.querySelectorAll('.rate').forEach(x => x.classList.toggle('on', x === b));
+  vid.playbackRate = rate; if (yt && ytReady) yt.setPlaybackRate(rate); });
+document.querySelectorAll('.step').forEach(b => b.onclick = () => step(Number(b.dataset.d)));
+$('mark').onclick = () => mark();
+$('unfix').onclick = () => unfix();
+$('shield').onclick = () => $('play').click();
+document.querySelectorAll('button').forEach(b => b.addEventListener('mouseup', () => b.blur()));
+$('filters').addEventListener('mouseup', e => { const b = e.target.closest('button'); if (b) setTimeout(() => document.activeElement && document.activeElement.blur && document.activeElement.blur(), 0); });
+document.addEventListener('keydown', e => {
+  const t = e.target, tag = (t.tagName || '').toLowerCase();
+  if ((tag === 'input' && t.type !== 'range') || tag === 'select' || tag === 'textarea' || $('linkModal').classList.contains('on')) return;
+  const k = e.key;
+  if (k === ' ') { e.preventDefault(); $('play').click(); }
+  else if (k === 'ArrowLeft') { e.preventDefault(); step(e.shiftKey ? -1 : -0.2); }
+  else if (k === 'ArrowRight') { e.preventDefault(); step(e.shiftKey ? 1 : 0.2); }
+  else if (k === 'Enter' || k === 'a' || k === 'A') { e.preventDefault(); mark(); }
+  else if (k === 'n' || k === 'N') $('next').click();
+  else if (k === 'p' || k === 'P') $('prev').click();
+  else if (k === 'x' || k === 'X') toggleClip(idx);
+});
+const cur = () => CLIPS[idx];
+const now_ = () => { const c = cur(); if (!c) return 0; return c.src.kind === 'yt' ? (yt && ytReady && yt.getCurrentTime ? yt.getCurrentTime() : 0) : vid.currentTime; };
+function seek(t) { const c = cur(); if (!c) return; if (c.src.kind === 'yt') yt && ytReady && yt.seekTo(Math.max(0, t), true); else vid.currentTime = Math.max(0, t); }
+function setPlaying(p) { playing = p; $('play').textContent = p ? '⏸ Pausa' : '▶ Riproduci'; }
+function status() {
+  const c = cur(); if (!c) return;
+  const k = eff(c)[1];
+  $('now').innerHTML = `<b>${idx + 1}.</b> ${esc(c.label)} <span class="sub">· ${esc(c.sub)}</span>`;
+  $('fixst').innerHTML = k === 'fix' ? '<span class="ok">✓ allineata a mano</span>' : k === 'est' ? 'stimata dalle azioni allineate vicine' : 'minuto dello scout';
+}
+function loadYT() {
+  if (ytLoading) return; ytLoading = true;
+  window.onYouTubeIframeAPIReady = () => {
+    yt = new YT.Player('yt', {playerVars: {playsinline: 1, rel: 0, modestbranding: 1, controls: 0, disablekb: 1},
+      events: {onReady: () => { ytReady = true; applyVol(); if (pending != null) { const p = pending; pending = null; play(p, true); } },
+               onStateChange: e => { if (cur() && cur().src.kind === 'yt') { if (e.data === 1) setPlaying(true); if (e.data === 2) setPlaying(false); } },
+               onError: e => { $('msg').style.display = 'flex';
+                 $('msg').textContent = [101, 150, 153].includes(e.data)
+                   ? 'YouTube non permette di vedere questo video fuori dal sito: nelle impostazioni del video su YouTube va consentito l\'incorporamento.'
+                   : 'Il video YouTube non si apre (errore ' + e.data + '): controlla il link.'; setPlaying(false); }}});
+  };
+  const s = document.createElement('script'); s.src = 'https://www.youtube.com/iframe_api'; document.head.appendChild(s);
+}
+function play(i, fromFade) {
+  if (!CLIPS.length) return;
+  if (!fromFade) reveal();
+  idx = i; const c = CLIPS[i]; markCur(); status(); showCaption(); $('msg').style.display = 'none';
+  const t = eff(c)[0], start = Math.max(0, t - F.before); endAt = t + F.after; startAt = start; applyVol();
+  if (c.src.kind === 'yt') {
+    vid.pause(); vid.style.display = 'none'; $('yt').style.display = 'block';
+    if (!ytReady) { pending = i; loadYT(); return; }
+    const vd = yt.getVideoData ? yt.getVideoData() : null;
+    if (vd && vd.video_id === c.src.id) { yt.seekTo(start, true); yt.playVideo(); }
+    else yt.loadVideoById({videoId: c.src.id, startSeconds: start});
+    yt.setPlaybackRate(rate);
+  } else {
+    if (yt && ytReady) yt.pauseVideo(); $('yt').style.display = 'none'; vid.style.display = 'block';
+    const go = () => { vid.currentTime = start; vid.playbackRate = rate; vid.play().catch(() => {}); };
+    if (vid.dataset.src !== c.src.url) { vid.dataset.src = c.src.url; vid.src = c.src.url; vid.addEventListener('loadedmetadata', go, {once: true}); vid.load(); }
+    else go();
+  }
+  setPlaying(true);
+}
+function pause() { const c = cur(); if (c) { if (c.src.kind === 'yt') yt && ytReady && yt.pauseVideo(); else vid.pause(); } setPlaying(false); }
+function resume() { const c = cur(); if (!c) return; endAt = Math.max(endAt, now_() + 1.5);
+  if (c.src.kind === 'yt') yt && ytReady && yt.playVideo(); else vid.play(); setPlaying(true); }
+function step(d) { if (!cur()) return; pause(); seek(now_() + d); }
+function save(c, t) {
+  fetch('/fix', {method: 'POST', headers: {'Content-Type': 'text/plain'}, body: JSON.stringify({base: DATA.base, file: c.file, key: c.key, t})})
+    .then(r => { if (!r.ok) throw new Error(r.status); })
+    .catch(() => { $('fixst').innerHTML = '<span class="ko">non salvata: il server dello studio video non risponde</span>'; });
+}
+function mark() {
+  const c = cur(); if (!c) return;
+  const t = Math.round(now_() * 100) / 100, f = FILES[c.file];
+  (f.fix = f.fix || {})[c.key] = t; (RAWS[c.file] = RAWS[c.file] || {})[c.key] = c.raw;
+  save(c, t); redrawBadges(c.file); status();
+}
+function unfix() {
+  const c = cur(), f = c && FILES[c.file]; if (!f || !f.fix || f.fix[c.key] == null) return;
+  delete f.fix[c.key]; save(c, null); redrawBadges(c.file); status();
+}
+function transition(i) {
+  const c = CLIPS[i]; fading = true;
+  $('fade').innerHTML = `<div>${capText() ? `<div style="font-weight:600;margin-bottom:6px">${esc(capText())}</div>` : ''}<div class="sub">${i + 1} di ${CLIPS.length}</div>${esc(c.label)}<div class="sub" style="margin-top:4px">${esc(c.sub)}</div></div>`;
+  $('fade').classList.add('on');
+  setTimeout(() => play(i, true), 300);
+  setTimeout(() => { if (fading) reveal(); }, 4000);     // se il video tarda a ripartire, il velo non resta
+}
+function reveal() { fading = false; $('fade').classList.remove('on'); }
+function ended() {
+  if (fading) return;
+  if (loop) return transition(idx);
+  if (auto) { let j = idx + 1; while (j < CLIPS.length && isOff(CLIPS[j])) j++; if (j < CLIPS.length) return transition(j); }
+  pause();
+}
+// barra di scorrimento sulla clip, con 10 s di margine prima e dopo
+const win = () => [Math.max(0, startAt - 10), endAt + 10];
+const fmt = t => { t = Math.max(0, t); const h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), s = (t % 60).toFixed(1);
+  return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + s.padStart(4, '0'); };
+$('seek').addEventListener('input', () => { if (!cur()) return; dragging = true; const [a, b] = win(), t = a + (b - a) * $('seek').value / 1000; pause(); seek(t); $('tcur').textContent = fmt(t); });
+$('seek').addEventListener('change', () => { dragging = false; $('seek').blur(); });
+setInterval(() => {
+  if (idx < 0) return;
+  const t = now_();
+  if (fading && t >= startAt - 0.3 && t <= startAt + 2) setTimeout(reveal, 150);
+  if (playing && !fading && t >= endAt) ended();
+  if (!dragging) { const [a, b] = win(); $('seek').value = Math.round(1000 * Math.min(1, Math.max(0, (t - a) / (b - a)))); $('tcur').textContent = fmt(t); $('tend').textContent = fmt(b); }
+}, 100);
+vid.addEventListener('error', () => { if (vid.getAttribute('src')) { $('msg').style.display = 'flex'; $('msg').textContent = 'Il file video non si apre (lo studio video va aperto sul Mac dove c\'è Drive).'; } });
+
+// ------------------------------------------------------------------ link dei video
+$('links').onclick = () => {
+  $('linkRows').innerHTML = `<div class="lrow sub"><span>Scout</span><span>Link YouTube o file su Drive</span><span>Scarto (s)</span><span></span></div>` +
+    DATA.files.map((f, i) => `<div class="lrow"><span>${esc(f.label)}${f.bad_link ? '<br><span class="ko sub">link non valido</span>' : ''}</span>
+      <input type="text" id="lu${i}" value="${esc(f.url)}" placeholder="https://youtu.be/…">
+      <input type="number" id="lo${i}" value="${f.offset}" step="1">
+      <button data-i="${i}">Salva</button></div>`).join('');
+  $('linkModal').classList.add('on');
+};
+$('closeLinks').onclick = () => $('linkModal').classList.remove('on');
+$('linkRows').addEventListener('click', async e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const i = Number(b.dataset.i), f = DATA.files[i];
+  b.disabled = true; b.textContent = '…';
+  const r = await fetch('/api/link', {method: 'POST', headers: {'Content-Type': 'text/plain'},
+    body: JSON.stringify({season: SEASON, file: f.file, url: $('lu' + i).value, offset: Number($('lo' + i).value) || 0})});
+  if (!r.ok) { b.textContent = 'Errore'; return; }
+  const had = F.matches.includes(f.file);
+  await loadData(SEASON);
+  if (!had && FILES[f.file] && FILES[f.file].src) { F.matches.push(f.file); saveFilters(); drawFilters(); apply(); }
+  $('links').click();
+});
+
+// ------------------------------------------------------------------ montaggio
+$('montage').onclick = async () => {
+  const b = $('montage');
+  const caption = capText();
+  const clips = included().map(c => { const t = eff(c)[0]; return {src: c.src, start: Math.max(0, t - F.before), end: t + F.after}; });
+  b.disabled = true; b.textContent = 'Preparazione…';
+  try {
+    const r = await fetch('/api/montage', {method: 'POST', headers: {'Content-Type': 'text/plain'}, body: JSON.stringify({clips, caption})});
+    if (!r.ok) throw new Error(await r.text());
+    const {job} = await r.json();
+    for (;;) {
+      await new Promise(ok => setTimeout(ok, 800));
+      const s = await (await fetch('/api/montage/' + job)).json();
+      if (s.error) throw new Error(s.error);
+      if (s.ready) break;
+      b.textContent = `Clip ${s.done} di ${s.total}…`;
+    }
+    const a = document.createElement('a'); a.href = `/api/montage/${job}.mp4`;
+    const name = (caption || 'Studio video').replace(/[\\/:*?"<>|#]/g, '').replace(/\s+/g, ' ').trim().slice(0, 90);
+    a.download = `${name} ${new Date().toLocaleDateString('it-IT').replace(/\//g, '-')}.mp4`; a.click();
+  } catch (e) { alert('Montaggio non riuscito: ' + e.message); }
+  b.textContent = '⬇️ Scarica il montaggio'; montageState();
+};
+
+loadSeasons().catch(e => { $('msg').textContent = 'Il server dello studio video non risponde: ' + e.message; });
+</script></body></html>
